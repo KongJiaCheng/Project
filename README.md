@@ -1,6 +1,6 @@
 **Download SFML 3.0 in https://www.sfml-dev.org/**
 
-**Add a External folder beside RAS Game folder**
+**Add a External folder beside RAS Game/RAS Game folder**
 
 **Configuration:**
 1. Right click RAS Game and click properties
