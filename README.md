@@ -1,8 +1,8 @@
-**#Download SFML 3.0 in https://www.sfml-dev.org/**
+**Download SFML 3.0 in https://www.sfml-dev.org/**
 
-**#Add a External folder beside RAS Game folder**
+**Add a External folder beside RAS Game folder**
 
-**##Configuration:**
+**Configuration:**
 1. Right click RAS Game and click properties
 2. Go to General and select C++ Language Standard as ISO C++17 Standard (/std:c++17)
 3. Go to C/C++, General, Additional Include Directories, All Configurations, put $(SolutionDir)\External\include;%(AdditionalIncludeDirectories)
