@@ -132,19 +132,30 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Chicken.cpp" />
+    <ClCompile Include="ChickenMeat.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="Inventory.cpp" />
     <ClCompile Include="ItemManager.cpp" />
     <ClCompile Include="MainMenu.cpp" />
+    <ClCompile Include="Pig.cpp" />
+    <ClCompile Include="PigMeat.cpp" />
     <ClCompile Include="Settings.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Animal.h" />
     <ClInclude Include="Animation.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="Chicken.h" />
+    <ClInclude Include="ChickenMeat.h" />
+    <ClInclude Include="Food.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="Inventory.h" />
     <ClInclude Include="Item.h" />
+    <ClInclude Include="ItemID.h" />
     <ClInclude Include="ItemManager.h" />
+    <ClInclude Include="Pig.h" />
+    <ClInclude Include="PigMeat.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="ViewUtils.h" />
   </ItemGroup>
