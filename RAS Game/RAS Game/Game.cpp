@@ -4,7 +4,13 @@
 #include "Inventory.h"
 #include "ItemManager.h"
 #include "Animation.h"
+#include "Animal.h"
+#include "Chicken.h"
+#include "Pig.h"
+#include "ChickenMeat.h"
+#include "PigMeat.h"
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -22,6 +28,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
     bool inventoryOpen = false;
     bool invKeyHeld = false;
     bool itemSpawned = false;
+    bool musicLoaded = false;
+    bool musicStarted = false;
+
+    sf::Music nightMusic;
+    bool nightMusicLoaded = false;
+    bool nightMusicPlaying = false;
+
+    std::vector<std::unique_ptr<Animal>> animals;
 
     sf::RectangleShape darkness;
     darkness.setSize(sf::Vector2f((float)MAP_WIDTH, (float)MAP_HEIGHT));
@@ -76,9 +90,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
     sf::Texture treeTex;
     sf::Texture stoneTex;
 
+    ChickenMeat::loadTexture();
+    PigMeat::loadTexture();
+    Chicken::texture.loadFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Chicken\\South.png");
+    Pig::texture.loadFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\South.png");
+
     woodTex.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/wood.png");
     treeTex.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/Tree.png");
     stoneTex.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/Stone.png");
+
+    itemManager.setResourceTextures(&woodTex, &stoneTex);
 
     sf::Clock deltaClock;
     sf::Clock dayNightClock;
@@ -95,6 +116,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
     std::uniform_real_distribution<float> randX(0.f, (float)MAP_WIDTH);
     std::uniform_real_distribution<float> randY(0.f, (float)MAP_HEIGHT);
 
+    sf::Music bgMusic;
+    if (bgMusic.openFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Music\\Locally Sourced - Jason Farnham.mp3"))
+    {
+        bgMusic.setLooping(true);
+        bgMusic.setVolume(50.f); // 0–100
+        musicLoaded = true;
+    }
+    else
+    {
+        std::cerr << "Failed to load background music\n";
+    }
+
     while (window.isOpen())
     {
         float dt = deltaClock.restart().asSeconds();
@@ -105,12 +138,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
 
             if (auto* key = event->getIf<sf::Event::KeyPressed>())
             {
-                if (key->scancode == sf::Keyboard::Scancode::Escape) return;
+                if (key->scancode == sf::Keyboard::Scancode::Escape)
+                    return;
 
                 if (key->scancode == sf::Keyboard::Scancode::I && !invKeyHeld)
                 {
                     inventoryOpen = !inventoryOpen;
                     invKeyHeld = true;
+                }
+
+                if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::Space))
+                {
+                    for (auto& a : animals)
+                    {
+                        float dx = a->sprite.getPosition().x - sprite.getPosition().x;
+                        float dy = a->sprite.getPosition().y - sprite.getPosition().y;
+                        float dist = std::sqrt(dx * dx + dy * dy);
+
+                        if (dist < 60.f)
+                            a->health -= 25.f;
+                    }
                 }
             }
 
@@ -167,6 +214,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
             sprite.setTexture(animSouth.getCurrentTexture());
             inventory.setItem(0, animSouth.getCurrentTexture(), 5);
             animLoadedForSelection = true;
+        }
+
+        if (selectionDone && musicLoaded && !musicStarted)
+        {
+            bgMusic.play();
+            musicStarted = true;
         }
 
         if (!selectionDone)
@@ -234,6 +287,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
         itemManager.draw(window);
         window.draw(sprite);
 
+        for (auto& a : animals)
+        {
+            if (a->health > 0)
+                window.draw(a->sprite);
+        }
+
         float nearestDist = itemManager.getNearestDistance(sprite);
         int nearestID = itemManager.getNearestItemID(sprite);
         const float RADIUS = 250.f;
@@ -243,7 +302,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
             sf::Text prompt(font, "", 32);
             prompt.setFillColor(sf::Color::Yellow);
 
-            if (nearestID == 0)
+            if (nearestID == ITEM_TREE)
                 prompt.setString("Press E to chop tree");
             else prompt.setString("Press E to pick up");
 
@@ -254,14 +313,40 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::E))
         {
-            // itemManager.tryPickup takes player's sprite, inventory, and woodTex in your code
-            itemManager.tryPickup(sprite, inventory, woodTex);
+
+            itemManager.tryPickup(sprite, inventory);
         }
+
+        const float totalCycleTime = 900.f;
+        float cycleValue = std::fmod(dayNightClock.getElapsedTime().asSeconds(), totalCycleTime);
+        float t = cycleValue / totalCycleTime;
+        float timeOfDay = (t < 0.5f) ? (t * 2.f) : (1.f - (t - 0.5f) * 2.f);
+        int darknessLevel = static_cast<int>(timeOfDay * 200.f);
+        darkness.setFillColor(sf::Color(0, 0, 0, darknessLevel));
+        window.draw(darkness);
+
+        bool isNight = (timeOfDay < 0.35f);
 
         if (inventoryOpen)
         {
             window.setView(window.getDefaultView());
             inventory.draw(window);
+        }
+
+        if (isNight && !nightMusicLoaded)
+        {
+            if (!nightMusic.openFromFile(
+                "C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Music/Shirfine_-_Illusionary_Daytime_(mp3.pm).mp3"
+            ))
+            {
+                std::cerr << "Failed to load night music\n";
+            }
+            else
+            {
+                nightMusic.setLooping(true);   // ✅ SFML 3
+                nightMusic.setVolume(40.f);
+                nightMusicLoaded = true;
+            }
         }
 
         window.display();
@@ -277,7 +362,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
                     sf::Vector2f p(randX(gen), randY(gen));
                     if (itemManager.isAreaFreeExplicit(p, MIN_DISTANCE, &treeTex))
                     {
-                        itemManager.addItem(0, treeTex, p, 1);
+                        itemManager.addItem(ITEM_TREE, treeTex, p, 1);
                         break;
                     }
                 }
@@ -290,13 +375,38 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
                     sf::Vector2f p(randX(gen), randY(gen));
                     if (itemManager.isAreaFreeExplicit(p, MIN_DISTANCE, &stoneTex))
                     {
-                        itemManager.addItem(1, stoneTex, p, 1);
+                        itemManager.addItem(ITEM_STONE, stoneTex, p, 1);
                         break;
                     }
                 }
             }
 
             itemSpawned = true;
+
+            animals.push_back(std::make_unique<Chicken>(sf::Vector2f(900.f, 700.f)));
+            animals.push_back(std::make_unique<Pig>(sf::Vector2f(1200.f, 600.f)));
+
+            for (auto& a : animals)
+            {
+                if (a->health > 0)
+                    a->update(dt, sprite.getPosition());
+            }
+
+            for (auto& a : animals)
+            {
+                if (a->health <= 0 && !a->droppedLoot)
+                {
+                    itemManager.addItem(
+                        a->getFoodItemID(),
+                        *a->getFoodTexture(),
+                        a->sprite.getPosition(),
+                        a->getFoodDropCount()
+                    );
+
+                    a->droppedLoot = true;
+                }
+            }
+
         }
     }
 }
