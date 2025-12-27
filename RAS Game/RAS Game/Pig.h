@@ -1,0 +1,43 @@
+#pragma once
+#include "Animal.h"
+#include "ItemID.h"
+#include "PigMeat.h"
+
+class Pig : public Animal
+{
+public:
+    static sf::Texture texture;
+    Pig(sf::Vector2f pos) : Animal(texture, pos, 50)
+    {
+        maxHealth = 60.f;
+        health = maxHealth;
+        speed = 30.f;
+        attackDamage = 12.f;
+        attackCooldown = 1.0f;
+
+        loadAnimations(
+            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\South",
+            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\North",
+            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\East",
+            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\West",
+            4
+        );
+
+        sprite.setPosition(pos);
+    }
+
+    int getFoodItemID() const override
+    {
+        return ITEM_PIG_MEAT;
+    }
+
+    const sf::Texture* getFoodTexture() const override
+    {
+        return &PigMeat::texture;
+    }
+
+    int getFoodDropCount() const override
+    {
+        return 2 + rand() % 3;
+    }
+};

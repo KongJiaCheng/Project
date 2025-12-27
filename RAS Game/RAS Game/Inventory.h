@@ -11,7 +11,7 @@ public:
     void setItem(int index, const sf::Texture& texture, int count);
     int getSlotAt(sf::Vector2f mousePos);
 
-	void addItem(int id, const sf::Texture& texture, int count);
+    void addItem(int id, const sf::Texture& texture, int count);
 
 private:
     // Layout settings
