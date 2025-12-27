@@ -1,0 +1,13 @@
+# Visual Studio cache
+.vs/
+*.user
+
+# Build output
+x64/
+Debug/
+Release/
+*.exe
+*.pdb
+
+# External / temp
+External/
