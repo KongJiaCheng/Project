@@ -1,4 +1,4 @@
-# Visual Studio cache
+# Visual Studio
 .vs/
 *.user
 
@@ -9,5 +9,5 @@ Release/
 *.exe
 *.pdb
 
-# External / temp
+# External libraries & docs
 External/
