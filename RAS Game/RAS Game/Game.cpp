@@ -27,14 +27,6 @@ bool isInWater(const sf::Vector2f& pos, const sf::FloatRect& water)
     return water.contains(pos);
 }
 
-sf::Vector2f clampToMap(const sf::Vector2f& pos)
-{
-    sf::Vector2f p = pos;
-    p.x = std::clamp(p.x, 0.f, (float)MAP_WIDTH);
-    p.y = std::clamp(p.y, 0.f, (float)MAP_HEIGHT);
-    return p;
-}
-
 void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
 {
     int option = 0;
@@ -564,9 +556,23 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
                 if (a->health > 0)
                     a->update(dt, sprite.getPosition());
 
-                a->sprite.setPosition(
-                    clampToMap(a->sprite.getPosition())
-                );
+                // ---- CLAMP ANIMAL TO MAP (FULL SPRITE) ----
+                sf::FloatRect bounds = a->sprite.getGlobalBounds();
+                sf::Vector2f pos = a->sprite.getPosition();
+
+                if (bounds.position.x < 0.f)
+                    pos.x -= bounds.position.x;
+
+                if (bounds.position.y < 0.f)
+                    pos.y -= bounds.position.y;
+
+                if (bounds.position.x + bounds.size.x > MAP_WIDTH)
+                    pos.x -= (bounds.position.x + bounds.size.x - MAP_WIDTH);
+
+                if (bounds.position.y + bounds.size.y > MAP_HEIGHT)
+                    pos.y -= (bounds.position.y + bounds.size.y - MAP_HEIGHT);
+
+                a->sprite.setPosition(pos);
             }
 
             for (auto& a : animals)
