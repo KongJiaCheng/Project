@@ -103,9 +103,7 @@ void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& wind
     if (slot != -1)
     {
         selectedSlot = slot;
-        slotBox[slot].setFillColor(sf::Color::Yellow);
     }
-
 }
 
 

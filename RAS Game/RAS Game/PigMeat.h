@@ -16,4 +16,6 @@ public:
         texture.loadFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Items\\PigMeat.png");
     }
 
+    static const sf::Texture* getTexture();
+
 };

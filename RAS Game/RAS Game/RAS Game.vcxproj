@@ -132,10 +132,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="Chicken.cpp" />
+    <ClCompile Include="ChickenMeat.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="Inventory.cpp" />
     <ClCompile Include="ItemManager.cpp" />
     <ClCompile Include="MainMenu.cpp" />
+    <ClCompile Include="Pig.cpp" />
+    <ClCompile Include="PigMeat.cpp" />
     <ClCompile Include="Settings.cpp" />
   </ItemGroup>
   <ItemGroup>

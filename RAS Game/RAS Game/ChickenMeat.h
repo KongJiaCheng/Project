@@ -13,6 +13,9 @@ public:
 
     static void loadTexture()
     {
-        texture.loadFromFile("Sprites/Food/ChickenMeat.png");
+        texture.loadFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Items\\ChickenMeat.png");
     }
+
+    static const sf::Texture* getTexture();
+
 };
