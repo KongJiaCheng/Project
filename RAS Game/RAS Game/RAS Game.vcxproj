@@ -141,6 +141,8 @@
     <ClCompile Include="Pig.cpp" />
     <ClCompile Include="PigMeat.cpp" />
     <ClCompile Include="Settings.cpp" />
+    <ClCompile Include="Zombie.cpp" />
+    <ClCompile Include="ZombieFlesh.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Animal.h" />
@@ -154,10 +156,13 @@
     <ClInclude Include="Item.h" />
     <ClInclude Include="ItemID.h" />
     <ClInclude Include="ItemManager.h" />
+    <ClInclude Include="Monster.h" />
     <ClInclude Include="Pig.h" />
     <ClInclude Include="PigMeat.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="ViewUtils.h" />
+    <ClInclude Include="Zombie.h" />
+    <ClInclude Include="ZombieFlesh.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

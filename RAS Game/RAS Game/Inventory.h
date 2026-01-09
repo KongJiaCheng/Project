@@ -13,6 +13,28 @@ public:
 
     void addItem(int id, const sf::Texture& texture, int count);
 
+    // NEW FUNCTIONS (must appear here!)
+    float computeX(sf::RenderWindow& window);
+    float computeY(sf::RenderWindow& window);
+    int getSelectedSlot() const { return selectedSlot; }
+    bool hasItem(int slot) const { return slots[slot].occupied; }
+    const sf::Texture* getItemTexture(int slot) const
+    {
+        return slots[slot].icon ? &slots[slot].icon->getTexture() : nullptr;
+    }
+    void consumeItem(int slot)
+    {
+        if (slots[slot].count > 0)
+        {
+            slots[slot].count--;
+            if (slots[slot].count == 0)
+            {
+                slots[slot].occupied = false;
+                slots[slot].icon.reset();
+            }
+        }
+    }
+
 private:
     // Layout settings
     static const int SLOT_COUNT = 10;
@@ -35,7 +57,5 @@ private:
 
     Slot slots[SLOT_COUNT];
 
-    // NEW FUNCTIONS (must appear here!)
-    float computeX(sf::RenderWindow& window);
-    float computeY(sf::RenderWindow& window);
+
 };

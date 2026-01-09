@@ -26,6 +26,8 @@ public:
     float attackTimer = 0.f;
 
     bool droppedLoot = false;
+    bool isHurt = false;
+    float hurtTimer = 0.f;
 
     Animal() = default;
 
@@ -59,6 +61,19 @@ public:
         sf::Vector2f dir = pos - playerPos;
 
         float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+
+        if (isHurt)
+        {
+            hurtTimer -= dt;
+            if (hurtTimer <= 0.f)
+                isHurt = false;
+        }
+
+        if (isHurt)
+            sprite.setColor(sf::Color(255, 100, 100));
+        else
+            sprite.setColor(sf::Color::White);
+
         if (len > 0.01f)
         {
             dir /= len;
