@@ -1,4 +1,5 @@
 #include "ItemManager.h"
+#include "ZombieFlesh.h"
 #include "ChickenMeat.h"
 #include "PigMeat.h"
 
@@ -226,7 +227,8 @@ bool ItemManager::isAreaFreeExplicit(
 bool ItemManager::isFood(int itemID) const
 {
     return itemID == ITEM_CHICKEN_MEAT ||
-        itemID == ITEM_PIG_MEAT;
+        itemID == ITEM_PIG_MEAT ||
+        itemID == ITEM_ZOMBIE_FLESH;
 }
 
 Food ItemManager::getFoodData(int itemID) const
@@ -237,6 +239,8 @@ Food ItemManager::getFoodData(int itemID) const
         return ChickenMeat();
     case ITEM_PIG_MEAT:
         return PigMeat();
+    case ITEM_ZOMBIE_FLESH:
+        return ZombieFlesh();
     default:
         return Food();
     }
