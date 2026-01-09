@@ -451,6 +451,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
                                 hunger = std::max(0.f, hunger - 45.f);
                                 inventory.consumeItem(slot);
                             }
+                            else if (tex == ZombieFlesh::getTexture())
+                            {
+                                hunger = std::max(0.f, hunger - 20.f);
+                                hp = std::max(0.f, hp - 10.f); // eating zombie flesh hurts you
+                                inventory.consumeItem(slot);
                         }
                     }
                 }
