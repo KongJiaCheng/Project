@@ -1,9 +1,11 @@
-﻿#include "Game.h"
+#include "Game.h"
 #include "ViewUtils.h"
 #include "Camera.h"
 #include "Inventory.h"
 #include "ItemManager.h"
 #include "Animation.h"
+#include "AuthManager.h"
+#include "ItemID.h"
 #include "Animal.h"
 #include "Chicken.h"
 #include "Pig.h"
@@ -21,7 +23,12 @@
 const int MAP_WIDTH = 5000;
 const int MAP_HEIGHT = 5000;
 
-void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
+bool isInWater(const sf::Vector2f& pos, const sf::FloatRect& water)
+{
+    return water.contains(pos);
+}
+
+void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username)
 {
     int option = 0;
     bool selectionDone = false;
@@ -73,7 +80,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
     buttonText2.setPosition(button2.getPosition());
 
     sf::Texture bgTexture;
-    bgTexture.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/Background.jpg");
+    bgTexture.loadFromFile("../Items/Background.jpg");
 
     sf::Sprite background(bgTexture);
     float scaleX = float(MAP_WIDTH) / bgTexture.getSize().x;
@@ -90,14 +97,68 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
     sf::Texture treeTex;
     sf::Texture stoneTex;
 
+    sf::Texture hpIconTex, hungerIconTex, thirstIconTex;
+    hpIconTex.loadFromFile("../Sprites/UI/hp.png");
+    hungerIconTex.loadFromFile("../Sprites/UI/hunger.png");
+    thirstIconTex.loadFromFile("../Sprites/UI/thirst.png");
+
+    sf::Sprite hpIcon(hpIconTex);
+    sf::Sprite hungerIcon(hungerIconTex);
+    sf::Sprite thirstIcon(thirstIconTex);
+
+    hpIcon.setScale({ 0.6f, 0.6f });
+    hungerIcon.setScale({ 0.6f, 0.6f });
+    thirstIcon.setScale({ 0.6f, 0.6f });
+
+    sf::Font uiFont;
+    uiFont.openFromFile("C:/Windows/Fonts/arial.ttf");
+
+    sf::Text hpText(uiFont, "", 16);
+    sf::Text hungerText(uiFont, "", 16);
+    sf::Text thirstText(uiFont, "", 16);
+
+    sf::Text drinkText(font, "Press E to drink water", 28);
+    drinkText.setFillColor(sf::Color::Yellow);
+
+    hpText.setFillColor(sf::Color::Black);
+    hungerText.setFillColor(sf::Color::Black);
+    thirstText.setFillColor(sf::Color::Black);
+
+    sf::RectangleShape hpBack({ BAR_WIDTH, BAR_HEIGHT });
+    hpBack.setFillColor(sf::Color(60, 60, 60));
+
+    sf::RectangleShape hpBar({ BAR_WIDTH, BAR_HEIGHT });
+    hpBar.setFillColor(sf::Color::Red);
+
+    sf::RectangleShape hungerBack = hpBack;
+    sf::RectangleShape hungerBar({ BAR_WIDTH, BAR_HEIGHT });
+    hungerBar.setFillColor(sf::Color(255, 165, 0));
+
+    sf::RectangleShape thirstBack = hpBack;
+    sf::RectangleShape thirstBar({ BAR_WIDTH, BAR_HEIGHT });
+    thirstBar.setFillColor(sf::Color(0, 150, 255));
+
+    hpBar.setSize({ BAR_WIDTH * (hp / maxHP), BAR_HEIGHT });
+    hpBar.setPosition(hpBack.getPosition());
+    hungerBar.setSize({ BAR_WIDTH * (1.f - hunger / maxHunger), BAR_HEIGHT });
+    hungerBar.setPosition(hungerBack.getPosition());
+    thirstBar.setSize({ BAR_WIDTH * (1.f - thirst / maxThirst), BAR_HEIGHT });
+    thirstBar.setPosition(thirstBack.getPosition());
+
     ChickenMeat::loadTexture();
     PigMeat::loadTexture();
-    Chicken::texture.loadFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Chicken\\South.png");
-    Pig::texture.loadFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\South.png");
+    ZombieFlesh::loadTexture();
+    Chicken::texture.loadFromFile("../Sprites/Animals/Chicken/South.png");
+    Pig::texture.loadFromFile("../Sprites/Animals/Pig/South.png");
+    Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/South.png");
 
-    woodTex.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/wood.png");
-    treeTex.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/Tree.png");
-    stoneTex.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/Stone.png");
+    woodTex.loadFromFile("../Items/wood.png");
+    treeTex.loadFromFile("../Items/Tree.png");
+    stoneTex.loadFromFile("../Items/Stone.png");
+    pondTex.loadFromFile("../Items/Pond.png");
+
+    sf::Sprite pond(pondTex);
+    pond.setScale({ 10.0f, 10.0f });   // ⬅️ make it 10× bigger
 
     itemManager.setResourceTextures(&woodTex, &stoneTex);
 
@@ -117,7 +178,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
     std::uniform_real_distribution<float> randY(0.f, (float)MAP_HEIGHT);
 
     sf::Music bgMusic;
-    if (bgMusic.openFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Music\\Locally Sourced - Jason Farnham.mp3"))
+    if (bgMusic.openFromFile("../Music/Locally Sourced - Jason Farnham.mp3"))
     {
         bgMusic.setLooping(true);
         bgMusic.setVolume(50.f); // 0–100
@@ -134,12 +195,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
 
         while (std::optional<sf::Event> event = window.pollEvent())
         {
-            if (event->is<sf::Event::Closed>()) window.close();
+            if (event->is<sf::Event::Closed>())
+            {
+                AuthManager::getInstance().saveInventory(username.c_str(), inventory.getInventoryData());
+                window.close();
+            }
 
             if (auto* key = event->getIf<sf::Event::KeyPressed>())
             {
                 if (key->scancode == sf::Keyboard::Scancode::Escape)
+                {
+                    AuthManager::getInstance().saveInventory(username.c_str(), inventory.getInventoryData());
                     return;
+                }
 
                 if (key->scancode == sf::Keyboard::Scancode::I && !invKeyHeld)
                 {
@@ -147,7 +215,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
                     invKeyHeld = true;
                 }
 
-                if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::Space))
+                if (key->scancode == sf::Keyboard::Scancode::B)
+                {
+
+				}
+
+                if (key->scancode == sf::Keyboard::Scancode::Space)
                 {
                     for (auto& a : animals)
                     {
@@ -198,22 +271,40 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
         {
             if (option == 1)
             {
-                animSouth.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Male\\Walk\\South", FRAMES_PER_DIR);
-                animNorth.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Male\\Walk\\North", FRAMES_PER_DIR);
-                animEast.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Male\\Walk\\East", FRAMES_PER_DIR);
-                animWest.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Male\\Walk\\West", FRAMES_PER_DIR);
+                animSouth.loadFromFolder("../Sprites/Male/Walk/South", FRAMES_PER_DIR);
+                animNorth.loadFromFolder("../Sprites/Male/Walk/North", FRAMES_PER_DIR);
+                animEast.loadFromFolder("../Sprites/Male/Walk/East", FRAMES_PER_DIR);
+                animWest.loadFromFolder("../Sprites/Male/Walk/West", FRAMES_PER_DIR);
             }
             else
             {
-                animSouth.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Female\\Walk\\South", FRAMES_PER_DIR);
-                animNorth.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Female\\Walk\\North", FRAMES_PER_DIR);
-                animEast.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Female\\Walk\\East", FRAMES_PER_DIR);
-                animWest.loadFromFolder("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Female\\Walk\\West", FRAMES_PER_DIR);
+                animSouth.loadFromFolder("../Sprites/Female/Walk/South", FRAMES_PER_DIR);
+                animNorth.loadFromFolder("../Sprites/Female/Walk/North", FRAMES_PER_DIR);
+                animEast.loadFromFolder("../Sprites/Female/Walk/East", FRAMES_PER_DIR);
+                animWest.loadFromFolder("../Sprites/Female/Walk/West", FRAMES_PER_DIR);
             }
 
             sprite.setTexture(animSouth.getCurrentTexture());
-            inventory.setItem(0, animSouth.getCurrentTexture(), 5);
             animLoadedForSelection = true;
+
+            std::vector<std::pair<int, int>> invData = AuthManager::getInstance().loadInventory(username.c_str());
+            for (int i = 0; i < 10 && i < invData.size(); ++i)
+            {
+                int id = invData[i].first;
+                int count = invData[i].second;
+                if (id != 0 && count > 0)
+                {
+                    const sf::Texture* tex = nullptr;
+                    if (id == ITEM_WOOD) tex = &woodTex;
+                    else if (id == ITEM_STONE) tex = &stoneTex;
+                    else if (id == ITEM_TREE) tex = &treeTex;
+                    else if (id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
+                    else if (id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
+                    else if (id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
+
+                    if (tex) inventory.setItem(i, id, *tex, count);
+                }
+            }
         }
 
         if (selectionDone && musicLoaded && !musicStarted)
@@ -235,6 +326,35 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
             window.display();
             continue;
         }
+
+        if (!isDead)
+        {
+            for (auto& m : monsters)
+            {
+                if (m->health > 0)
+                    m->update(dt, sprite.getPosition());
+
+                sf::FloatRect zombieBounds = m->sprite.getGlobalBounds();
+                sf::FloatRect playerBounds = sprite.getGlobalBounds();
+
+                sf::FloatRect z = m->sprite.getGlobalBounds();
+                sf::FloatRect p = sprite.getGlobalBounds();
+
+                bool hit =
+                    z.position.x < p.position.x + p.size.x &&
+                    z.position.x + z.size.x > p.position.x &&
+                    z.position.y < p.position.y + p.size.y &&
+                    z.position.y + z.size.y > p.position.y;
+                if (hit)
+                {
+                    zombieAttackTimer += dt;
+
+                    if (zombieAttackTimer >= ZOMBIE_ATTACK_COOLDOWN)
+                    {
+                        hp -= ZOMBIE_DAMAGE;
+                        zombieAttackTimer = 0.f;
+                    }
+                }
 
         animSouth.playing = animNorth.playing = animEast.playing = animWest.playing = false;
 
@@ -341,12 +461,73 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height)
             {
                 std::cerr << "Failed to load night music\n";
             }
-            else
+
+            bgMusic.stop();                     // ✅ STOP DAY MUSIC
+
+            if (!nightMusicLoaded)
             {
-                nightMusic.setLooping(true);   // ✅ SFML 3
-                nightMusic.setVolume(40.f);
-                nightMusicLoaded = true;
+                if (nightMusic.openFromFile(
+                    "../Music/Shirfine_-_Illusionary_Daytime_(mp3.pm).mp3"
+                ))
+                {
+                    nightMusic.setLooping(true);
+                    nightMusic.setVolume(40.f);
+                    nightMusic.play();          // ✅ START PLAYING
+                    nightMusicLoaded = true;
+                }
             }
+
+            nightMusic.play();              // ✅ START PLAYING 
+        }
+        else if (!isNight && wasNight)
+        {
+            wasNight = false;
+
+            nightMusic.stop();               // ✅ STOP NIGHT MUSIC
+            bgMusic.play();                     // ✅ START DAY MUSIC
+            monsters.clear();
+        }
+
+
+        if (isDead)
+        {
+            window.setView(window.getDefaultView());
+
+            float survivedSeconds = dayNightClock.getElapsedTime().asSeconds();
+            int daysSurvived = static_cast<int>(survivedSeconds / totalCycleTime);
+
+            sf::RectangleShape overlay({ (float)width, (float)height });
+            overlay.setFillColor(sf::Color(0, 0, 0, 200));
+            window.draw(overlay);
+
+            sf::Text deathText(font, "YOU DIED", 120);
+            deathText.setFillColor(sf::Color::Red);
+            deathText.setPosition({
+                (width - deathText.getGlobalBounds().size.x) / 2.f,
+                height / 2.f - 150.f
+                });
+
+            sf::Text daysText(
+                font,
+                "You survived " + std::to_string(daysSurvived) + " days",
+                48
+            );
+            daysText.setFillColor(sf::Color::White);
+            daysText.setPosition({
+                (width - daysText.getGlobalBounds().size.x) / 2.f,
+                height / 2.f
+                });
+
+            sf::Text exitText(font, "Press ESC to quit", 32);
+            exitText.setFillColor(sf::Color::Yellow);
+            exitText.setPosition({
+                (width - exitText.getGlobalBounds().size.x) / 2.f,
+                height / 2.f + 100.f
+                });
+
+            window.draw(deathText);
+            window.draw(daysText);
+            window.draw(exitText);
         }
 
         window.display();

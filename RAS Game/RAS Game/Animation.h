@@ -56,6 +56,10 @@ public:
 
     const sf::Texture& getCurrentTexture() const
     {
+        if (frames.empty()) {
+            static sf::Texture emptyTex;
+            return emptyTex;
+        }
         return frames.at(std::max(0, std::min(current, (int)frames.size() - 1)));
     }
 

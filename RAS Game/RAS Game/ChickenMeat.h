@@ -13,6 +13,6 @@ public:
 
     static void loadTexture()
     {
-        texture.loadFromFile("Sprites/Food/ChickenMeat.png");
+        texture.loadFromFile("../Items/ChickenMeat.png");
     }
 };

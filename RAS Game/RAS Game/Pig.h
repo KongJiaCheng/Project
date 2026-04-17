@@ -16,10 +16,10 @@ public:
         attackCooldown = 1.0f;
 
         loadAnimations(
-            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\South",
-            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\North",
-            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\East",
-            "C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Sprites\\Animals\\Pig\\Walk\\West",
+            "../Sprites/Animals/Pig/Walk/South",
+            "../Sprites/Animals/Pig/Walk/North",
+            "../Sprites/Animals/Pig/Walk/East",
+            "../Sprites/Animals/Pig/Walk/West",
             4
         );
 
