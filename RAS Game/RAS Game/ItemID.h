@@ -9,5 +9,6 @@ enum ItemID
     ITEM_WOOD = 3,
 
     ITEM_CHICKEN_MEAT = 100,
-    ITEM_PIG_MEAT = 101
+    ITEM_PIG_MEAT = 101,
+    ITEM_ZOMBIE_FLESH = 102
 };

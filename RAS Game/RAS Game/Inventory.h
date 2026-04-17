@@ -1,7 +1,6 @@
 #pragma once
 #include <SFML/Graphics.hpp>
 #include <memory>
-#include <vector>
 
 class Inventory
 {
@@ -9,11 +8,10 @@ public:
     Inventory();
     void draw(sf::RenderWindow& window);
     void handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& window);
-    void setItem(int index, int id, const sf::Texture& texture, int count);
+    void setItem(int index, const sf::Texture& texture, int count);
     int getSlotAt(sf::Vector2f mousePos);
 
     void addItem(int id, const sf::Texture& texture, int count);
-    std::vector<std::pair<int, int>> getInventoryData() const;
 
     // NEW FUNCTIONS (must appear here!)
     float computeX(sf::RenderWindow& window);
@@ -54,7 +52,6 @@ private:
 
     struct Slot
     {
-        int id = 0;
         std::unique_ptr<sf::Sprite> icon;
         int count = 0;
         bool occupied = false;
@@ -62,7 +59,5 @@ private:
 
     Slot slots[SLOT_COUNT];
 
-    // NEW FUNCTIONS (must appear here!)
-    float computeX(sf::RenderWindow& window);
-    float computeY(sf::RenderWindow& window);
+
 };

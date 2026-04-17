@@ -4,15 +4,17 @@
 #include "Inventory.h"
 #include "ItemManager.h"
 #include "Animation.h"
-#include "AuthManager.h"
-#include "ItemID.h"
 #include "Animal.h"
+#include "Monster.h"
 #include "Chicken.h"
 #include "Pig.h"
+#include "Zombie.h"
 #include "ChickenMeat.h"
 #include "PigMeat.h"
+#include "ZombieFlesh.h"
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
+#include <algorithm>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -37,12 +39,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool itemSpawned = false;
     bool musicLoaded = false;
     bool musicStarted = false;
+    bool nearPond = false;
+    bool isDead = false;
+    bool wasNight = false;
 
     sf::Music nightMusic;
     bool nightMusicLoaded = false;
     bool nightMusicPlaying = false;
 
     std::vector<std::unique_ptr<Animal>> animals;
+    std::vector<std::unique_ptr<Monster>> monsters;
 
     sf::RectangleShape darkness;
     darkness.setSize(sf::Vector2f((float)MAP_WIDTH, (float)MAP_HEIGHT));
@@ -88,6 +94,27 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     background.setScale({ scaleX, scaleY });
     background.setPosition({ 0.f, 0.f });
 
+    const float BAR_WIDTH = 400.f;
+    const float BAR_HEIGHT = 22.f;
+
+    float maxHP = 100.f;
+    float hp = 100.f;
+
+    float maxHunger = 100.f;
+    float hunger = 0.f;
+
+    float maxThirst = 100.f;
+    float thirst = 0.f;
+
+    // rates (per second)
+    const float HUNGER_RATE = 1.f;
+    const float THIRST_RATE = 1.f;
+    const float DAMAGE_RATE = 10.f;
+
+    float zombieAttackTimer = 0.f;
+    const float ZOMBIE_ATTACK_COOLDOWN = 0.8f;
+    const int ZOMBIE_DAMAGE = 10;
+
     sf::Texture texSouth;
     sf::Sprite sprite(texSouth);
     sprite.setOrigin({ 32.f, 32.f });
@@ -96,6 +123,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     sf::Texture woodTex;
     sf::Texture treeTex;
     sf::Texture stoneTex;
+    sf::Texture pondTex;
 
     sf::Texture hpIconTex, hungerIconTex, thirstIconTex;
     hpIconTex.loadFromFile("../Sprites/UI/hp.png");
@@ -162,6 +190,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
     itemManager.setResourceTextures(&woodTex, &stoneTex);
 
+    sf::Clock animalRespawnClock;
+    const int MAX_ANIMALS = 20;
+
+    sf::Clock deathClock;
+
+    const float totalCycleTime = 900.f;
+
     sf::Clock deltaClock;
     sf::Clock dayNightClock;
 
@@ -176,6 +211,34 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> randX(0.f, (float)MAP_WIDTH);
     std::uniform_real_distribution<float> randY(0.f, (float)MAP_HEIGHT);
+
+    if (animalRespawnClock.getElapsedTime().asSeconds() > 10.f &&
+        animals.size() < MAX_ANIMALS)
+    {
+        animals.push_back(std::make_unique<Chicken>(
+            sf::Vector2f(randX(gen), randY(gen))
+        ));
+
+        animalRespawnClock.restart();
+    }
+
+    sf::Vector2u texSize = pondTex.getSize();
+    sf::Vector2f pondWorldSize(
+        texSize.x * pond.getScale().x,
+        texSize.y * pond.getScale().y
+    );
+
+    std::uniform_real_distribution<float> pondX(
+        0.f, MAP_WIDTH - pondWorldSize.x
+    );
+    std::uniform_real_distribution<float> pondY(
+        0.f, MAP_HEIGHT - pondWorldSize.y
+    );
+
+    pond.setPosition({ pondX(gen), pondY(gen) });
+
+    sf::FloatRect pondBounds = pond.getGlobalBounds();
+
 
     sf::Music bgMusic;
     if (bgMusic.openFromFile("../Music/Locally Sourced - Jason Farnham.mp3"))
@@ -193,32 +256,113 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     {
         float dt = deltaClock.restart().asSeconds();
 
+        // survival update
+        hunger = std::min(maxHunger, hunger + HUNGER_RATE * dt);
+        thirst = std::min(maxThirst, thirst + THIRST_RATE * dt);
+
+        if (hunger >= maxHunger || thirst >= maxThirst)
+        {
+            hp = std::max(0.f, hp - DAMAGE_RATE * dt);
+        }
+
+        if (hp <= 0.f && !isDead)
+        {
+            isDead = true;
+            deathClock.restart();
+        }
+
+        if (inventoryOpen)
+        {
+            // === Inventory layout (must match Inventory.cpp) ===
+            const float SLOT_W = 64.f;   // same as boxW
+            const float SLOT_GAP = 4.f;
+            const int SLOT_COUNT = 8;
+
+            float invX = inventory.computeX(window);
+            float invY = inventory.computeY(window);
+            float invWidth = SLOT_COUNT * (SLOT_W + SLOT_GAP);
+
+            float barWidth = invWidth;
+            float barHeight = 22.f;
+            float spacing = 80.f;
+
+            float startX = invX;
+            float startY = invY - (barHeight * 3.f) - (spacing * 2.f);
+
+            float iconPadding = 6.f;
+            float textPadding = 10.f;
+
+            auto hpBounds = hpIcon.getGlobalBounds();
+            auto hungerBounds = hungerIcon.getGlobalBounds();
+            auto thirstBounds = thirstIcon.getGlobalBounds();
+
+            hpBack.setSize({ barWidth, barHeight });
+            hungerBack.setSize({ barWidth, barHeight });
+            thirstBack.setSize({ barWidth, barHeight });
+
+            hpBack.setPosition({ startX, startY });
+            hungerBack.setPosition({ startX, startY + barHeight + spacing });
+            thirstBack.setPosition({ startX, startY + (barHeight + spacing) * 2.f });
+
+            hpBar.setSize({ barWidth * (hp / maxHP), barHeight });
+            hungerBar.setSize({ barWidth * (1.f - hunger / maxHunger), barHeight });
+            thirstBar.setSize({ barWidth * (1.f - thirst / maxThirst), barHeight });
+
+            hpBar.setPosition(hpBack.getPosition());
+            hungerBar.setPosition(hungerBack.getPosition());
+            thirstBar.setPosition(thirstBack.getPosition());
+
+            hpIcon.setPosition({
+                hpBack.getPosition().x - hpBounds.size.x - iconPadding,
+                hpBack.getPosition().y + (barHeight - hpBounds.size.y) / 2.f
+                });
+
+            hungerIcon.setPosition({
+                hungerBack.getPosition().x - hungerBounds.size.x - iconPadding,
+                hungerBack.getPosition().y + (barHeight - hungerBounds.size.y) / 2.f
+                });
+
+            thirstIcon.setPosition({
+                thirstBack.getPosition().x - thirstBounds.size.x - iconPadding,
+                thirstBack.getPosition().y + (barHeight - thirstBounds.size.y) / 2.f
+                });
+
+            // TEXT CONTENT
+            hpText.setString("HP " + std::to_string((int)hp) + " / " + std::to_string((int)maxHP));
+            hungerText.setString("Hunger " + std::to_string((int)(maxHunger - hunger)));
+            thirstText.setString("Thirst " + std::to_string((int)(maxThirst - thirst)));
+
+            // TEXT POSITION (inside bar)
+            hpText.setPosition({
+                hpBack.getPosition().x + textPadding,
+                hpBack.getPosition().y + 2.f
+                });
+
+            hungerText.setPosition({
+                hungerBack.getPosition().x + textPadding,
+                hungerBack.getPosition().y + 2.f
+                });
+
+            thirstText.setPosition({
+                thirstBack.getPosition().x + textPadding,
+                thirstBack.getPosition().y + 2.f
+                });
+        }
+
         while (std::optional<sf::Event> event = window.pollEvent())
         {
-            if (event->is<sf::Event::Closed>())
-            {
-                AuthManager::getInstance().saveInventory(username.c_str(), inventory.getInventoryData());
-                window.close();
-            }
+            if (event->is<sf::Event::Closed>()) window.close();
 
             if (auto* key = event->getIf<sf::Event::KeyPressed>())
             {
                 if (key->scancode == sf::Keyboard::Scancode::Escape)
-                {
-                    AuthManager::getInstance().saveInventory(username.c_str(), inventory.getInventoryData());
                     return;
-                }
 
                 if (key->scancode == sf::Keyboard::Scancode::I && !invKeyHeld)
                 {
                     inventoryOpen = !inventoryOpen;
                     invKeyHeld = true;
                 }
-
-                if (key->scancode == sf::Keyboard::Scancode::B)
-                {
-
-				}
 
                 if (key->scancode == sf::Keyboard::Scancode::Space)
                 {
@@ -228,8 +372,38 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         float dy = a->sprite.getPosition().y - sprite.getPosition().y;
                         float dist = std::sqrt(dx * dx + dy * dy);
 
-                        if (dist < 60.f)
+                        if (dist < 60.f && a->health > 0)
+                        {
                             a->health -= 25.f;
+                            a->isHurt = true;
+                            a->hurtTimer = 0.15f;
+
+                            // 🔥 KNOCKBACK GOES HERE
+                            sf::Vector2f dir = a->sprite.getPosition() - sprite.getPosition();
+                            float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+                            if (len != 0.f) dir /= len;
+                            a->sprite.move(dir * 40.f);
+                        }
+                    }
+
+                    for (auto& a : monsters)
+                    {
+                        float dx = a->sprite.getPosition().x - sprite.getPosition().x;
+                        float dy = a->sprite.getPosition().y - sprite.getPosition().y;
+                        float dist = std::sqrt(dx * dx + dy * dy);
+
+                        if (dist < 60.f && a->health > 0)
+                        {
+                            a->health -= 25.f;
+                            a->isHurt = true;
+                            a->hurtTimer = 0.15f;
+
+                            // 🔥 KNOCKBACK GOES HERE
+                            sf::Vector2f dir = a->sprite.getPosition() - sprite.getPosition();
+                            float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+                            if (len != 0.f) dir /= len;
+                            a->sprite.move(dir * 40.f);
+                        }
                     }
                 }
             }
@@ -262,6 +436,28 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else if (inventoryOpen)
                     {
                         inventory.handleClick(mouse->position, window);
+                        int slot = inventory.getSelectedSlot();
+                        if (slot != -1 && inventory.hasItem(slot))
+                        {
+                            const sf::Texture* tex = inventory.getItemTexture(slot);
+
+                            if (tex == ChickenMeat::getTexture())
+                            {
+                                hunger = std::max(0.f, hunger - 30.f);
+                                inventory.consumeItem(slot);
+                            }
+                            else if (tex == PigMeat::getTexture())
+                            {
+                                hunger = std::max(0.f, hunger - 45.f);
+                                inventory.consumeItem(slot);
+                            }
+                            else if (tex == ZombieFlesh::getTexture())
+                            {
+                                hunger = std::max(0.f, hunger - 20.f);
+                                hp = std::max(0.f, hp - 10.f); // eating zombie flesh hurts you
+                                inventory.consumeItem(slot);
+                            }
+                        }
                     }
                 }
             }
@@ -285,26 +481,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
 
             sprite.setTexture(animSouth.getCurrentTexture());
+            inventory.setItem(0, animSouth.getCurrentTexture(), 5);
             animLoadedForSelection = true;
-
-            std::vector<std::pair<int, int>> invData = AuthManager::getInstance().loadInventory(username.c_str());
-            for (int i = 0; i < 10 && i < invData.size(); ++i)
-            {
-                int id = invData[i].first;
-                int count = invData[i].second;
-                if (id != 0 && count > 0)
-                {
-                    const sf::Texture* tex = nullptr;
-                    if (id == ITEM_WOOD) tex = &woodTex;
-                    else if (id == ITEM_STONE) tex = &stoneTex;
-                    else if (id == ITEM_TREE) tex = &treeTex;
-                    else if (id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
-                    else if (id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
-                    else if (id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
-
-                    if (tex) inventory.setItem(i, id, *tex, count);
-                }
-            }
         }
 
         if (selectionDone && musicLoaded && !musicStarted)
@@ -356,87 +534,228 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     }
                 }
 
-        animSouth.playing = animNorth.playing = animEast.playing = animWest.playing = false;
+            }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::W))
-        {
-            sprite.move({ 0.f, -MOVE_SPEED * dt });
-            currentDir = Dir::North;
-            animNorth.playing = true;
+            animSouth.playing = animNorth.playing = animEast.playing = animWest.playing = false;
+
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::W))
+            {
+                sprite.move({ 0.f, -MOVE_SPEED * dt });
+                currentDir = Dir::North;
+                animNorth.playing = true;
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::S))
+            {
+                sprite.move({ 0.f, MOVE_SPEED * dt });
+                currentDir = Dir::South;
+                animSouth.playing = true;
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::A))
+            {
+                sprite.move({ -MOVE_SPEED * dt, 0.f });
+                currentDir = Dir::West;
+                animWest.playing = true;
+            }
+            else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::D))
+            {
+                sprite.move({ MOVE_SPEED * dt, 0.f });
+                currentDir = Dir::East;
+                animEast.playing = true;
+            }
+            else
+            {
+                animSouth.stopAtFirst();
+                animNorth.stopAtFirst();
+                animEast.stopAtFirst();
+                animWest.stopAtFirst();
+            }
+
+            animSouth.update(dt);
+            animNorth.update(dt);
+            animEast.update(dt);
+            animWest.update(dt);
+
+            if (currentDir == Dir::South) sprite.setTexture(animSouth.getCurrentTexture(), true);
+            if (currentDir == Dir::North) sprite.setTexture(animNorth.getCurrentTexture(), true);
+            if (currentDir == Dir::East)  sprite.setTexture(animEast.getCurrentTexture(), true);
+            if (currentDir == Dir::West)  sprite.setTexture(animWest.getCurrentTexture(), true);
+
+            UpdateCamera(window, sprite, MAP_WIDTH, MAP_HEIGHT);
+
+            sf::Vector2f pondCenter(
+                pondBounds.position.x + pondBounds.size.x * 0.5f,
+                pondBounds.position.y + pondBounds.size.y * 0.5f
+            );
+
+            float dx = sprite.getPosition().x - pondCenter.x;
+            float dy = sprite.getPosition().y - pondCenter.y;
+
+            float distance = std::sqrt(dx * dx + dy * dy);
+
+            nearPond = distance < 80.f; // ← smaller radius
+
+
+            window.clear(sf::Color::White);
+            window.draw(background);
+            window.draw(pond);
+            itemManager.draw(window);
+            window.draw(sprite);
+
+            if (nearPond)
+            {
+                drinkText.setPosition({
+                    sprite.getPosition().x - 160.f,
+                    sprite.getPosition().y - 100.f
+                    });
+
+                window.draw(drinkText);
+            }
+
+            for (auto& a : animals)
+            {
+                if (a->health > 0)
+                    window.draw(a->sprite);
+            }
+
+            for (auto& a : animals)
+            {
+                if (a->health > 0)
+                    a->update(dt, sprite.getPosition());
+
+                // ---- CLAMP ANIMAL TO MAP (FULL SPRITE) ----
+                sf::FloatRect bounds = a->sprite.getGlobalBounds();
+                sf::Vector2f pos = a->sprite.getPosition();
+
+                if (bounds.position.x < 0.f)
+                    pos.x -= bounds.position.x;
+
+                if (bounds.position.y < 0.f)
+                    pos.y -= bounds.position.y;
+
+                if (bounds.position.x + bounds.size.x > MAP_WIDTH)
+                    pos.x -= (bounds.position.x + bounds.size.x - MAP_WIDTH);
+
+                if (bounds.position.y + bounds.size.y > MAP_HEIGHT)
+                    pos.y -= (bounds.position.y + bounds.size.y - MAP_HEIGHT);
+
+                a->sprite.setPosition(pos);
+            }
+
+            for (auto& a : animals)
+            {
+                if (a->health <= 0 && !a->droppedLoot)
+                {
+                    itemManager.addItem(
+                        a->getFoodItemID(),
+                        *a->getFoodTexture(),
+                        a->sprite.getPosition(),
+                        a->getFoodDropCount()
+                    );
+
+                    a->droppedLoot = true;
+                }
+            }
+
+            for (auto& m : monsters)
+            {
+                if (m->health > 0)
+                    m->update(dt, sprite.getPosition());
+
+                sf::FloatRect zombieBounds = m->sprite.getGlobalBounds();
+                sf::FloatRect playerBounds = sprite.getGlobalBounds();
+
+                sf::FloatRect z = m->sprite.getGlobalBounds();
+                sf::FloatRect p = sprite.getGlobalBounds();
+
+                bool hit =
+                    z.position.x < p.position.x + p.size.x &&
+                    z.position.x + z.size.x > p.position.x &&
+                    z.position.y < p.position.y + p.size.y &&
+                    z.position.y + z.size.y > p.position.y;
+
+                if (hit)
+                {
+                    zombieAttackTimer += dt;
+
+                    if (zombieAttackTimer >= ZOMBIE_ATTACK_COOLDOWN)
+                    {
+                        m->health -= ZOMBIE_DAMAGE;
+                        zombieAttackTimer = 0.f;
+                    }
+                }
+
+                sf::FloatRect bounds = m->sprite.getGlobalBounds();
+                sf::Vector2f pos = m->sprite.getPosition();
+
+                if (bounds.position.x < 0.f)
+                    pos.x -= bounds.position.x;
+
+                if (bounds.position.y < 0.f)
+                    pos.y -= bounds.position.y;
+
+                if (bounds.position.x + bounds.size.x > MAP_WIDTH)
+                    pos.x -= (bounds.position.x + bounds.size.x - MAP_WIDTH);
+
+                if (bounds.position.y + bounds.size.y > MAP_HEIGHT)
+                    pos.y -= (bounds.position.y + bounds.size.y - MAP_HEIGHT);
+
+                m->sprite.setPosition(pos);
+            }
+
+            for (auto& m : monsters)
+            {
+                if (m->health <= 0 && !m->droppedLoot)
+                {
+                    itemManager.addItem(
+                        m->getFoodItemID(),
+                        *m->getFoodTexture(),
+                        m->sprite.getPosition(),
+                        m->getFoodDropCount()
+                    );
+
+                    m->droppedLoot = true;
+                }
+            }
+
+            for (auto& m : monsters)
+            {
+                if (m->health > 0)
+                    window.draw(m->sprite);
+            }
+
+
+
+            float nearestDist = itemManager.getNearestDistance(sprite);
+            int nearestID = itemManager.getNearestItemID(sprite);
+            const float RADIUS = 250.f;
+
+            if (nearestDist < RADIUS)
+            {
+                sf::Text prompt(font, "", 32);
+                prompt.setFillColor(sf::Color::Yellow);
+
+                if (nearestID == ITEM_TREE)
+                    prompt.setString("Press E to chop tree");
+                else prompt.setString("Press E to pick up");
+
+                prompt.setPosition({ sprite.getPosition().x - 120, sprite.getPosition().y - 80 });
+
+                window.draw(prompt);
+            }
+
+            static sf::Clock drinkClock;
+
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::E))
+            {
+                itemManager.tryPickup(sprite, inventory);
+
+                if (nearPond && drinkClock.getElapsedTime().asSeconds() > 1.f)
+                {
+                    thirst = std::max(0.f, thirst - 40.f);
+                    drinkClock.restart();
+                }
+            }
         }
-        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::S))
-        {
-            sprite.move({ 0.f, MOVE_SPEED * dt });
-            currentDir = Dir::South;
-            animSouth.playing = true;
-        }
-        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::A))
-        {
-            sprite.move({ -MOVE_SPEED * dt, 0.f });
-            currentDir = Dir::West;
-            animWest.playing = true;
-        }
-        else if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::D))
-        {
-            sprite.move({ MOVE_SPEED * dt, 0.f });
-            currentDir = Dir::East;
-            animEast.playing = true;
-        }
-        else
-        {
-            animSouth.stopAtFirst();
-            animNorth.stopAtFirst();
-            animEast.stopAtFirst();
-            animWest.stopAtFirst();
-        }
-
-        animSouth.update(dt);
-        animNorth.update(dt);
-        animEast.update(dt);
-        animWest.update(dt);
-
-        if (currentDir == Dir::South) sprite.setTexture(animSouth.getCurrentTexture(), true);
-        if (currentDir == Dir::North) sprite.setTexture(animNorth.getCurrentTexture(), true);
-        if (currentDir == Dir::East)  sprite.setTexture(animEast.getCurrentTexture(), true);
-        if (currentDir == Dir::West)  sprite.setTexture(animWest.getCurrentTexture(), true);
-
-        UpdateCamera(window, sprite, MAP_WIDTH, MAP_HEIGHT);
-
-        window.clear(sf::Color::White);
-        window.draw(background);
-        itemManager.draw(window);
-        window.draw(sprite);
-
-        for (auto& a : animals)
-        {
-            if (a->health > 0)
-                window.draw(a->sprite);
-        }
-
-        float nearestDist = itemManager.getNearestDistance(sprite);
-        int nearestID = itemManager.getNearestItemID(sprite);
-        const float RADIUS = 250.f;
-
-        if (nearestDist < RADIUS)
-        {
-            sf::Text prompt(font, "", 32);
-            prompt.setFillColor(sf::Color::Yellow);
-
-            if (nearestID == ITEM_TREE)
-                prompt.setString("Press E to chop tree");
-            else prompt.setString("Press E to pick up");
-
-            prompt.setPosition({ sprite.getPosition().x - 120, sprite.getPosition().y - 80 });
-
-            window.draw(prompt);
-        }
-
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Scan::E))
-        {
-
-            itemManager.tryPickup(sprite, inventory);
-        }
-
         const float totalCycleTime = 900.f;
         float cycleValue = std::fmod(dayNightClock.getElapsedTime().asSeconds(), totalCycleTime);
         float t = cycleValue / totalCycleTime;
@@ -445,21 +764,45 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         darkness.setFillColor(sf::Color(0, 0, 0, darknessLevel));
         window.draw(darkness);
 
-        bool isNight = (timeOfDay < 0.35f);
+        bool isNight = (darknessLevel > 80);
 
         if (inventoryOpen)
         {
             window.setView(window.getDefaultView());
+
+            window.draw(hpBack);
+            window.draw(hpBar);
+            window.draw(hpIcon);
+            window.draw(hpText);
+
+            window.draw(hungerBack);
+            window.draw(hungerBar);
+            window.draw(hungerIcon);
+            window.draw(hungerText);
+
+            window.draw(thirstBack);
+            window.draw(thirstBar);
+            window.draw(thirstIcon);
+            window.draw(thirstText);
+
             inventory.draw(window);
         }
 
-        if (isNight && !nightMusicLoaded)
+
+        // NIGHT MUSIC LOGIC (FIXED)
+        if (isNight && !wasNight)
         {
-            if (!nightMusic.openFromFile(
-                "C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Music/Shirfine_-_Illusionary_Daytime_(mp3.pm).mp3"
-            ))
+            wasNight = true;
+
+            monsters.clear();
+
+            const int ZOMBIE_COUNT = 6;
+
+            for (int i = 0; i < ZOMBIE_COUNT; ++i)
             {
-                std::cerr << "Failed to load night music\n";
+                monsters.push_back(std::make_unique<Zombie>(
+                    sf::Vector2f(randX(gen), randY(gen))
+                ));
             }
 
             bgMusic.stop();                     // ✅ STOP DAY MUSIC
@@ -541,7 +884,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 for (int a = 0; a < 50; ++a)
                 {
                     sf::Vector2f p(randX(gen), randY(gen));
-                    if (itemManager.isAreaFreeExplicit(p, MIN_DISTANCE, &treeTex))
+                    if (!isInWater(p, pondBounds) &&
+                        itemManager.isAreaFreeExplicit(p, MIN_DISTANCE, &treeTex))
                     {
                         itemManager.addItem(ITEM_TREE, treeTex, p, 1);
                         break;
@@ -564,28 +908,21 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             itemSpawned = true;
 
-            animals.push_back(std::make_unique<Chicken>(sf::Vector2f(900.f, 700.f)));
-            animals.push_back(std::make_unique<Pig>(sf::Vector2f(1200.f, 600.f)));
+            const int CHICKEN_COUNT = 10;
+            const int PIG_COUNT = 6;
 
-            for (auto& a : animals)
+            for (int i = 0; i < CHICKEN_COUNT; ++i)
             {
-                if (a->health > 0)
-                    a->update(dt, sprite.getPosition());
+                animals.push_back(std::make_unique<Chicken>(
+                    sf::Vector2f(randX(gen), randY(gen))
+                ));
             }
 
-            for (auto& a : animals)
+            for (int i = 0; i < PIG_COUNT; ++i)
             {
-                if (a->health <= 0 && !a->droppedLoot)
-                {
-                    itemManager.addItem(
-                        a->getFoodItemID(),
-                        *a->getFoodTexture(),
-                        a->sprite.getPosition(),
-                        a->getFoodDropCount()
-                    );
-
-                    a->droppedLoot = true;
-                }
+                animals.push_back(std::make_unique<Pig>(
+                    sf::Vector2f(randX(gen), randY(gen))
+                ));
             }
 
         }
