@@ -27,7 +27,7 @@ Inventory::Inventory()
     }
 }
 
-void Inventory::setItem(int index, int id, const sf::Texture& texture, int count)
+void Inventory::setItem(int index, const sf::Texture& texture, int count)
 {
     if (index < 0 || index >= SLOT_COUNT) return;
 
@@ -49,7 +49,6 @@ void Inventory::setItem(int index, int id, const sf::Texture& texture, int count
         slots[index].icon->setScale({ scale, scale });
     }
 
-    slots[index].id = id;
     slots[index].count = count;
     slots[index].occupied = true;
 }
@@ -104,9 +103,7 @@ void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& wind
     if (slot != -1)
     {
         selectedSlot = slot;
-        slotBox[slot].setFillColor(sf::Color::Yellow);
     }
-
 }
 
 
@@ -126,13 +123,17 @@ int Inventory::getSlotAt(sf::Vector2f mousePos)
 
 void Inventory::addItem(int id, const sf::Texture& texture, int amount)
 {
-    // 1) Try stacking in a slot with the same id
+    // 1) Try stacking in a slot with the same texture
     for (int i = 0; i < SLOT_COUNT; i++)
     {
-        if (slots[i].occupied && slots[i].id == id)
+        if (slots[i].occupied && slots[i].icon)
         {
-            slots[i].count += amount;
-            return;
+            // Compare texture pointers to detect same item type
+            if (&slots[i].icon->getTexture() == &texture)
+            {
+                slots[i].count += amount;
+                return;
+            }
         }
     }
 
@@ -157,7 +158,6 @@ void Inventory::addItem(int id, const sf::Texture& texture, int amount)
                 slots[i].icon->setScale({ scale, scale });
             }
 
-            slots[i].id = id;
             slots[i].count = amount;   // show count = 1
             slots[i].occupied = true;
             return;
@@ -194,19 +194,4 @@ void Inventory::clear()
     }
 }
 
-std::vector<std::pair<int, int>> Inventory::getInventoryData() const
-{
-    std::vector<std::pair<int, int>> data;
-    for (int i = 0; i < SLOT_COUNT; ++i)
-    {
-        if (slots[i].occupied)
-        {
-            data.push_back({slots[i].id, slots[i].count});
-        }
-        else
-        {
-            data.push_back({0, 0});
-        }
-    }
-    return data;
-}
+

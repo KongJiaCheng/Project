@@ -15,4 +15,7 @@ public:
     {
         texture.loadFromFile("../Items/ChickenMeat.png");
     }
+
+    static const sf::Texture* getTexture();
+
 };

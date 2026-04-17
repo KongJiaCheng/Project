@@ -16,4 +16,6 @@ public:
         texture.loadFromFile("../Items/PigMeat.png");
     }
 
+    static const sf::Texture* getTexture();
+
 };

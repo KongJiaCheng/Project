@@ -159,6 +159,7 @@
     <ClInclude Include="Item.h" />
     <ClInclude Include="ItemID.h" />
     <ClInclude Include="ItemManager.h" />
+    <ClInclude Include="Monster.h" />
     <ClInclude Include="Pig.h" />
     <ClInclude Include="PigMeat.h" />
     <ClInclude Include="Settings.h" />
