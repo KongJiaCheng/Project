@@ -13,7 +13,7 @@
 // --------------------------------------------------
 ItemManager::ItemManager()
 {
-    if (!woodTexture.loadFromFile("C:/Users/DELL/Desktop/RobotAliceSkull/RAS Project/RAS Game/x64/Debug/Items/wood.png"))
+    if (!woodTexture.loadFromFile("../Items/wood.png"))
     {
         std::cerr << "failed to load wood texture!\n";
     }

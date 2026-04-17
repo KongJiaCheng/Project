@@ -13,7 +13,7 @@ public:
 
     static void loadTexture()
     {
-        texture.loadFromFile("C:\\Users\\DELL\\Desktop\\RobotAliceSkull\\RAS Project\\RAS Game\\x64\\Debug\\Items\\PigMeat.png");
+        texture.loadFromFile("../Items/PigMeat.png");
     }
 
 };
