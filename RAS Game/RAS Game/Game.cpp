@@ -892,7 +892,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     isChatting = false;
                     chatInput.setFocus(false);
                     chatInput.clear();
-                } else if (key->scancode == sf::Keyboard::Scancode::R && placementMode) {
+                } else if (key->scancode == globalSettings.keyRotate && placementMode) {
                     // Toggle rotation
                     placementRotation = (placementRotation == 0.f) ? 90.f : 0.f;
                 }
@@ -2183,7 +2183,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
                 else preview.setScale({ 0.3f, 0.3f });
 
-                preview.setColor(sf::Color(255, 255, 255, 150));
+                preview.setColor(sf::Color(255, 255, 255, 180)); // Slightly more opaque for better visibility
                 preview.setPosition(placementPos);
                 window.draw(preview);
             }

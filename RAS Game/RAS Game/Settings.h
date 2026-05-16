@@ -14,6 +14,7 @@ struct GameSettings {
     sf::Keyboard::Scancode keySprint = sf::Keyboard::Scancode::LShift;
     sf::Keyboard::Scancode keyAttack = sf::Keyboard::Scancode::Space;
     sf::Keyboard::Scancode keyChat = sf::Keyboard::Scancode::T;
+    sf::Keyboard::Scancode keyRotate = sf::Keyboard::Scancode::R;
 };
 
 extern GameSettings globalSettings;
