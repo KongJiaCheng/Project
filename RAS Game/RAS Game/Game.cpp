@@ -303,6 +303,70 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE" }
     };
 
+    auto getItemPrice = [&](int id) -> int {
+        // If it's a raw material in stock market, get its current price
+        for (auto& sItem : stockMarket) {
+            if (sItem.id == id) {
+                return (int)sItem.currentPrice;
+            }
+        }
+        
+        // Otherwise, base it on the current ingredient values!
+        int woodPrice = 5;
+        int stonePrice = 8;
+        for (auto& sItem : stockMarket) {
+            if (sItem.id == ITEM_WOOD) woodPrice = (int)sItem.currentPrice;
+            if (sItem.id == ITEM_STONE) stonePrice = (int)sItem.currentPrice;
+        }
+        
+        switch (id) {
+            case ITEM_WOODEN_SWORD: // 8 Wood
+                return woodPrice * 8 + 15;
+            case ITEM_SHIELD: // 10 Wood + 5 Stone
+                return woodPrice * 10 + stonePrice * 5 + 25;
+            case ITEM_FURNACE: // 8 Stone
+                return stonePrice * 8 + 20;
+            case ITEM_WOOD_TILE: // 1 Wood
+                return woodPrice * 1;
+            case ITEM_WOOD_WALL: // 1 Wood
+                return woodPrice * 1;
+            case ITEM_WOOD_DOOR: // 5 Wood
+                return woodPrice * 5 + 5;
+            case ITEM_WOOD_ROOF: // 5 Wood
+                return woodPrice * 5 + 5;
+            case ITEM_WOOD_STAIRS: // 8 Wood
+                return woodPrice * 8 + 8;
+            case ITEM_BED: // 4 Wood + 3 Zombie Flesh (as wool substitute!)
+                {
+                    int fleshPrice = 12;
+                    for (auto& sItem : stockMarket) {
+                        if (sItem.id == ITEM_ZOMBIE_FLESH) fleshPrice = (int)sItem.currentPrice;
+                    }
+                    return woodPrice * 4 + fleshPrice * 3 + 30;
+                }
+            default:
+                return 10; // Default fallback
+        }
+    };
+
+    auto getItemName = [&](int id) -> std::string {
+        for (auto& sItem : stockMarket) {
+            if (sItem.id == id) return sItem.name;
+        }
+        switch (id) {
+            case ITEM_WOODEN_SWORD: return "Wooden Sword";
+            case ITEM_SHIELD: return "Sturdy Shield";
+            case ITEM_FURNACE: return "Furnace";
+            case ITEM_WOOD_TILE: return "Wood Tile";
+            case ITEM_WOOD_WALL: return "Wood Wall";
+            case ITEM_WOOD_DOOR: return "Wood Door";
+            case ITEM_WOOD_ROOF: return "Wood Roof";
+            case ITEM_WOOD_STAIRS: return "Wood Stairs";
+            case ITEM_BED: return "Bed";
+            default: return "Unknown Item";
+        }
+    };
+
     // Prepopulate history for beautiful stock charts on start
     for (int step = 0; step < 8; ++step) {
         for (auto& item : stockMarket) {
@@ -1384,21 +1448,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             int pVal = playerTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (playerTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    pVal += playerTradeSlots[i].count * price;
+                                    pVal += playerTradeSlots[i].count * getItemPrice(playerTradeSlots[i].id);
                                 }
                             }
                             int nVal = npcTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (npcTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    nVal += npcTradeSlots[i].count * price;
+                                    nVal += npcTradeSlots[i].count * getItemPrice(npcTradeSlots[i].id);
                                 }
                             }
                             // NPC increases gold up to what the player offered
@@ -1419,21 +1475,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             int pVal = playerTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (playerTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    pVal += playerTradeSlots[i].count * price;
+                                    pVal += playerTradeSlots[i].count * getItemPrice(playerTradeSlots[i].id);
                                 }
                             }
                             int nVal = npcTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (npcTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    nVal += npcTradeSlots[i].count * price;
+                                    nVal += npcTradeSlots[i].count * getItemPrice(npcTradeSlots[i].id);
                                 }
                             }
                             if (pVal >= nVal) {
@@ -1494,7 +1542,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                                 // Populate NPC slots randomly with 1-3 items
                                 int itemsCount = 1 + (rand() % 3);
-                                std::vector<int> possibleIds = { ITEM_WOOD, ITEM_STONE, ITEM_SAPLING, ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_ZOMBIE_FLESH };
+                                std::vector<int> possibleIds = { 
+                                    ITEM_WOOD, ITEM_STONE, ITEM_SAPLING, 
+                                    ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_ZOMBIE_FLESH,
+                                    ITEM_WOODEN_SWORD, ITEM_SHIELD, ITEM_FURNACE, ITEM_BED,
+                                    ITEM_WOOD_TILE, ITEM_WOOD_WALL, ITEM_WOOD_DOOR, ITEM_WOOD_ROOF, ITEM_WOOD_STAIRS
+                                };
                                 for (int i = 0; i < itemsCount; i++) {
                                     int randIdx = rand() % possibleIds.size();
                                     int id = possibleIds[randIdx];
@@ -1506,11 +1559,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     else if (id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
                                     else if (id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
                                     else if (id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
+                                    else if (id == ITEM_WOODEN_SWORD) tex = &woodenSwordTex;
+                                    else if (id == ITEM_SHIELD) tex = &shieldTex;
+                                    else if (id == ITEM_FURNACE) tex = &furnaceTex;
+                                    else if (id == ITEM_BED) tex = &bedTex;
+                                    else if (id == ITEM_WOOD_TILE) tex = &woodTileTex;
+                                    else if (id == ITEM_WOOD_WALL) tex = &woodWallTex;
+                                    else if (id == ITEM_WOOD_DOOR) tex = &woodDoorTex;
+                                    else if (id == ITEM_WOOD_ROOF) tex = &woodRoofTex;
+                                    else if (id == ITEM_WOOD_STAIRS) tex = &woodStairsTex;
 
                                     if (tex) {
                                         npcTradeSlots[i].id = id;
                                         npcTradeSlots[i].tex = tex;
-                                        npcTradeSlots[i].count = 1 + (rand() % 8);
+                                        if (id == ITEM_WOODEN_SWORD || id == ITEM_SHIELD || id == ITEM_FURNACE || id == ITEM_BED) {
+                                            npcTradeSlots[i].count = 1; // Only 1 equipment/furniture unit
+                                        } else if (id == ITEM_WOOD_TILE || id == ITEM_WOOD_WALL || id == ITEM_WOOD_DOOR || id == ITEM_WOOD_ROOF || id == ITEM_WOOD_STAIRS) {
+                                            npcTradeSlots[i].count = 2 + (rand() % 4); // 2 to 5 building parts
+                                        } else {
+                                            npcTradeSlots[i].count = 1 + (rand() % 8); // 1 to 8 raw materials
+                                        }
                                     }
                                 }
 
@@ -2948,6 +3016,44 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     item.trend = "STABLE";
                 }
             }
+
+            // Simulate a background market transaction by virtual players to keep statistics alive!
+            if (rand() % 100 < 80) { // 80% chance every 60 seconds
+                std::vector<std::string> virtualPlayers = { "MinerBob", "LumberjackJack", "HunterMax", "SwordSmith", "GoldDigger", "FarmerFred" };
+                std::string vPlayer = virtualPlayers[rand() % virtualPlayers.size()];
+                std::string vAction = (rand() % 2 == 0) ? "SELL" : "BUY";
+                
+                // Choose a random item (both raw materials & crafted gear!)
+                std::vector<std::pair<int, std::string>> vItems = {
+                    { ITEM_WOOD, "Wood" },
+                    { ITEM_STONE, "Stone" },
+                    { ITEM_SAPLING, "Sapling" },
+                    { ITEM_CHICKEN_MEAT, "Chicken Meat" },
+                    { ITEM_PIG_MEAT, "Pig Meat" },
+                    { ITEM_ZOMBIE_FLESH, "Zombie Flesh" },
+                    { ITEM_WOODEN_SWORD, "Wooden Sword" },
+                    { ITEM_SHIELD, "Sturdy Shield" },
+                    { ITEM_FURNACE, "Furnace" },
+                    { ITEM_BED, "Bed" }
+                };
+                auto chosenItem = vItems[rand() % vItems.size()];
+                int itemId = chosenItem.first;
+                std::string itemName = chosenItem.second;
+                
+                int qty = 1;
+                if (itemId == ITEM_WOOD || itemId == ITEM_STONE || itemId == ITEM_SAPLING) {
+                    qty = 5 + (rand() % 16); // 5 to 20
+                } else if (itemId == ITEM_CHICKEN_MEAT || itemId == ITEM_PIG_MEAT || itemId == ITEM_ZOMBIE_FLESH) {
+                    qty = 2 + (rand() % 9); // 2 to 10
+                } else {
+                    qty = 1 + (rand() % 3); // 1 to 3
+                }
+                
+                int unitPrice = getItemPrice(itemId);
+                int totalG = qty * unitPrice;
+                
+                authManager.addTradeRecord(vPlayer.c_str(), vAction, itemName, qty, unitPrice, totalG);
+            }
         }
 
         const float totalCycleTime = 900.f;
@@ -3304,21 +3410,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             int playerTotalValue = playerTradeGold;
             for (int i = 0; i < 4; i++) {
                 if (playerTradeSlots[i].tex != nullptr) {
-                    int price = 0;
-                    for (auto& item : stockMarket) {
-                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
-                    }
-                    playerTotalValue += playerTradeSlots[i].count * price;
+                    playerTotalValue += playerTradeSlots[i].count * getItemPrice(playerTradeSlots[i].id);
                 }
             }
             int npcTotalValue = npcTradeGold;
             for (int i = 0; i < 4; i++) {
                 if (npcTradeSlots[i].tex != nullptr) {
-                    int price = 0;
-                    for (auto& item : stockMarket) {
-                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
-                    }
-                    npcTotalValue += npcTradeSlots[i].count * price;
+                    npcTotalValue += npcTradeSlots[i].count * getItemPrice(npcTradeSlots[i].id);
                 }
             }
 
