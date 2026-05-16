@@ -24,6 +24,7 @@ public:
         );
 
         sprite.setPosition(pos);
+        sprite.setScale({ 1.5f, 1.5f });
     }
 
     int getFoodItemID() const override

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <limits>
@@ -38,6 +38,7 @@ public:
         const sf::Texture* stone
     );
 
+    std::vector<Item>& getItems();
     const std::vector<Item>& getItems() const;
 
     void addItem(int id, const sf::Texture& texture, sf::Vector2f pos, int quantity);
