@@ -147,7 +147,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     buttonText2.setPosition(button2.getPosition());
 
     sf::Texture bgTexture;
-    bgTexture.loadFromFile("../Items/Background.jpg");
+    (void)bgTexture.loadFromFile("../Items/Background.jpg");
 
     sf::Sprite background(bgTexture);
     float scaleX = float(MAP_WIDTH) / bgTexture.getSize().x;
@@ -192,12 +192,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
 
     sf::Texture hpIconTex, hungerIconTex, thirstIconTex;
-    hpIconTex.loadFromFile("../Sprites/UI/hp.png");
-    hungerIconTex.loadFromFile("../Sprites/UI/hunger.png");
-    thirstIconTex.loadFromFile("../Sprites/UI/thirst.png");
+    (void)hpIconTex.loadFromFile("../Sprites/UI/hp.png");
+    (void)hungerIconTex.loadFromFile("../Sprites/UI/hunger.png");
+    (void)thirstIconTex.loadFromFile("../Sprites/UI/thirst.png");
 
     sf::Texture wrenchTex;
-    wrenchTex.loadFromFile("../Sprites/UI/wrench.png");
+    (void)wrenchTex.loadFromFile("../Sprites/UI/wrench.png");
 
     struct NPC {
         std::optional<sf::Sprite> sprite;
@@ -340,39 +340,39 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     ChickenMeat::loadTexture();
     PigMeat::loadTexture();
     ZombieFlesh::loadTexture();
-    Chicken::texture.loadFromFile("../Sprites/Animals/Chicken/South.png");
-    Pig::texture.loadFromFile("../Sprites/Animals/Pig/South.png");
-    Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/South.png");
+    (void)Chicken::texture.loadFromFile("../Sprites/Animals/Chicken/South.png");
+    (void)Pig::texture.loadFromFile("../Sprites/Animals/Pig/South.png");
+    (void)Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/South.png");
 
     sf::Texture woodTex, treeTex, stoneTex, pondTex, saplingTex, goldTex, woodenSwordTex, shieldTex;
     sf::Texture furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex;
     sf::Texture swordIconTex, shieldIconTex, tileIconTex, wallIconTex, doorIconTex, roofIconTex, stairsIconTex, bedIconTex;
     
-    woodTex.loadFromFile("../Items/wood.png");
-    treeTex.loadFromFile("../Items/Tree.png");
-    stoneTex.loadFromFile("../Items/Stone.png");
-    pondTex.loadFromFile("../Items/pond.png");
-    saplingTex.loadFromFile("../Items/sapling.png");
-    goldTex.loadFromFile("../Items/gold.png");
-    woodenSwordTex.loadFromFile("../Items/wooden sword.png");
-    shieldTex.loadFromFile("../Items/shield.png");
-    furnaceTex.loadFromFile("../Items/furnance.png");
-    woodTileTex.loadFromFile("../Items/wood tile.png");
-    woodWallTex.loadFromFile("../Items/wood wall.png");
-    woodDoorTex.loadFromFile("../Items/wooden door.png");
-    woodRoofTex.loadFromFile("../Items/wooden roof.png");
-    woodStairsTex.loadFromFile("../Items/wooden stairs.png");
-    bedTex.loadFromFile("../Items/bed.png");
+    (void)woodTex.loadFromFile("../Items/wood.png");
+    (void)treeTex.loadFromFile("../Items/Tree.png");
+    (void)stoneTex.loadFromFile("../Items/Stone.png");
+    (void)pondTex.loadFromFile("../Items/pond.png");
+    (void)saplingTex.loadFromFile("../Items/sapling.png");
+    (void)goldTex.loadFromFile("../Items/gold.png");
+    (void)woodenSwordTex.loadFromFile("../Items/wooden sword.png");
+    (void)shieldTex.loadFromFile("../Items/shield.png");
+    (void)furnaceTex.loadFromFile("../Items/furnance.png");
+    (void)woodTileTex.loadFromFile("../Items/wood tile.png");
+    (void)woodWallTex.loadFromFile("../Items/wood wall.png");
+    (void)woodDoorTex.loadFromFile("../Items/wooden door.png");
+    (void)woodRoofTex.loadFromFile("../Items/wooden roof.png");
+    (void)woodStairsTex.loadFromFile("../Items/wooden stairs.png");
+    (void)bedTex.loadFromFile("../Items/bed.png");
     
     // Load high quality icons
-    swordIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
-    shieldIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
-    tileIconTex.loadFromFile("../Items/building_parts_icons.png");
-    wallIconTex.loadFromFile("../Items/building_parts_icons.png");
-    doorIconTex.loadFromFile("../Items/building_parts_icons.png");
-    roofIconTex.loadFromFile("../Items/building_parts_icons.png");
-    stairsIconTex.loadFromFile("../Items/building_parts_icons.png");
-    bedIconTex.loadFromFile("../Items/bed.png");
+    (void)swordIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
+    (void)shieldIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
+    (void)tileIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)wallIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)doorIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)roofIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)stairsIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)bedIconTex.loadFromFile("../Items/bed.png");
 
     bool goldTexLoaded = (goldTex.getSize().x > 0);
     sf::Sprite goldSprite(goldTex);
