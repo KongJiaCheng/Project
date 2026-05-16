@@ -256,8 +256,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         float hurtTimer = 0.f;
         std::optional<sf::Sprite> sprite;
         float rotation = 0.f;
+        bool isOpen = false;
 
-        PlacedStructure(int i, const sf::Texture& tex, float rot = 0.f) : id(i), rotation(rot) {
+        PlacedStructure(int i, const sf::Texture& tex, float rot = 0.f, bool open = false) 
+            : id(i), rotation(rot), isOpen(open) {
             sprite.emplace(tex);
             maxHealth = 100.f;
             if (id == ITEM_WOOD_WALL) maxHealth = 200.f;
@@ -613,27 +615,37 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         qInfo.lastReset = today;
     }
 
-    auto applyStructureScale = [](sf::Sprite& spr, int id, float rotation) {
+    auto applyStructureScale = [](sf::Sprite& spr, int id, float rotation, bool isOpen = false) {
         if (id == ITEM_WOOD_TILE) spr.setScale({ 0.4f, 0.2f });
-        else if (id == ITEM_WOOD_WALL || id == ITEM_WOOD_DOOR) {
-            if (rotation == 90.f) spr.setScale({ 0.4f, 0.15f });
-            else spr.setScale({ 0.15f, 0.4f });
+        else if (id == ITEM_WOOD_WALL) {
+            if (rotation == 90.f) spr.setScale({ 0.45f, 0.12f }); // Z-axis (3D Depth)
+            else spr.setScale({ 0.12f, 0.45f }); // X-axis (Front)
+        }
+        else if (id == ITEM_WOOD_DOOR) {
+            if (isOpen) {
+                // Open door: simulated 3D swing
+                if (rotation == 90.f) spr.setScale({ 0.1f, 0.45f }); 
+                else spr.setScale({ 0.45f, 0.1f });
+            } else {
+                if (rotation == 90.f) spr.setScale({ 0.45f, 0.12f });
+                else spr.setScale({ 0.12f, 0.45f });
+            }
         }
         else if (id == ITEM_FURNACE) {
-            if (rotation == 90.f) spr.setScale({ 0.35f, 0.25f });
-            else spr.setScale({ 0.25f, 0.35f });
+            if (rotation == 90.f) spr.setScale({ 0.35f, 0.22f }); 
+            else spr.setScale({ 0.22f, 0.35f });
         }
         else if (id == ITEM_BED) {
+            if (rotation == 90.f) spr.setScale({ 0.48f, 0.22f });
+            else spr.setScale({ 0.22f, 0.48f });
+        }
+        else if (id == ITEM_WOOD_STAIRS) {
             if (rotation == 90.f) spr.setScale({ 0.45f, 0.25f });
             else spr.setScale({ 0.25f, 0.45f });
         }
-        else if (id == ITEM_WOOD_STAIRS) {
-            if (rotation == 90.f) spr.setScale({ 0.4f, 0.25f });
-            else spr.setScale({ 0.25f, 0.4f });
-        }
         else if (id == ITEM_WOOD_ROOF) {
-            if (rotation == 90.f) spr.setScale({ 0.4f, 0.25f });
-            else spr.setScale({ 0.25f, 0.4f });
+            if (rotation == 90.f) spr.setScale({ 0.45f, 0.22f });
+            else spr.setScale({ 0.22f, 0.45f });
         }
         else spr.setScale({ 0.3f, 0.3f });
     };
@@ -920,6 +932,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 } else if (key->scancode == globalSettings.keyRotate && placementMode) {
                     // Toggle rotation
                     placementRotation = (placementRotation == 0.f) ? 90.f : 0.f;
+                } else if (key->scancode == globalSettings.keyInteract && !isChatting && !placementMode) {
+                    // Try to interact with Door
+                    for (auto& s : structures) {
+                        if (s.id == ITEM_WOOD_DOOR) {
+                            sf::Vector2f dPos = s.sprite->getPosition();
+                            sf::Vector2f pPos = sprite.getPosition();
+                            float dist = std::sqrt(std::pow(dPos.x - pPos.x, 2) + std::pow(dPos.y - pPos.y, 2));
+                            if (dist < 150.f) {
+                                s.isOpen = !s.isOpen;
+                                applyStructureScale(*s.sprite, s.id, s.rotation, s.isOpen);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1384,19 +1410,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 if (placementFromInventorySlot != -1) {
                                     inventory.consumeItem(placementFromInventorySlot);
                                 }
-                                if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex, placementRotation);
-                                else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex, placementRotation);
-                                else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex, placementRotation);
-                                else if (placementItemID == ITEM_WOOD_DOOR) structures.emplace_back(ITEM_WOOD_DOOR, woodDoorTex, placementRotation);
-                                else if (placementItemID == ITEM_WOOD_ROOF) structures.emplace_back(ITEM_WOOD_ROOF, woodRoofTex, placementRotation);
-                                else if (placementItemID == ITEM_WOOD_STAIRS) structures.emplace_back(ITEM_WOOD_STAIRS, woodStairsTex, placementRotation);
-                                else if (placementItemID == ITEM_BED) structures.emplace_back(ITEM_BED, bedTex, placementRotation);
+                                if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_DOOR) structures.emplace_back(ITEM_WOOD_DOOR, woodDoorTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_ROOF) structures.emplace_back(ITEM_WOOD_ROOF, woodRoofTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_STAIRS) structures.emplace_back(ITEM_WOOD_STAIRS, woodStairsTex, placementRotation, false);
+                                else if (placementItemID == ITEM_BED) structures.emplace_back(ITEM_BED, bedTex, placementRotation, false);
                                 
                                 auto& newS = structures.back();
                                 sf::Vector2u ts = newS.sprite->getTexture().getSize();
                                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y }); // Bottom center for 3D depth
                                 
-                                applyStructureScale(*newS.sprite, placementItemID, placementRotation);
+                                applyStructureScale(*newS.sprite, placementItemID, placementRotation, false);
 
                                 newS.sprite->setPosition(placementPos);
                             }
@@ -1612,7 +1638,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 else if (s.id == ITEM_BED) tex = &bedTex;
 
                 if (tex) {
-                    structures.emplace_back(s.id, *tex, s.rotation);
+                    structures.emplace_back(s.id, *tex, s.rotation, s.isOpen);
                     auto& newS = structures.back();
                     newS.sprite->setPosition({ s.x, s.y });
                     newS.health = s.health;
@@ -1620,7 +1646,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     sf::Vector2u ts = newS.sprite->getTexture().getSize();
                     newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
                     
-                    applyStructureScale(*newS.sprite, s.id, s.rotation);
+                    applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen);
                 }
             }
 
@@ -1732,9 +1758,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             auto isBlocked = [&](sf::Vector2f targetPos) {
                 // 1. Structures (Walls, Furnace, Bed, Door)
                 for (auto& s : structures) {
-                    if (s.id == ITEM_WOOD_WALL || s.id == ITEM_FURNACE || s.id == ITEM_BED || s.id == ITEM_WOOD_DOOR) {
+                    if (s.id == ITEM_WOOD_WALL || s.id == ITEM_FURNACE || s.id == ITEM_BED) {
                         sf::FloatRect b = s.sprite->getGlobalBounds();
-                        // Shrink collision box to player's feet area
+                        b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
+                        b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                        if (b.contains(targetPos)) return true;
+                    }
+                    if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
+                        sf::FloatRect b = s.sprite->getGlobalBounds();
                         b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
                         b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
                         if (b.contains(targetPos)) return true;
@@ -2143,7 +2174,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 sf::Vector2u pts = preview.getTexture().getSize();
                 preview.setOrigin({ pts.x / 2.f, (float)pts.y });
                 
-                applyStructureScale(preview, placementItemID, placementRotation);
+                applyStructureScale(preview, placementItemID, placementRotation, false);
 
                 preview.setColor(sf::Color(255, 255, 255, 180)); // Slightly more opaque for better visibility
                 preview.setPosition(placementPos);
