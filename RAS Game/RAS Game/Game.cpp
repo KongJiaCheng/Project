@@ -248,13 +248,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     };
 
     std::vector<PlantedSapling> plantedSaplings;
-    struct StoredStructure {
-        int id;
-        float x, y, health;
-        float rotation;
-        bool isOpen = false;
-        float shearY = 0.f;
-    };
     struct PlacedStructure {
         int id;
         float health;
@@ -1683,7 +1676,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     sf::Vector2u ts = newS.sprite->getTexture().getSize();
                     newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
                     
-                    applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen);
+                    applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, newS.shearY);
                 }
             }
 
