@@ -34,7 +34,7 @@ void Inventory::setItem(int index, const sf::Texture& texture, int count)
 {
     if (index < 0 || index >= SLOT_COUNT) return;
 
-    // create sprite (sf::Sprite requires a texture on construction in SFML3)
+    slots[index].id = 0; // Unknown ID for legacy setItem
     slots[index].icon = std::make_unique<sf::Sprite>(texture);
 
     // position and optionally scale the icon to fit into slot
@@ -62,49 +62,52 @@ void Inventory::draw(sf::RenderWindow& window)
     window.setView(window.getDefaultView());
 
     float xStart = computeX(window);
-    float yPos = computeY(window);
+    float yStart = computeY(window);
 
-    // Update slot positions every frame
+    // Draw slots & icons in 2 rows of 10
     for (int i = 0; i < SLOT_COUNT; ++i)
     {
-        float px = xStart + (i - 2) * (boxW + 4.f);
-        slotBox[i].setPosition({ px, yPos });
+        int row = i / 10;
+        int col = i % 10;
+        float px = xStart + col * (boxW + 4.f);
+        float py = yStart + row * (boxH + 4.f);
 
-        if (slots[i].occupied && slots[i].icon)
-        {
-            slots[i].icon->setPosition({ px + 8, yPos + 8 });
-        }
-    }
-
-    // Draw slots & icons
-    for (int i = 0; i < SLOT_COUNT; ++i)
-    {
+        slotBox[i].setPosition({ px, py });
         window.draw(slotBox[i]);
 
         if (slots[i].occupied && slots[i].icon)
         {
+            slots[i].icon->setPosition({ px + 5.f, py + 5.f });
+            
+            // Re-scale if needed (though setItem/addItem does it, this is safe)
+            sf::Vector2u ts = slots[i].icon->getTexture().getSize();
+            float scaleX = (boxW - 10.f) / static_cast<float>(ts.x);
+            float scaleY = (boxH - 10.f) / static_cast<float>(ts.y);
+            float scale = std::min(scaleX, scaleY);
+            slots[i].icon->setScale({ scale, scale });
+
             window.draw(*slots[i].icon);
 
             countText->setString(std::to_string(slots[i].count));
             countText->setPosition({
-                slotBox[i].getPosition().x + boxW - 28,
-                slotBox[i].getPosition().y + boxH - 28
+                px + boxW - 25,
+                py + boxH - 25
                 });
             window.draw(*countText);
 
             if (slotEquipped[i]) {
-                sf::Text tickText(font, "V", 32);
+                sf::Text tickText(font, "V", 24);
                 tickText.setFillColor(sf::Color::Green);
                 tickText.setStyle(sf::Text::Bold);
-                tickText.setPosition({ slotBox[i].getPosition().x + 10, slotBox[i].getPosition().y + 5 });
+                tickText.setPosition({ px + 5, py + 2 });
                 window.draw(tickText);
 
                 // Draw durability bar
-                sf::RectangleShape durBg({ boxW - 20, 8 });
+                sf::RectangleShape durBg({ boxW - 10, 5 });
                 durBg.setFillColor(sf::Color::Red);
-                durBg.setPosition({ slotBox[i].getPosition().x + 10, slotBox[i].getPosition().y + boxH - 15 });
+                durBg.setPosition({ px + 5, py + boxH - 10 });
 
-                sf::RectangleShape durFg({ (boxW - 20) * ((float)slotDurability[i] / (float)slotMaxDurability[i]), 8 });
+                sf::RectangleShape durFg({ (boxW - 10) * ((float)slotDurability[i] / (float)slotMaxDurability[i]), 5 });
                 durFg.setFillColor(sf::Color::Green);
                 durFg.setPosition(durBg.getPosition());
 
@@ -156,17 +159,13 @@ int Inventory::getSlotAt(sf::Vector2f mousePos)
 
 void Inventory::addItem(int id, const sf::Texture& texture, int amount)
 {
-    // 1) Try stacking in a slot with the same texture
+    // 1) Try stacking in a slot with the same ID
     for (int i = 0; i < SLOT_COUNT; i++)
     {
-        if (slots[i].occupied && slots[i].icon)
+        if (slots[i].occupied && slots[i].id == id)
         {
-            // Compare texture pointers to detect same item type
-            if (&slots[i].icon->getTexture() == &texture)
-            {
-                slots[i].count += amount;
-                return;
-            }
+            slots[i].count += amount;
+            return;
         }
     }
 
@@ -175,6 +174,7 @@ void Inventory::addItem(int id, const sf::Texture& texture, int amount)
     {
         if (!slots[i].occupied)
         {
+            slots[i].id = id;
             slots[i].icon = std::make_unique<sf::Sprite>(texture);
             slots[i].icon->setPosition({
                 slotBox[i].getPosition().x + 8,
@@ -211,13 +211,14 @@ void Inventory::addItem(int id, const sf::Texture& texture, int amount)
 // Will be updated every frame to lock to window
 float Inventory::computeX(sf::RenderWindow& window)
 {
-    float totalWidth = SLOT_COUNT * (boxW + 4.f);
+    float totalWidth = 10 * (boxW + 4.f);
     return (window.getSize().x - totalWidth) / 2.f;
 }
 
 float Inventory::computeY(sf::RenderWindow& window)
 {
-    return window.getSize().y - (boxH + 40.f); // 40px above bottom
+    float totalHeight = 2 * (boxH + 4.f);
+    return window.getSize().y - (totalHeight + 40.f); // 40px above bottom
 }
 
 // ----------------------------------------------------

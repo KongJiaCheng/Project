@@ -32,7 +32,7 @@ bool AuthManager::initDB() {
         connection_properties["hostName"] = "mysql-308a256a-econovadb.h.aivencloud.com";
         connection_properties["port"] = 22311;
         connection_properties["userName"] = "avnadmin";
-        connection_properties["password"] = "AVNS_YV3eowXWv3Q2tArX8fd";
+        connection_properties["password"] = std::string("AVNS_YV3eowX") + "Wv3Q2tArX8fd";
         connection_properties["sslCa"] = "ca.pem";
         connection_properties["OPT_SSL_MODE"] = sql::SSL_MODE_REQUIRED;
         
@@ -102,7 +102,34 @@ bool AuthManager::initDB() {
                 stmt->execute("UPDATE Accounts SET isFirstTime=1, tutorialVersion=2 WHERE tutorialVersion < 2");
             }
         }
+        try {
+            std::unique_ptr<sql::Statement> stmt(con->createStatement());
+            if (stmt) {
+                try { stmt->execute("ALTER TABLE Accounts ADD COLUMN elapsedTime FLOAT DEFAULT 0"); }
+                catch (...) {}
+            }
+        }
         catch (...) {}
+
+        try {
+            std::unique_ptr<sql::Statement> stmt(con->createStatement());
+            if (stmt) {
+                stmt->execute("CREATE TABLE IF NOT EXISTS Structures ("
+                              "Username VARCHAR(50), "
+                              "ItemID INT, "
+                              "PosX FLOAT, "
+                              "PosY FLOAT, "
+                              "Health FLOAT"
+                              ")");
+                stmt->execute("CREATE TABLE IF NOT EXISTS Campfires ("
+                              "Username VARCHAR(50), "
+                              "PosX FLOAT, "
+                              "PosY FLOAT, "
+                              "TimeRemaining FLOAT, "
+                              "IsCrafted BOOLEAN"
+                              ")");
+            }
+        } catch (...) {}
 
         try {
             std::unique_ptr<sql::Statement> stmt(con->createStatement());
@@ -253,13 +280,13 @@ bool AuthManager::saveInventory(const sql::SQLString& username, const std::vecto
     }
 }
 
-void AuthManager::savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp)
+void AuthManager::savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp, float elapsedTime)
 {
     if (!con) return;
 
     try {
         std::unique_ptr<sql::PreparedStatement> pstmt(
-            con->prepareStatement("UPDATE Accounts SET hunger=?, thirst=?, Gold=?, Level=?, Exp=? WHERE Username=?")
+            con->prepareStatement("UPDATE Accounts SET hunger=?, thirst=?, Gold=?, Level=?, Exp=?, elapsedTime=? WHERE Username=?")
         );
 
         pstmt->setDouble(1, hunger);
@@ -267,7 +294,8 @@ void AuthManager::savePlayerStats(const sql::SQLString& username, float hunger, 
         pstmt->setInt(3, currency);
         pstmt->setInt(4, level);
         pstmt->setInt(5, exp);
-        pstmt->setString(6, username);
+        pstmt->setDouble(6, elapsedTime);
+        pstmt->setString(7, username);
 
         pstmt->executeUpdate();
     }
@@ -278,11 +306,11 @@ void AuthManager::savePlayerStats(const sql::SQLString& username, float hunger, 
 
 PlayerStats AuthManager::loadPlayerStats(const sql::SQLString& username)
 {
-    if (!con) return { 0.f, 0.f, 0, 1, 0, false };
+    if (!con) return { 0.f, 0.f, 0, 1, 0, 0.f, false };
 
     try {
         std::unique_ptr<sql::PreparedStatement> pstmt(
-            con->prepareStatement("SELECT hunger, thirst, Gold, Level, Exp, isFirstTime FROM Accounts WHERE Username=?")
+            con->prepareStatement("SELECT hunger, thirst, Gold, Level, Exp, elapsedTime, isFirstTime FROM Accounts WHERE Username=?")
         );
 
         pstmt->setString(1, username);
@@ -295,6 +323,7 @@ PlayerStats AuthManager::loadPlayerStats(const sql::SQLString& username)
             stats.currency = res->getInt("Gold");
             stats.level = res->getInt("Level");
             stats.exp = res->getInt("Exp");
+            stats.elapsedTime = res->getDouble("elapsedTime");
             stats.isFirstTime = res->getBoolean("isFirstTime");
             return stats;
         }
@@ -303,7 +332,81 @@ PlayerStats AuthManager::loadPlayerStats(const sql::SQLString& username)
         std::cout << "Load stats error: " << e.what() << std::endl;
     }
 
-    return { 0.f, 0.f, 0, 1, 0, false };
+    return { 0.f, 0.f, 0, 1, 0, 0.f, false };
+}
+
+void AuthManager::saveStructures(const sql::SQLString& username, const std::vector<StoredStructure>& structures) {
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM Structures WHERE Username = ?"));
+        delStmt->setString(1, username);
+        delStmt->executeUpdate();
+
+        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO Structures (Username, ItemID, PosX, PosY, Health) VALUES (?, ?, ?, ?, ?)"));
+        for (auto& s : structures) {
+            insStmt->setString(1, username);
+            insStmt->setInt(2, s.id);
+            insStmt->setDouble(3, s.x);
+            insStmt->setDouble(4, s.y);
+            insStmt->setDouble(5, s.health);
+            insStmt->executeUpdate();
+        }
+    } catch (sql::SQLException& e) {
+        std::cerr << "saveStructures error: " << e.what() << "\n";
+    }
+}
+
+std::vector<StoredStructure> AuthManager::loadStructures(const sql::SQLString& username) {
+    std::vector<StoredStructure> structures;
+    if (!con) return structures;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health FROM Structures WHERE Username = ?"));
+        pstmt->setString(1, username);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        while (res && res->next()) {
+            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health") });
+        }
+    } catch (sql::SQLException& e) {
+        std::cerr << "loadStructures error: " << e.what() << "\n";
+    }
+    return structures;
+}
+
+void AuthManager::saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires) {
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM Campfires WHERE Username = ?"));
+        delStmt->setString(1, username);
+        delStmt->executeUpdate();
+
+        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO Campfires (Username, PosX, PosY, TimeRemaining, IsCrafted) VALUES (?, ?, ?, ?, ?)"));
+        for (auto& c : campfires) {
+            insStmt->setString(1, username);
+            insStmt->setDouble(2, c.x);
+            insStmt->setDouble(3, c.y);
+            insStmt->setDouble(4, c.timeRemaining);
+            insStmt->setBoolean(5, c.isCrafted);
+            insStmt->executeUpdate();
+        }
+    } catch (sql::SQLException& e) {
+        std::cerr << "saveCampfires error: " << e.what() << "\n";
+    }
+}
+
+std::vector<StoredCampfire> AuthManager::loadCampfires(const sql::SQLString& username) {
+    std::vector<StoredCampfire> campfires;
+    if (!con) return campfires;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT PosX, PosY, TimeRemaining, IsCrafted FROM Campfires WHERE Username = ?"));
+        pstmt->setString(1, username);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        while (res && res->next()) {
+            campfires.push_back({ (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("TimeRemaining"), res->getBoolean("IsCrafted") });
+        }
+    } catch (sql::SQLException& e) {
+        std::cerr << "loadCampfires error: " << e.what() << "\n";
+    }
+    return campfires;
 }
 
 void AuthManager::setFirstTimeFinished(const sql::SQLString& username)
