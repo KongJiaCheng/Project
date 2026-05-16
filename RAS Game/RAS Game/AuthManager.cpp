@@ -102,6 +102,7 @@ bool AuthManager::initDB() {
                 stmt->execute("UPDATE Accounts SET isFirstTime=1, tutorialVersion=2 WHERE tutorialVersion < 2");
             }
         }
+        catch (...) {}
         try {
             std::unique_ptr<sql::Statement> stmt(con->createStatement());
             if (stmt) {
