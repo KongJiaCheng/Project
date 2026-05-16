@@ -1380,6 +1380,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     if (placementRotation == 90.f) newS.sprite->setScale({ 0.45f, 0.25f }); // Horizontal
                                     else newS.sprite->setScale({ 0.25f, 0.45f }); // Vertical
                                 }
+                                else if (placementItemID == ITEM_WOOD_STAIRS) {
+                                    if (placementRotation == 90.f) newS.sprite->setScale({ 0.4f, 0.25f }); // Horizontal
+                                    else newS.sprite->setScale({ 0.25f, 0.4f }); // Vertical
+                                }
                                 else newS.sprite->setScale({ 0.3f, 0.3f });
 
                                 newS.sprite->setPosition(placementPos);
@@ -1610,6 +1614,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else if (s.id == ITEM_BED) {
                         if (s.rotation == 90.f) newS.sprite->setScale({ 0.45f, 0.25f });
                         else newS.sprite->setScale({ 0.25f, 0.45f });
+                    }
+                    else if (s.id == ITEM_WOOD_STAIRS) {
+                        if (s.rotation == 90.f) newS.sprite->setScale({ 0.4f, 0.25f });
+                        else newS.sprite->setScale({ 0.25f, 0.4f });
                     }
                     else newS.sprite->setScale({ 0.3f, 0.3f });
                 }
@@ -2144,6 +2152,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     if (placementRotation == 90.f) preview.setScale({ 0.45f, 0.25f });
                     else preview.setScale({ 0.25f, 0.45f });
                 }
+                else if (placementItemID == ITEM_WOOD_STAIRS) {
+                    if (placementRotation == 90.f) preview.setScale({ 0.4f, 0.25f });
+                    else preview.setScale({ 0.25f, 0.4f });
+                }
                 else preview.setScale({ 0.3f, 0.3f });
 
                 preview.setColor(sf::Color(255, 255, 255, 150));
@@ -2169,9 +2181,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (s.id == ITEM_WOOD_STAIRS) {
                     sf::FloatRect sb = s.sprite->getGlobalBounds();
                     // Expand bounds slightly for better detection
-                    sb.position.x -= 20.f; sb.size.x += 40.f;
+                    sb.position.x -= 30.f; sb.size.x += 60.f;
+                    sb.position.y -= 30.f; sb.size.y += 60.f;
                     if (sb.contains(pPos)) {
-                        float progress = 1.0f - (pPos.y - sb.position.y) / sb.size.y;
+                        float progress = 0.f;
+                        if (s.rotation == 90.f) {
+                            // Horizontal stairs: climb based on X
+                            progress = (pPos.x - sb.position.x) / sb.size.x;
+                        } else {
+                            // Vertical stairs: climb based on Y
+                            progress = 1.0f - (pPos.y - sb.position.y) / sb.size.y;
+                        }
                         if (progress < 0.f) progress = 0.f;
                         if (progress > 1.f) progress = 1.f;
                         stairOffset = progress * -180.f; // Elevate player up to 180 units
