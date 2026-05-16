@@ -3489,8 +3489,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
 
         if (stockPageOpen) {
-            sf::RectangleShape sBox({800.f, 600.f});
-            sBox.setPosition({ (width - 800.f) / 2.f, (height - 600.f) / 2.f });
+            sf::RectangleShape sBox({900.f, 600.f});
+            sBox.setPosition({ (width - 900.f) / 2.f, (height - 600.f) / 2.f });
             sBox.setFillColor(sf::Color(25, 25, 30, 245));
             sBox.setOutlineThickness(3.f);
             sBox.setOutlineColor(sf::Color(100, 100, 120));
@@ -3505,7 +3505,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             // Close button (X)
             sf::RectangleShape closeBtn({40.f, 40.f});
-            closeBtn.setPosition({ sBox.getPosition().x + 740.f, sBox.getPosition().y + 20.f });
+            closeBtn.setPosition({ sBox.getPosition().x + 840.f, sBox.getPosition().y + 20.f });
             closeBtn.setFillColor(sf::Color(200, 50, 50));
             window.draw(closeBtn);
 
@@ -3523,26 +3523,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             sf::Text hPrice(uiFont, "Price", 16);
             hPrice.setFillColor(sf::Color(180, 180, 180));
-            hPrice.setPosition({ sBox.getPosition().x + 220.f, startY });
+            hPrice.setPosition({ sBox.getPosition().x + 240.f, startY });
             window.draw(hPrice);
 
             sf::Text hTrend(uiFont, "Trend", 16);
             hTrend.setFillColor(sf::Color(180, 180, 180));
-            hTrend.setPosition({ sBox.getPosition().x + 320.f, startY });
+            hTrend.setPosition({ sBox.getPosition().x + 360.f, startY });
             window.draw(hTrend);
 
             sf::Text hHistory(uiFont, "History (Last 10 Cycles)", 16);
             hHistory.setFillColor(sf::Color(180, 180, 180));
-            hHistory.setPosition({ sBox.getPosition().x + 440.f, startY });
+            hHistory.setPosition({ sBox.getPosition().x + 490.f, startY });
             window.draw(hHistory);
 
             sf::Text hPred(uiFont, "Forecast / Signal", 16);
             hPred.setFillColor(sf::Color(180, 180, 180));
-            hPred.setPosition({ sBox.getPosition().x + 630.f, startY });
+            hPred.setPosition({ sBox.getPosition().x + 690.f, startY });
             window.draw(hPred);
 
             // Draw line dividers
-            sf::RectangleShape divider({720.f, 2.f});
+            sf::RectangleShape divider({820.f, 2.f});
             divider.setPosition({ sBox.getPosition().x + 40.f, startY + 25.f });
             divider.setFillColor(sf::Color(80, 80, 80));
             window.draw(divider);
@@ -3553,7 +3553,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 float y = startY + 40.f + idx * rowHeight;
 
                 // Alternate row backgrounds for sleek premium feel
-                sf::RectangleShape rBg({720.f, rowHeight - 8.f});
+                sf::RectangleShape rBg({820.f, rowHeight - 8.f});
                 rBg.setPosition({ sBox.getPosition().x + 40.f, y - 5.f });
                 rBg.setFillColor(sf::Color(45, 45, 55, idx % 2 == 0 ? 100 : 180));
                 window.draw(rBg);
@@ -3582,7 +3582,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                 // Current Price
                 sf::Text priceTxt(uiFont, std::to_string((int)item.currentPrice) + " G", 18);
-                priceTxt.setPosition({ sBox.getPosition().x + 220.f, y + 12.f });
+                priceTxt.setPosition({ sBox.getPosition().x + 240.f, y + 12.f });
                 window.draw(priceTxt);
 
                 // Trend (▲ UP, ▼ DOWN, ─ STABLE)
@@ -3597,12 +3597,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     trendTxt.setString("─ STABLE");
                     trendTxt.setFillColor(sf::Color(150, 150, 150));
                 }
-                trendTxt.setPosition({ sBox.getPosition().x + 320.f, y + 12.f });
+                trendTxt.setPosition({ sBox.getPosition().x + 360.f, y + 12.f });
                 window.draw(trendTxt);
 
                 // Forecast & Signal
                 sf::Text predTxt(uiFont, "Est: " + std::to_string((int)item.predictedPrice) + " G", 16);
-                predTxt.setPosition({ sBox.getPosition().x + 630.f, y + 2.f });
+                predTxt.setPosition({ sBox.getPosition().x + 690.f, y + 2.f });
                 window.draw(predTxt);
 
                 sf::Text sigTxt(uiFont, "", 16);
@@ -3617,7 +3617,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     sigTxt.setString("SIGNAL: HOLD");
                     sigTxt.setFillColor(sf::Color(200, 200, 200));
                 }
-                sigTxt.setPosition({ sBox.getPosition().x + 630.f, y + 24.f });
+                sigTxt.setPosition({ sBox.getPosition().x + 690.f, y + 24.f });
                 window.draw(sigTxt);
 
                 // Draw History Chart Graph!
@@ -3635,7 +3635,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     // Chart dimensions
                     float graphW = 150.f;
                     float graphH = 40.f;
-                    float graphX = sBox.getPosition().x + 440.f;
+                    float graphX = sBox.getPosition().x + 490.f;
                     float graphY = y + 2.f;
 
                     // Background bounding box for the graph
@@ -3676,7 +3676,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
 
             // ✅ RECENT MARKET TRADE TRANSACTION TICKER
-            sf::RectangleShape tickerBg({720.f, 32.f});
+            sf::RectangleShape tickerBg({820.f, 32.f});
             tickerBg.setPosition({ sBox.getPosition().x + 40.f, sBox.getPosition().y + 545.f });
             tickerBg.setFillColor(sf::Color(35, 35, 45, 220));
             tickerBg.setOutlineThickness(1.f);
@@ -3691,7 +3691,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             } else {
                 for (size_t rIdx = 0; rIdx < recentTrades.size(); rIdx++) {
                     auto& r = recentTrades[rIdx];
-                    tickerText += r.username + " " + (r.actionType == "SELL" ? "sold" : "bought") + " " + std::to_string(r.quantity) + "x " + r.itemName + " (per unit: " + std::to_string(r.pricePerUnit) + "G)";
+                    std::string uName = r.username;
+                    if (uName.length() > 10) {
+                        uName = uName.substr(0, 8) + "..";
+                    }
+                    tickerText += "[" + uName + "] " + (r.actionType == "SELL" ? "Sold" : "Bought") + " " + std::to_string(r.quantity) + "x " + r.itemName + " (" + std::to_string(r.totalGold) + "G)";
                     if (rIdx < recentTrades.size() - 1) {
                         tickerText += "  |  ";
                     }
