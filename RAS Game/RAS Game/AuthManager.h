@@ -46,6 +46,16 @@ struct OnlinePlayer {
     std::string pullBy;
 };
 
+struct TradeRecord {
+    std::string username;
+    std::string actionType;
+    std::string itemName;
+    int quantity;
+    int pricePerUnit;
+    int totalGold;
+    std::string tradeTime;
+};
+
 class AuthManager {
 public:
     AuthManager() : driver(nullptr), con(nullptr) {}
@@ -78,6 +88,9 @@ public:
 
     bool saveInventory(const sql::SQLString& username, const std::vector<std::pair<int, int>>& inventoryData);
     std::vector<std::pair<int, int>> loadInventory(const sql::SQLString& username);
+
+    void addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold);
+    std::vector<TradeRecord> getRecentTrades(int limit = 5);
 
     void saveStructures(const sql::SQLString& username, const std::vector<StoredStructure>& structures);
     std::vector<StoredStructure> loadStructures(const sql::SQLString& username);

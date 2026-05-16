@@ -72,6 +72,16 @@ struct AnimSet {
     }
 };
 
+struct StockItem {
+    int id;
+    std::string name;
+    float currentPrice;
+    float basePrice;
+    std::vector<float> history;
+    float predictedPrice;
+    std::string trend;
+};
+
 void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTimeFlag)
 {
     std::cout << "[DEBUG] Entering gameLoop. isFirstTime: " << isFirstTimeFlag << "\n";
@@ -277,9 +287,33 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     }
 
     bool isTargetNPC = false;
-    struct TradeSlot { const sf::Texture* tex = nullptr; int count = 0; };
+    struct TradeSlot { int id = 0; const sf::Texture* tex = nullptr; int count = 0; };
     TradeSlot playerTradeSlots[4];
     TradeSlot npcTradeSlots[4];
+
+    bool stockPageOpen = false;
+    sf::Clock stockUpdateClock;
+
+    std::vector<StockItem> stockMarket = {
+        { ITEM_WOOD, "Wood", 5.f, 5.f, {5.f}, 5.f, "STABLE" },
+        { ITEM_STONE, "Stone", 8.f, 8.f, {8.f}, 8.f, "STABLE" },
+        { ITEM_SAPLING, "Sapling", 12.f, 12.f, {12.f}, 12.f, "STABLE" },
+        { ITEM_CHICKEN_MEAT, "Chicken Meat", 15.f, 15.f, {15.f}, 15.f, "STABLE" },
+        { ITEM_PIG_MEAT, "Pig Meat", 25.f, 25.f, {25.f}, 25.f, "STABLE" },
+        { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE" }
+    };
+
+    // Prepopulate history for beautiful stock charts on start
+    for (int step = 0; step < 8; ++step) {
+        for (auto& item : stockMarket) {
+            item.history.push_back(item.currentPrice);
+            float percentChange = (-15 + (rand() % 31)) / 100.f;
+            float dev = (item.currentPrice - item.basePrice) / item.basePrice;
+            percentChange -= dev * 0.05f;
+            item.currentPrice = std::round(item.currentPrice * (1.f + percentChange));
+            if (item.currentPrice < 1.f) item.currentPrice = 1.f;
+        }
+    }
 
     sf::Sprite playerWrenchBtn(wrenchTex);
     playerWrenchBtn.setScale({ 0.05f, 0.05f });
@@ -1125,10 +1159,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     
                     bool clickHandled = false;
 
+                    if (stockPageOpen) {
+                        sf::FloatRect sBoxRect({ (width - 800.f) / 2.f, (height - 600.f) / 2.f }, { 800.f, 600.f });
+                        sf::FloatRect closeBtnRect({ sBoxRect.position.x + 740.f, sBoxRect.position.y + 20.f }, { 40.f, 40.f });
+                        if (closeBtnRect.contains(uiPos)) {
+                            stockPageOpen = false;
+                        }
+                        clickHandled = true;
+                        continue;
+                    }
+
                     sf::FloatRect settingsBtnRect({ (float)width - 140.f, 20.f }, { 120.f, 40.f });
                     if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && settingsBtnRect.contains(uiPos)) {
                         openSettingsWindow(window, width, height);
                         deltaClock.restart();
+                        continue;
+                    }
+
+                    sf::FloatRect marketBtnRect({ (float)width - 300.f, 20.f }, { 150.f, 40.f });
+                    if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && marketBtnRect.contains(uiPos)) {
+                        stockPageOpen = true;
                         continue;
                     }
 
@@ -1192,6 +1242,54 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                              tradeMenuOpen = false;
                              tradeBoxesTicked = false;
 
+                             // ✅ LOG PLAYER SOLD ITEMS (SELL)
+                             for (int i = 0; i < 4; i++) {
+                                 if (playerTradeSlots[i].tex != nullptr && playerTradeSlots[i].count > 0) {
+                                     std::string name = "";
+                                     int price = 0;
+                                     for (auto& item : stockMarket) {
+                                         if (item.id == playerTradeSlots[i].id) {
+                                             name = item.name;
+                                             price = item.currentPrice;
+                                             break;
+                                         }
+                                     }
+                                     if (name.empty()) {
+                                         if (playerTradeSlots[i].id == 1) name = "Chicken Meat";
+                                         else if (playerTradeSlots[i].id == 2) name = "Pig Meat";
+                                         else if (playerTradeSlots[i].id == 3) name = "Zombie Flesh";
+                                         else if (playerTradeSlots[i].id == 4) name = "Wooden Sword";
+                                         else if (playerTradeSlots[i].id == 6) name = "Shield";
+                                         else name = "Unknown";
+                                     }
+                                     authManager.addTradeRecord(username.c_str(), "SELL", name, playerTradeSlots[i].count, price, playerTradeSlots[i].count * price);
+                                 }
+                             }
+
+                             // ✅ LOG PLAYER BOUGHT ITEMS (BUY)
+                             for (int i = 0; i < 4; i++) {
+                                 if (npcTradeSlots[i].tex != nullptr && npcTradeSlots[i].count > 0) {
+                                     std::string name = "";
+                                     int price = 0;
+                                     for (auto& item : stockMarket) {
+                                         if (item.id == npcTradeSlots[i].id) {
+                                             name = item.name;
+                                             price = item.currentPrice;
+                                             break;
+                                         }
+                                     }
+                                     if (name.empty()) {
+                                         if (npcTradeSlots[i].id == 1) name = "Chicken Meat";
+                                         else if (npcTradeSlots[i].id == 2) name = "Pig Meat";
+                                         else if (npcTradeSlots[i].id == 3) name = "Zombie Flesh";
+                                         else if (npcTradeSlots[i].id == 4) name = "Wooden Sword";
+                                         else if (npcTradeSlots[i].id == 6) name = "Shield";
+                                         else name = "Unknown";
+                                     }
+                                     authManager.addTradeRecord(username.c_str(), "BUY", name, npcTradeSlots[i].count, price, npcTradeSlots[i].count * price);
+                                 }
+                             }
+
                              // ✅ TRANSFER GOLD
                              currency -= playerTradeGold;
                              currency += npcTradeGold;
@@ -1201,12 +1299,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             // TRANSFER NPC ITEMS TO PLAYER
                             for(int i = 0; i < 4; i++) {
                                 if (npcTradeSlots[i].tex != nullptr && npcTradeSlots[i].count > 0) {
-                                    inventory.addItem(0, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
+                                    inventory.addItem(npcTradeSlots[i].id, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
                                     npcTradeSlots[i].tex = nullptr;
                                     npcTradeSlots[i].count = 0;
+                                    npcTradeSlots[i].id = 0;
                                 }
                                 playerTradeSlots[i].tex = nullptr;
                                 playerTradeSlots[i].count = 0;
+                                playerTradeSlots[i].id = 0;
                             }
 
                             // ✅ SAVE ONCE
@@ -1232,6 +1332,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 }
                             }
                             authManager.saveInventory(username.c_str(), items);
+
+                            float currentElapsed = timeOffset + dayNightClock.getElapsedTime().asSeconds();
+                            authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
+
                             clickHandled = true;
                         } else if (noRect.contains(uiPos)) {
                             tradeConfirmOpen = false;
@@ -1241,12 +1345,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             // Cancel Trade! Return items to Inventory
                             for(int i=0; i<4; i++) {
                                 if (playerTradeSlots[i].tex != nullptr) {
-                                    inventory.addItem(0, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
+                                    inventory.addItem(playerTradeSlots[i].id, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
                                     playerTradeSlots[i].tex = nullptr;
                                     playerTradeSlots[i].count = 0;
+                                    playerTradeSlots[i].id = 0;
                                 }
                                 npcTradeSlots[i].tex = nullptr;
                                 npcTradeSlots[i].count = 0;
+                                npcTradeSlots[i].id = 0;
                             }
                             clickHandled = true;
                         }
@@ -1261,6 +1367,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         // Gold buttons
                         sf::FloatRect pGoldPlus({ tBoxRect.position.x + 350.f, tBoxRect.position.y + 115.f }, { 30.f, 30.f });
                         sf::FloatRect pGoldMinus({ tBoxRect.position.x + 390.f, tBoxRect.position.y + 115.f }, { 30.f, 30.f });
+
+                        sf::FloatRect nGoldPlus({ tBoxRect.position.x + 350.f, tBoxRect.position.y + 190.f }, { 30.f, 30.f });
+                        sf::FloatRect nGoldMinus({ tBoxRect.position.x + 390.f, tBoxRect.position.y + 190.f }, { 30.f, 30.f });
+
+                        sf::FloatRect statsBtnRect({ tBoxRect.position.x + 350.f, tBoxRect.position.y + 245.f }, { 150.f, 40.f });
                         
                         if (pGoldPlus.contains(uiPos)) {
                             if (currency >= playerTradeGold + 10) playerTradeGold += 10;
@@ -1268,26 +1379,91 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         } else if (pGoldMinus.contains(uiPos)) {
                             if (playerTradeGold >= 10) playerTradeGold -= 10;
                             clickHandled = true;
-                        }
-
-                        if (acceptRect.contains(uiPos)) {
-                            tradeConfirmOpen = true;
+                        } else if (nGoldPlus.contains(uiPos)) {
+                            // Compute Player Trade Value
+                            int pVal = playerTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (playerTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    pVal += playerTradeSlots[i].count * price;
+                                }
+                            }
+                            int nVal = npcTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (npcTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    nVal += npcTradeSlots[i].count * price;
+                                }
+                            }
+                            // NPC increases gold up to what the player offered
+                            if (nVal + 10 <= pVal) {
+                                npcTradeGold += 10;
+                            }
+                            clickHandled = true;
+                        } else if (nGoldMinus.contains(uiPos)) {
+                            if (npcTradeGold >= 10) npcTradeGold -= 10;
+                            clickHandled = true;
+                        } else if (statsBtnRect.contains(uiPos)) {
+                            stockPageOpen = true;
                             clickHandled = true;
                         }
 
-                        // Check if player clicked a Player Trade Box to transfer from inventory
+                        if (acceptRect.contains(uiPos)) {
+                            // Only allow accept if the trade is fair
+                            int pVal = playerTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (playerTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    pVal += playerTradeSlots[i].count * price;
+                                }
+                            }
+                            int nVal = npcTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (npcTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    nVal += npcTradeSlots[i].count * price;
+                                }
+                            }
+                            if (pVal >= nVal) {
+                                tradeConfirmOpen = true;
+                            }
+                            clickHandled = true;
+                        }
+
+                        // Check if player clicked a Player Trade Box to transfer from or return to inventory
                         sf::Vector2f tBoxPos(tBoxRect.position);
                         for(int i=0; i<4; i++) {
                             sf::FloatRect pBoxRect({ tBoxPos.x + 50.f + i * 70.f, tBoxPos.y + 100.f }, { 64.f, 64.f });
                             if (pBoxRect.contains(uiPos)) {
-                                int selSlot = inventory.getSelectedSlot();
-                                if (selSlot != -1 && inventory.hasItem(selSlot) && playerTradeSlots[i].tex == nullptr) {
-                                    playerTradeSlots[i].tex = inventory.getItemTexture(selSlot);
-                                    playerTradeSlots[i].count = inventory.getItemCount(selSlot);
-                                    
-                                    int countToConsume = playerTradeSlots[i].count;
-                                    for (int c = 0; c < countToConsume; c++) {
-                                        inventory.consumeItem(selSlot);
+                                if (playerTradeSlots[i].tex != nullptr) {
+                                    // Return item to inventory
+                                    inventory.addItem(playerTradeSlots[i].id, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
+                                    playerTradeSlots[i].tex = nullptr;
+                                    playerTradeSlots[i].count = 0;
+                                    playerTradeSlots[i].id = 0;
+                                } else {
+                                    int selSlot = inventory.getSelectedSlot();
+                                    if (selSlot != -1 && inventory.hasItem(selSlot)) {
+                                        playerTradeSlots[i].id = inventory.getItemID(selSlot);
+                                        playerTradeSlots[i].tex = inventory.getItemTexture(selSlot);
+                                        playerTradeSlots[i].count = inventory.getItemCount(selSlot);
+                                        
+                                        int countToConsume = playerTradeSlots[i].count;
+                                        for (int c = 0; c < countToConsume; c++) {
+                                            inventory.consumeItem(selSlot);
+                                        }
                                     }
                                 }
                                 clickHandled = true;
@@ -1297,9 +1473,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else if (wrenchMenuOpen) {
 
                         if (isTargetNPC) {
-                            // ✅ TRADE & QUEST for NPC
+                            // ✅ TRADE & QUEST & STOCK STATS for NPC
                             sf::FloatRect tradeBound({ wrenchMenuPos.x, wrenchMenuPos.y }, { 150.f, 30.f });
                             sf::FloatRect questBound({ wrenchMenuPos.x, wrenchMenuPos.y + 30.f }, { 150.f, 30.f });
+                            sf::FloatRect statsBound({ wrenchMenuPos.x, wrenchMenuPos.y + 60.f }, { 150.f, 30.f });
 
                             if (tradeBound.contains(uiPos)) {
                                 tradeMenuOpen = true;
@@ -1309,21 +1486,37 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 for (int i = 0; i < 4; i++) {
                                     playerTradeSlots[i].tex = nullptr;
                                     playerTradeSlots[i].count = 0;
+                                    playerTradeSlots[i].id = 0;
                                     npcTradeSlots[i].tex = nullptr;
                                     npcTradeSlots[i].count = 0;
+                                    npcTradeSlots[i].id = 0;
                                 }
 
-                                // Mock NPC items
-                                npcTradeSlots[0].tex = ChickenMeat::getTexture();
-                                npcTradeSlots[0].count = 5;
+                                // Populate NPC slots randomly with 1-3 items
+                                int itemsCount = 1 + (rand() % 3);
+                                std::vector<int> possibleIds = { ITEM_WOOD, ITEM_STONE, ITEM_SAPLING, ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_ZOMBIE_FLESH };
+                                for (int i = 0; i < itemsCount; i++) {
+                                    int randIdx = rand() % possibleIds.size();
+                                    int id = possibleIds[randIdx];
+                                    
+                                    const sf::Texture* tex = nullptr;
+                                    if (id == ITEM_WOOD) tex = &woodTex;
+                                    else if (id == ITEM_STONE) tex = &stoneTex;
+                                    else if (id == ITEM_SAPLING) tex = &saplingTex;
+                                    else if (id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
+                                    else if (id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
+                                    else if (id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
+
+                                    if (tex) {
+                                        npcTradeSlots[i].id = id;
+                                        npcTradeSlots[i].tex = tex;
+                                        npcTradeSlots[i].count = 1 + (rand() % 8);
+                                    }
+                                }
 
                                 tradeBoxesTicked = false;
-
-                             // TRANSFER GOLD
-                             currency -= playerTradeGold;
-                             currency += npcTradeGold;
-                             playerTradeGold = 0;
-                             npcTradeGold = 0;
+                                playerTradeGold = 0;
+                                npcTradeGold = 0;
                                 clickHandled = true;
                             }
                             else if (questBound.contains(uiPos)) {
@@ -1339,6 +1532,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     latestPlayerMsg = "No quest available right now.";
                                 }
                                 bubbleTimer = 5.0f;
+                                wrenchMenuOpen = false;
+                                clickHandled = true;
+                            }
+                            else if (statsBound.contains(uiPos)) {
+                                stockPageOpen = true;
                                 wrenchMenuOpen = false;
                                 clickHandled = true;
                             }
@@ -2708,6 +2906,50 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 stoneRespawnClock.restart();
             }
         }
+
+        // Update Stock Market Prices every 60 seconds
+        if (stockUpdateClock.getElapsedTime().asSeconds() >= 60.f) {
+            stockUpdateClock.restart();
+            for (auto& item : stockMarket) {
+                if (item.history.size() >= 10) {
+                    item.history.erase(item.history.begin());
+                }
+                item.history.push_back(item.currentPrice);
+
+                float percentChange = (-15 + (rand() % 31)) / 100.f;
+                float dev = (item.currentPrice - item.basePrice) / item.basePrice;
+                percentChange -= dev * 0.05f;
+
+                item.currentPrice = item.currentPrice * (1.f + percentChange);
+                float minP = item.basePrice * 0.4f;
+                float maxP = item.basePrice * 2.5f;
+                if (item.currentPrice < minP) item.currentPrice = minP;
+                if (item.currentPrice > maxP) item.currentPrice = maxP;
+
+                item.currentPrice = std::round(item.currentPrice);
+                if (item.currentPrice < 1.f) item.currentPrice = 1.f;
+
+                if (item.history.size() >= 2) {
+                    float lastPrice = item.history.back();
+                    float diff = item.currentPrice - lastPrice;
+                    float noise = (-8 + (rand() % 17)) / 100.f;
+                    item.predictedPrice = std::round(item.currentPrice + diff * 0.5f + item.currentPrice * noise);
+                    if (item.predictedPrice < 1.f) item.predictedPrice = 1.f;
+
+                    if (item.predictedPrice > item.currentPrice * 1.05f) {
+                        item.trend = "UP";
+                    } else if (item.predictedPrice < item.currentPrice * 0.95f) {
+                        item.trend = "DOWN";
+                    } else {
+                        item.trend = "STABLE";
+                    }
+                } else {
+                    item.predictedPrice = item.currentPrice;
+                    item.trend = "STABLE";
+                }
+            }
+        }
+
         const float totalCycleTime = 900.f;
         float cycleValue = std::fmod(timeOffset + dayNightClock.getElapsedTime().asSeconds(), totalCycleTime);
         float t = cycleValue / totalCycleTime;
@@ -2798,18 +3040,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         window.setView(window.getDefaultView());
 
         if (wrenchMenuOpen) {
-            float boxHeight = 30.f;
-
-            sf::RectangleShape menuBox({ 150.f, boxHeight });
+            sf::RectangleShape menuBox({ 150.f, 30.f });
             menuBox.setPosition(wrenchMenuPos);
             menuBox.setFillColor(sf::Color(40, 40, 40, 240));
             menuBox.setOutlineColor(sf::Color::White);
             menuBox.setOutlineThickness(1.f);
 
-            window.draw(menuBox);
-
             if (isTargetNPC) {
-                // ✅ NPC → TRADE & QUEST
+                // ✅ NPC → TRADE, QUEST, MARKET STATS
+                menuBox.setSize({ 150.f, 90.f });
+                window.draw(menuBox);
+
                 sf::Text tradeTxt(uiFont, "1. Trade", 18);
                 tradeTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 5.f });
                 window.draw(tradeTxt);
@@ -2817,12 +3058,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 sf::Text questTxt(uiFont, "2. Daily Quest", 18);
                 questTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 35.f });
                 window.draw(questTxt);
-                
-                // Adjust menu height for two items
-                menuBox.setSize({ 150.f, 60.f });
+
+                sf::Text statsTxt(uiFont, "3. Market Stats", 18);
+                statsTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 65.f });
+                window.draw(statsTxt);
             }
             else {
                 // ✅ PLAYER → ONLY CRAFT
+                menuBox.setSize({ 150.f, 30.f });
+                window.draw(menuBox);
+
                 sf::Text craftTxt(uiFont, "Craft Items", 18);
                 craftTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 5.f });
                 window.draw(craftTxt);
@@ -3055,6 +3300,28 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             tTitle.setPosition({ tBox.getPosition().x + 20.f, tBox.getPosition().y + 10.f });
             window.draw(tTitle);
 
+            // Calculate total values
+            int playerTotalValue = playerTradeGold;
+            for (int i = 0; i < 4; i++) {
+                if (playerTradeSlots[i].tex != nullptr) {
+                    int price = 0;
+                    for (auto& item : stockMarket) {
+                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
+                    }
+                    playerTotalValue += playerTradeSlots[i].count * price;
+                }
+            }
+            int npcTotalValue = npcTradeGold;
+            for (int i = 0; i < 4; i++) {
+                if (npcTradeSlots[i].tex != nullptr) {
+                    int price = 0;
+                    for (auto& item : stockMarket) {
+                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
+                    }
+                    npcTotalValue += npcTradeSlots[i].count * price;
+                }
+            }
+
             // Draw player boxes
             for(int i=0; i<4; ++i) {
                 sf::RectangleShape b({64.f, 64.f});
@@ -3109,10 +3376,36 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
+            // Offers total values text
+            sf::Text pValText(uiFont, "Your Offer: " + std::to_string(playerTotalValue) + " G", 18);
+            pValText.setPosition({ tBox.getPosition().x + 50.f, tBox.getPosition().y + 290.f });
+            window.draw(pValText);
+
+            sf::Text nValText(uiFont, "NPC Offer: " + std::to_string(npcTotalValue) + " G", 18);
+            nValText.setPosition({ tBox.getPosition().x + 50.f, tBox.getPosition().y + 320.f });
+            window.draw(nValText);
+
+            // Status message
+            sf::Text statusTxt(uiFont, "", 16);
+            if (playerTotalValue >= npcTotalValue) {
+                statusTxt.setString("NPC: I accept this trade!");
+                statusTxt.setFillColor(sf::Color::Green);
+            } else {
+                statusTxt.setString("NPC: Need " + std::to_string(npcTotalValue - playerTotalValue) + " more Gold!");
+                statusTxt.setFillColor(sf::Color::Red);
+            }
+            statusTxt.setPosition({ tBox.getPosition().x + 50.f, tBox.getPosition().y + 355.f });
+            window.draw(statusTxt);
+
+            // Accept button
             sf::RectangleShape aBtn({100.f, 40.f});
             aBtn.setPosition({ tBox.getPosition().x + tBox.getGlobalBounds().size.x - 120.f, 
                                tBox.getPosition().y + tBox.getGlobalBounds().size.y - 60.f });
-            aBtn.setFillColor(sf::Color::Green);
+            if (playerTotalValue >= npcTotalValue) {
+                aBtn.setFillColor(sf::Color::Green);
+            } else {
+                aBtn.setFillColor(sf::Color(100, 100, 100)); // Disabled look
+            }
             window.draw(aBtn);
 
             sf::Text aTxt(uiFont, "Accept", 18);
@@ -3134,6 +3427,34 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             gpt.setPosition({ gp.getPosition().x + 8.f, gp.getPosition().y + 2.f });
             gmt.setPosition({ gm.getPosition().x + 10.f, gm.getPosition().y + 2.f });
             window.draw(gpt); window.draw(gmt);
+
+            // NPC Gold UI
+            sf::Text nGold(uiFont, "NPC Gold: " + std::to_string(npcTradeGold), 18);
+            nGold.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 155.f });
+            window.draw(nGold);
+
+            sf::RectangleShape ngp({30.f, 30.f}), ngm({30.f, 30.f});
+            ngp.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 190.f });
+            ngm.setPosition({ tBox.getPosition().x + 390.f, tBox.getPosition().y + 190.f });
+            ngp.setFillColor(sf::Color(100, 200, 100)); ngm.setFillColor(sf::Color(200, 100, 100));
+            window.draw(ngp); window.draw(ngm);
+            
+            sf::Text ngpt(uiFont, "+", 20), ngmt(uiFont, "-", 20);
+            ngpt.setPosition({ ngp.getPosition().x + 8.f, ngp.getPosition().y + 2.f });
+            ngmt.setPosition({ ngm.getPosition().x + 10.f, ngm.getPosition().y + 2.f });
+            window.draw(ngpt); window.draw(ngmt);
+
+            // Stock Predict Stats Button
+            sf::RectangleShape statsBtn({150.f, 40.f});
+            statsBtn.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 245.f });
+            statsBtn.setFillColor(sf::Color(50, 100, 150));
+            statsBtn.setOutlineColor(sf::Color::White);
+            statsBtn.setOutlineThickness(1.f);
+            window.draw(statsBtn);
+
+            sf::Text statsBtnTxt(uiFont, "Stock Stats", 16);
+            statsBtnTxt.setPosition({ statsBtn.getPosition().x + 28.f, statsBtn.getPosition().y + 10.f });
+            window.draw(statsBtnTxt);
         }
 
         if (tradeConfirmOpen) {
@@ -3166,6 +3487,234 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             nTxt.setPosition({ nBtn.getPosition().x + 35.f, nBtn.getPosition().y + 10.f });
             window.draw(nTxt);
         }
+
+        if (stockPageOpen) {
+            sf::RectangleShape sBox({800.f, 600.f});
+            sBox.setPosition({ (width - 800.f) / 2.f, (height - 600.f) / 2.f });
+            sBox.setFillColor(sf::Color(25, 25, 30, 245));
+            sBox.setOutlineThickness(3.f);
+            sBox.setOutlineColor(sf::Color(100, 100, 120));
+            window.draw(sBox);
+
+            // Title
+            sf::Text sTitle(uiFont, "STOCK MARKET PREDICTIONS", 28);
+            sTitle.setStyle(sf::Text::Bold);
+            sTitle.setFillColor(sf::Color(255, 215, 0)); // Gold title
+            sTitle.setPosition({ sBox.getPosition().x + 40.f, sBox.getPosition().y + 20.f });
+            window.draw(sTitle);
+
+            // Close button (X)
+            sf::RectangleShape closeBtn({40.f, 40.f});
+            closeBtn.setPosition({ sBox.getPosition().x + 740.f, sBox.getPosition().y + 20.f });
+            closeBtn.setFillColor(sf::Color(200, 50, 50));
+            window.draw(closeBtn);
+
+            sf::Text closeTxt(uiFont, "X", 22);
+            closeTxt.setStyle(sf::Text::Bold);
+            closeTxt.setPosition({ closeBtn.getPosition().x + 12.f, closeBtn.getPosition().y + 5.f });
+            window.draw(closeTxt);
+
+            // Table headers
+            float startY = sBox.getPosition().y + 80.f;
+            sf::Text hItem(uiFont, "Item", 16);
+            hItem.setFillColor(sf::Color(180, 180, 180));
+            hItem.setPosition({ sBox.getPosition().x + 40.f, startY });
+            window.draw(hItem);
+
+            sf::Text hPrice(uiFont, "Price", 16);
+            hPrice.setFillColor(sf::Color(180, 180, 180));
+            hPrice.setPosition({ sBox.getPosition().x + 220.f, startY });
+            window.draw(hPrice);
+
+            sf::Text hTrend(uiFont, "Trend", 16);
+            hTrend.setFillColor(sf::Color(180, 180, 180));
+            hTrend.setPosition({ sBox.getPosition().x + 320.f, startY });
+            window.draw(hTrend);
+
+            sf::Text hHistory(uiFont, "History (Last 10 Cycles)", 16);
+            hHistory.setFillColor(sf::Color(180, 180, 180));
+            hHistory.setPosition({ sBox.getPosition().x + 440.f, startY });
+            window.draw(hHistory);
+
+            sf::Text hPred(uiFont, "Forecast / Signal", 16);
+            hPred.setFillColor(sf::Color(180, 180, 180));
+            hPred.setPosition({ sBox.getPosition().x + 630.f, startY });
+            window.draw(hPred);
+
+            // Draw line dividers
+            sf::RectangleShape divider({720.f, 2.f});
+            divider.setPosition({ sBox.getPosition().x + 40.f, startY + 25.f });
+            divider.setFillColor(sf::Color(80, 80, 80));
+            window.draw(divider);
+
+            float rowHeight = 75.f;
+            for (size_t idx = 0; idx < stockMarket.size(); idx++) {
+                auto& item = stockMarket[idx];
+                float y = startY + 40.f + idx * rowHeight;
+
+                // Alternate row backgrounds for sleek premium feel
+                sf::RectangleShape rBg({720.f, rowHeight - 8.f});
+                rBg.setPosition({ sBox.getPosition().x + 40.f, y - 5.f });
+                rBg.setFillColor(sf::Color(45, 45, 55, idx % 2 == 0 ? 100 : 180));
+                window.draw(rBg);
+
+                // Draw Item Texture
+                const sf::Texture* tex = nullptr;
+                if (item.id == ITEM_WOOD) tex = &woodTex;
+                else if (item.id == ITEM_STONE) tex = &stoneTex;
+                else if (item.id == ITEM_SAPLING) tex = &saplingTex;
+                else if (item.id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
+                else if (item.id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
+                else if (item.id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
+
+                if (tex) {
+                    sf::Sprite icon(*tex);
+                    icon.setPosition({ sBox.getPosition().x + 45.f, y + 5.f });
+                    sf::Vector2u sz = tex->getSize();
+                    icon.setScale({ 36.f / sz.x, 36.f / sz.y });
+                    window.draw(icon);
+                }
+
+                // Item Name
+                sf::Text nameTxt(uiFont, item.name, 18);
+                nameTxt.setPosition({ sBox.getPosition().x + 95.f, y + 12.f });
+                window.draw(nameTxt);
+
+                // Current Price
+                sf::Text priceTxt(uiFont, std::to_string((int)item.currentPrice) + " G", 18);
+                priceTxt.setPosition({ sBox.getPosition().x + 220.f, y + 12.f });
+                window.draw(priceTxt);
+
+                // Trend (▲ UP, ▼ DOWN, ─ STABLE)
+                sf::Text trendTxt(uiFont, "", 18);
+                if (item.trend == "UP") {
+                    trendTxt.setString("▲ UP");
+                    trendTxt.setFillColor(sf::Color::Green);
+                } else if (item.trend == "DOWN") {
+                    trendTxt.setString("▼ DOWN");
+                    trendTxt.setFillColor(sf::Color::Red);
+                } else {
+                    trendTxt.setString("─ STABLE");
+                    trendTxt.setFillColor(sf::Color(150, 150, 150));
+                }
+                trendTxt.setPosition({ sBox.getPosition().x + 320.f, y + 12.f });
+                window.draw(trendTxt);
+
+                // Forecast & Signal
+                sf::Text predTxt(uiFont, "Est: " + std::to_string((int)item.predictedPrice) + " G", 16);
+                predTxt.setPosition({ sBox.getPosition().x + 630.f, y + 2.f });
+                window.draw(predTxt);
+
+                sf::Text sigTxt(uiFont, "", 16);
+                sigTxt.setStyle(sf::Text::Bold);
+                if (item.trend == "UP") {
+                    sigTxt.setString("SIGNAL: BUY");
+                    sigTxt.setFillColor(sf::Color::Green);
+                } else if (item.trend == "DOWN") {
+                    sigTxt.setString("SIGNAL: SELL");
+                    sigTxt.setFillColor(sf::Color::Red);
+                } else {
+                    sigTxt.setString("SIGNAL: HOLD");
+                    sigTxt.setFillColor(sf::Color(200, 200, 200));
+                }
+                sigTxt.setPosition({ sBox.getPosition().x + 630.f, y + 24.f });
+                window.draw(sigTxt);
+
+                // Draw History Chart Graph!
+                if (!item.history.empty()) {
+                    // Let's find min and max in history to scale nicely
+                    float minH = item.currentPrice;
+                    float maxH = item.currentPrice;
+                    for (float hp : item.history) {
+                        if (hp < minH) minH = hp;
+                        if (hp > maxH) maxH = hp;
+                    }
+                    float range = maxH - minH;
+                    if (range < 1.f) range = 1.f; // Avoid division by zero
+
+                    // Chart dimensions
+                    float graphW = 150.f;
+                    float graphH = 40.f;
+                    float graphX = sBox.getPosition().x + 440.f;
+                    float graphY = y + 2.f;
+
+                    // Background bounding box for the graph
+                    sf::RectangleShape graphBg({graphW, graphH});
+                    graphBg.setPosition({graphX, graphY});
+                    graphBg.setFillColor(sf::Color(20, 20, 25, 200));
+                    graphBg.setOutlineThickness(1.f);
+                    graphBg.setOutlineColor(sf::Color(60, 60, 70));
+                    window.draw(graphBg);
+
+                    // Combine history + current price for plotting
+                    std::vector<float> points = item.history;
+                    points.push_back(item.currentPrice);
+
+                    // Let's draw the lines connecting history points
+                    sf::Color lineColor = (item.currentPrice >= points.front()) ? sf::Color(100, 220, 100) : sf::Color(220, 100, 100);
+
+                    // We can draw it using tiny rectangles/lines
+                    float stepX = graphW / (points.size() - 1);
+                    for (size_t p = 0; p < points.size() - 1; p++) {
+                        float x1 = graphX + p * stepX;
+                        float y1 = graphY + graphH - 5.f - ((points[p] - minH) / range) * (graphH - 10.f);
+                        float x2 = graphX + (p + 1) * stepX;
+                        float y2 = graphY + graphH - 5.f - ((points[p + 1] - minH) / range) * (graphH - 10.f);
+
+                        // Draw line segment
+                        sf::RectangleShape line;
+                        float dist = std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+                        line.setSize({dist, 2.f});
+                        line.setOrigin({0.f, 1.f});
+                        line.setPosition({x1, y1});
+                        float angle = std::atan2(y2 - y1, x2 - x1) * 180.f / 3.14159f;
+                        line.setRotation(sf::degrees(angle));
+                        line.setFillColor(lineColor);
+                        window.draw(line);
+                    }
+                }
+            }
+
+            // ✅ RECENT MARKET TRADE TRANSACTION TICKER
+            sf::RectangleShape tickerBg({720.f, 32.f});
+            tickerBg.setPosition({ sBox.getPosition().x + 40.f, sBox.getPosition().y + 545.f });
+            tickerBg.setFillColor(sf::Color(35, 35, 45, 220));
+            tickerBg.setOutlineThickness(1.f);
+            tickerBg.setOutlineColor(sf::Color(80, 80, 100));
+            window.draw(tickerBg);
+
+            // Fetch and draw recent trades!
+            std::vector<TradeRecord> recentTrades = authManager.getRecentTrades(3); // Show last 3
+            std::string tickerText = "RECENT ACTIVITY: ";
+            if (recentTrades.empty()) {
+                tickerText += "No transactions recorded yet.";
+            } else {
+                for (size_t rIdx = 0; rIdx < recentTrades.size(); rIdx++) {
+                    auto& r = recentTrades[rIdx];
+                    tickerText += r.username + " " + (r.actionType == "SELL" ? "sold" : "bought") + " " + std::to_string(r.quantity) + "x " + r.itemName + " (per unit: " + std::to_string(r.pricePerUnit) + "G)";
+                    if (rIdx < recentTrades.size() - 1) {
+                        tickerText += "  |  ";
+                    }
+                }
+            }
+
+            sf::Text tickerTxt(uiFont, tickerText, 14);
+            tickerTxt.setFillColor(sf::Color(255, 215, 0)); // Sleek gold color
+            tickerTxt.setPosition({ tickerBg.getPosition().x + 15.f, tickerBg.getPosition().y + 6.f });
+            window.draw(tickerTxt);
+        }
+
+        // ✅ HUD Market Stats Button
+        sf::RectangleShape marketBtnTopRight({ 150.f, 40.f });
+        marketBtnTopRight.setPosition({ (float)width - 300.f, 20.f });
+        marketBtnTopRight.setFillColor(sf::Color(40, 110, 90, 200)); // Premium emerald green
+        marketBtnTopRight.setOutlineThickness(2.f);
+        marketBtnTopRight.setOutlineColor(sf::Color(255, 215, 0)); // Gold outline
+        window.draw(marketBtnTopRight);
+
+        sf::Text marketBtnTxtTopRight(uiFont, "Market Stats", 18);
+        marketBtnTxtTopRight.setPosition({ (float)width - 280.f, 28.f });
+        window.draw(marketBtnTxtTopRight);
 
         sf::RectangleShape settingsBtnTopRight({ 120.f, 40.f });
         settingsBtnTopRight.setPosition({ (float)width - 140.f, 20.f });

@@ -148,6 +148,33 @@ bool AuthManager::initDB() {
             }
         } catch (...) {}
 
+        try {
+            std::unique_ptr<sql::Statement> stmt(con->createStatement());
+            if (stmt) {
+                stmt->execute("CREATE TABLE IF NOT EXISTS TradeHistory ("
+                              "ID INT AUTO_INCREMENT PRIMARY KEY, "
+                              "Username VARCHAR(50), "
+                              "ActionType VARCHAR(10), "
+                              "ItemName VARCHAR(50), "
+                              "Quantity INT, "
+                              "PricePerUnit INT, "
+                              "TotalGold INT, "
+                              "TradeTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                              ")");
+
+                // Prepopulate with sample trades if empty
+                std::unique_ptr<sql::ResultSet> countRes(stmt->executeQuery("SELECT COUNT(*) AS total FROM TradeHistory"));
+                if (countRes && countRes->next() && countRes->getInt("total") == 0) {
+                    stmt->execute("INSERT INTO TradeHistory (Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold) VALUES "
+                                  "('TraderJoe', 'SELL', 'Wood', 15, 5, 75), "
+                                  "('MerchantAl', 'BUY', 'Stone', 8, 8, 64), "
+                                  "('AlphaBuilder', 'SELL', 'Sapling', 4, 12, 48), "
+                                  "('HunterMax', 'BUY', 'Chicken Meat', 6, 15, 90), "
+                                  "('ChefGourmet', 'SELL', 'Pig Meat', 3, 25, 75)");
+                }
+            }
+        } catch (...) {}
+
         return true;
     } catch (sql::SQLException& e) {
         std::cout << "MySQL Error during init: " << e.what() << std::endl;
@@ -646,5 +673,49 @@ void AuthManager::clearPull(const sql::SQLString& username) {
     catch (sql::SQLException& e) {
         std::cerr << "SQL Error in clearPull: " << e.what() << "\n";
     }
+}
+
+void AuthManager::addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold) {
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(
+            con->prepareStatement("INSERT INTO TradeHistory (Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold) VALUES (?, ?, ?, ?, ?, ?)")
+        );
+        pstmt->setString(1, username);
+        pstmt->setString(2, actionType);
+        pstmt->setString(3, itemName);
+        pstmt->setInt(4, quantity);
+        pstmt->setInt(5, pricePerUnit);
+        pstmt->setInt(6, totalGold);
+        pstmt->executeUpdate();
+    } catch (sql::SQLException& e) {
+        std::cerr << "addTradeRecord error: " << e.what() << "\n";
+    }
+}
+
+std::vector<TradeRecord> AuthManager::getRecentTrades(int limit) {
+    std::vector<TradeRecord> records;
+    if (!con) return records;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(
+            con->prepareStatement("SELECT Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold, TradeTime FROM TradeHistory ORDER BY TradeTime DESC LIMIT ?")
+        );
+        pstmt->setInt(1, limit);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        while (res && res->next()) {
+            TradeRecord r;
+            r.username = res->getString("Username").c_str();
+            r.actionType = res->getString("ActionType").c_str();
+            r.itemName = res->getString("ItemName").c_str();
+            r.quantity = res->getInt("Quantity");
+            r.pricePerUnit = res->getInt("PricePerUnit");
+            r.totalGold = res->getInt("TotalGold");
+            r.tradeTime = res->getString("TradeTime").c_str();
+            records.push_back(r);
+        }
+    } catch (sql::SQLException& e) {
+        std::cerr << "getRecentTrades error: " << e.what() << "\n";
+    }
+    return records;
 }
 

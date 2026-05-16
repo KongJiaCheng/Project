@@ -46,7 +46,30 @@ CREATE TABLE IF NOT EXISTS campfires (
     IsCrafted BOOLEAN
 );
 
+-- 1. Create table for trading history
+CREATE TABLE IF NOT EXISTS TradeHistory (
+    ID INT AUTO_INCREMENT PRIMARY KEY,
+    Username VARCHAR(50),
+    ActionType VARCHAR(10), -- 'SELL' or 'BUY'
+    ItemName VARCHAR(50),
+    Quantity INT,
+    PricePerUnit INT,
+    TotalGold INT,
+    TradeTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Insert sample trade logs
+INSERT INTO TradeHistory (Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold) VALUES 
+('TraderJoe', 'SELL', 'Wood', 15, 5, 75),
+('MerchantAl', 'BUY', 'Stone', 8, 8, 64),
+('AlphaBuilder', 'SELL', 'Sapling', 4, 12, 48),
+('HunterMax', 'BUY', 'Chicken Meat', 6, 15, 90),
+('ChefGourmet', 'SELL', 'Pig Meat', 3, 25, 75);
+
 ALTER TABLE structures ADD COLUMN Rotation FLOAT DEFAULT 0;
+ALTER TABLE structures ADD COLUMN IsOpen TINYINT(1) DEFAULT 0;
+ALTER TABLE structures ADD COLUMN ShearY FLOAT DEFAULT 0;
+
 
 SELECT * FROM Accounts;
 
