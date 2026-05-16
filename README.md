@@ -1,7 +1,3 @@
-**Download SFML 3.0 in https://www.sfml-dev.org/**
-
-**Add a External folder beside RAS Game/RAS Game folder**
-
 **Configuration:**
 1. Right click RAS Game and click properties
 2. Go to General and select C++ Language Standard as ISO C++17 Standard (/std:c++17)
