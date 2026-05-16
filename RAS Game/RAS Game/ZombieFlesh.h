@@ -13,7 +13,7 @@ public:
 
     static void loadTexture()
     {
-        texture.loadFromFile("../Items/ZombieFlesh.png");
+        (void)texture.loadFromFile("../Items/ZombieFlesh.png");
     }
 
     static const sf::Texture* getTexture();

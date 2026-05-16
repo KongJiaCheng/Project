@@ -17,6 +17,11 @@ public:
     float computeX(sf::RenderWindow& window);
     float computeY(sf::RenderWindow& window);
     int getSelectedSlot() const { return selectedSlot; }
+    bool isEquipped(int slot) const { return slotEquipped[slot]; }
+    void toggleEquipped(int slot) { slotEquipped[slot] = !slotEquipped[slot]; }
+    void setEquipped(int slot, bool eq) { slotEquipped[slot] = eq; }
+    int getDurability(int slot) const { return slotDurability[slot]; }
+    void setDurability(int slot, int val) { slotDurability[slot] = val; }
     bool hasItem(int slot) const { return slots[slot].occupied; }
     const sf::Texture* getItemTexture(int slot) const
     {
@@ -24,15 +29,21 @@ public:
     }
     int getItemCount(int slot) const { return slots[slot].count; }
     void clear();
+    void clearSlot(int slot);
     void consumeItem(int slot)
     {
         if (slots[slot].count > 0)
         {
             slots[slot].count--;
-            if (slots[slot].count == 0)
-            {
-                slots[slot].occupied = false;
-                slots[slot].icon.reset();
+        }
+        
+        if (slots[slot].count <= 0)
+        {
+            slots[slot].occupied = false;
+            slots[slot].icon.reset();
+            slots[slot].count = 0;
+            if (slotEquipped[slot]) {
+                slotEquipped[slot] = false;
             }
         }
     }
@@ -49,6 +60,12 @@ private:
 
     sf::Font font;
     int selectedSlot = -1;
+    bool slotEquipped[SLOT_COUNT];
+    int slotDurability[SLOT_COUNT];
+    int slotMaxDurability[SLOT_COUNT];
+    
+    sf::Clock doubleClickClock;
+    int lastClickedSlot = -1;
 
     struct Slot
     {

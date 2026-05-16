@@ -4,12 +4,54 @@
 #include <mysql_connection.h>
 #include <cppconn/prepared_statement.h>
 #include <cppconn/resultset.h>
+#include <vector>
+#include <tuple>
+
+struct PlayerStats {
+    float hunger;
+    float thirst;
+    int currency;
+    int level;
+    int exp;
+    bool isFirstTime;
+};
+
+struct QuestInfo {
+    int questID;
+    int progress;
+    std::string lastReset;
+    bool isCompleted;
+};
+
+struct OnlinePlayer {
+    std::string username;
+    float x, y;
+    std::string pullBy;
+};
 
 class AuthManager {
 public:
+    AuthManager() : driver(nullptr), con(nullptr) {}
     static AuthManager& getInstance();
 
     void shutdownDB();
+    void savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp);
+    PlayerStats loadPlayerStats(const sql::SQLString& username);
+    void setFirstTimeFinished(const sql::SQLString& username);
+
+    QuestInfo getQuestInfo(const sql::SQLString& username);
+    void updateQuestProgress(const sql::SQLString& username, int progress, bool completed);
+    void resetQuest(const sql::SQLString& username, int questID, const sql::SQLString& date);
+
+    void updateOnlineStatus(const sql::SQLString& username, float x, float y);
+    std::vector<OnlinePlayer> getOnlinePlayers(const sql::SQLString& excludeUser);
+    OnlinePlayer getSelfOnlineInfo(const sql::SQLString& username);
+    void sendCommand(const sql::SQLString& fromUser, const sql::SQLString& toUser, const sql::SQLString& cmd);
+    void clearPull(const sql::SQLString& username);
+
+    void sendChatMessage(const sql::SQLString& username, const sql::SQLString& message);
+    std::vector<std::pair<std::string, std::string>> fetchChatMessages(int limit = 10);
+
     bool initDB();
     bool registerUser(const sql::SQLString& username, const sql::SQLString& password, const sql::SQLString& email);
     bool loginUser(const sql::SQLString& username, const sql::SQLString& password);
@@ -20,8 +62,6 @@ public:
     std::vector<std::pair<int, int>> loadInventory(const sql::SQLString& username);
 
 private:
-    AuthManager() : driver(nullptr), con(nullptr) {}
-
     sql::mysql::MySQL_Driver* driver = nullptr;
     sql::Connection* con = nullptr;
 };

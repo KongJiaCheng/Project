@@ -74,15 +74,59 @@ const std::vector<Item>& ItemManager::getItems() const
     return items;
 }
 
+std::vector<Item>& ItemManager::getItems()
+{
+    return items;
+}
+
 void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, int quantity)
 {
     items.emplace_back(id, quantity, texture, pos);
+    if (id == ITEM_SAPLING) {
+        items.back().sprite.setScale({0.2f, 0.2f});
+    } else if (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_ZOMBIE_FLESH) {
+        items.back().sprite.setScale({0.4f, 0.4f});
+    }
 }
 
 void ItemManager::draw(sf::RenderWindow& window)
 {
+    // A small delta time mock or just use fixed decrement per frame if we don't have dt here
+    // A better way is to pass dt to draw or update, but for now we just decrement it slightly each draw call
     for (auto& i : items)
+    {
+        if (i.isHurt)
+        {
+            i.sprite.setColor(sf::Color(255, 100, 100));
+            i.hurtTimer -= 0.016f; // approximate 60fps
+            if (i.hurtTimer <= 0.f)
+            {
+                i.isHurt = false;
+                i.sprite.setColor(sf::Color::White);
+            }
+        }
+        else
+        {
+            i.sprite.setColor(sf::Color::White);
+        }
+
         window.draw(i.sprite);
+        
+        if (i.id == ITEM_TREE && i.health < i.maxHealth)
+        {
+            sf::FloatRect bounds = i.sprite.getGlobalBounds();
+            sf::RectangleShape hpBg({ 40.f, 6.f });
+            hpBg.setFillColor(sf::Color::Red);
+            hpBg.setPosition({ bounds.position.x + bounds.size.x / 2.f - 20.f, bounds.position.y - 15.f });
+            
+            sf::RectangleShape hpFg({ 40.f * (std::max(0.f, i.health) / i.maxHealth), 6.f });
+            hpFg.setFillColor(sf::Color::Green);
+            hpFg.setPosition(hpBg.getPosition());
+            
+            window.draw(hpBg);
+            window.draw(hpFg);
+        }
+    }
 }
 
 // --------------------------------------------------
@@ -104,6 +148,8 @@ void ItemManager::tryPickup(
 
     for (size_t i = 0; i < items.size(); ++i)
     {
+        if (items[i].id == ITEM_TREE) continue;
+        
         sf::Vector2f ipos = getSpriteCenterSafe(items[i].sprite);
         float dx = ipos.x - ppos.x;
         float dy = ipos.y - ppos.y;
@@ -123,7 +169,7 @@ void ItemManager::tryPickup(
 
     if (pickedID == ITEM_TREE)
     {
-        inventory.addItem(ITEM_WOOD, woodTexture, 1);
+        inventory.addItem(ITEM_WOOD, *woodTex, 1);
     }
     else
     {
@@ -147,6 +193,8 @@ float ItemManager::getNearestDistance(const sf::Sprite& player) const
 
     for (const auto& it : items)
     {
+        if (it.id == ITEM_TREE) continue;
+
         sf::Vector2f ipos = getSpriteCenterSafe(it.sprite);
 
         float dx = ipos.x - ppos.x;
@@ -171,6 +219,8 @@ int ItemManager::getNearestItemID(const sf::Sprite& player) const
 
     for (const auto& it : items)
     {
+        if (it.id == ITEM_TREE) continue;
+
         sf::Vector2f ipos = getSpriteCenterSafe(it.sprite);
 
         float dx = ipos.x - ppos.x;

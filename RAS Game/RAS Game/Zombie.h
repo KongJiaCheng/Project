@@ -60,8 +60,8 @@ public:
         else
             sprite.setColor(sf::Color::White);
 
-        // Detection radius: 400.0f
-        if (len < 400.0f && len > 10.0f) 
+        // Auto detect from anywhere
+        if (len > 10.0f) 
         {
             dir /= len;
             sprite.move(dir * speed * dt);

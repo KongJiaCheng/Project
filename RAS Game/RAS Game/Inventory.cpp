@@ -24,6 +24,9 @@ Inventory::Inventory()
         slots[i].icon = nullptr;
         slots[i].count = 0;
         slots[i].occupied = false;
+        slotEquipped[i] = false;
+        slotDurability[i] = 100;
+        slotMaxDurability[i] = 100;
     }
 }
 
@@ -64,7 +67,7 @@ void Inventory::draw(sf::RenderWindow& window)
     // Update slot positions every frame
     for (int i = 0; i < SLOT_COUNT; ++i)
     {
-        float px = xStart + i * (boxW + 4.f);
+        float px = xStart + (i - 2) * (boxW + 4.f);
         slotBox[i].setPosition({ px, yPos });
 
         if (slots[i].occupied && slots[i].icon)
@@ -88,6 +91,26 @@ void Inventory::draw(sf::RenderWindow& window)
                 slotBox[i].getPosition().y + boxH - 28
                 });
             window.draw(*countText);
+
+            if (slotEquipped[i]) {
+                sf::Text tickText(font, "V", 32);
+                tickText.setFillColor(sf::Color::Green);
+                tickText.setStyle(sf::Text::Bold);
+                tickText.setPosition({ slotBox[i].getPosition().x + 10, slotBox[i].getPosition().y + 5 });
+                window.draw(tickText);
+
+                // Draw durability bar
+                sf::RectangleShape durBg({ boxW - 20, 8 });
+                durBg.setFillColor(sf::Color::Red);
+                durBg.setPosition({ slotBox[i].getPosition().x + 10, slotBox[i].getPosition().y + boxH - 15 });
+
+                sf::RectangleShape durFg({ (boxW - 20) * ((float)slotDurability[i] / (float)slotMaxDurability[i]), 8 });
+                durFg.setFillColor(sf::Color::Green);
+                durFg.setPosition(durBg.getPosition());
+
+                window.draw(durBg);
+                window.draw(durFg);
+            }
         }
     }
 
@@ -97,12 +120,22 @@ void Inventory::draw(sf::RenderWindow& window)
 
 void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& window)
 {
-    sf::Vector2f worldPos = window.mapPixelToCoords(mousePos);
+    sf::Vector2f uiPos = window.mapPixelToCoords(mousePos, window.getDefaultView());
 
-    int slot = getSlotAt(worldPos);
+    int slot = getSlotAt(uiPos);
     if (slot != -1)
     {
         selectedSlot = slot;
+
+        // check double click
+        if (slot == lastClickedSlot && doubleClickClock.getElapsedTime().asSeconds() < 0.5f) {
+            if (slots[slot].occupied) {
+                slotEquipped[slot] = !slotEquipped[slot];
+            }
+        }
+        
+        lastClickedSlot = slot;
+        doubleClickClock.restart();
     }
 }
 
@@ -160,6 +193,13 @@ void Inventory::addItem(int id, const sf::Texture& texture, int amount)
 
             slots[i].count = amount;   // show count = 1
             slots[i].occupied = true;
+            if (id == 4) { // ITEM_WOODEN_SWORD
+                slotDurability[i] = 100;
+                slotMaxDurability[i] = 100;
+            } else if (id == 6) { // ITEM_SHIELD
+                slotDurability[i] = 500;
+                slotMaxDurability[i] = 500;
+            }
             return;
         }
     }
@@ -194,4 +234,12 @@ void Inventory::clear()
     }
 }
 
+void Inventory::clearSlot(int slot)
+{
+    if (slot >= 0 && slot < SLOT_COUNT) {
+        slots[slot].count = 0;
+        slots[slot].occupied = false;
+        slots[slot].icon.reset();
+    }
+}
 

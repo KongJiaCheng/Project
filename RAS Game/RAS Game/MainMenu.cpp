@@ -49,6 +49,21 @@ int main() {
         return -1;
     }
 
+    sf::Texture bgTexture;
+    if (!bgTexture.loadFromFile("C:/Users/DELL/source/repos/Project/RAS Game/Main Menu/Background.png")) {
+        std::cout << "Failed to load background!\n";
+    }
+    sf::Sprite bgSprite(bgTexture);
+    bgSprite.setScale({ width / bgSprite.getLocalBounds().size.x, height / bgSprite.getLocalBounds().size.y });
+
+    sf::Texture logoTexture;
+    if (!logoTexture.loadFromFile("C:/Users/DELL/source/repos/Project/RAS Game/Main Menu/Logo.jpg")) {
+        std::cout << "Failed to load logo!\n";
+    }
+    sf::Sprite logoSprite(logoTexture);
+    logoSprite.setScale({ 2.f, 2.f });
+    logoSprite.setPosition({ width / 2.f - logoSprite.getGlobalBounds().size.x / 2.f, 100.f });
+
     MenuState state = MenuState::MainMenu;
     std::string errorMessage = "";
     std::string currentEmailForReset = "";
@@ -239,7 +254,8 @@ int main() {
                             } else {
                                 if (AuthManager::getInstance().registerUser(sql::SQLString(u.c_str()), sql::SQLString(p.c_str()), sql::SQLString(e.c_str()))) {
                                     // Success
-                                    gameLoop(*window, width, height, u);
+                                    PlayerStats stats = AuthManager::getInstance().loadPlayerStats(sql::SQLString(u.c_str()));
+                                    gameLoop(*window, width, height, u, stats.isFirstTime);
                                     state = MenuState::MainMenu; // When game finishes, go back to main
                                 } else {
                                     errorMessage = "Registration failed! Username may exist.";
@@ -258,7 +274,8 @@ int main() {
                                 errorMessage = "Fields cannot be blank!";
                             } else {
                                 if (AuthManager::getInstance().loginUser(sql::SQLString(u.c_str()), sql::SQLString(p.c_str()))) {
-                                    gameLoop(*window, width, height, u);
+                                    PlayerStats stats = AuthManager::getInstance().loadPlayerStats(sql::SQLString(u.c_str()));
+                                    gameLoop(*window, width, height, u, stats.isFirstTime);
                                     state = MenuState::MainMenu;
                                 } else {
                                     errorMessage = "Invalid Credentials!";
@@ -328,9 +345,11 @@ int main() {
         }
 
         window->clear(sf::Color(30,30,30));
+        window->draw(bgSprite);
         errorText.setString(errorMessage);
 
         if (state == MenuState::MainMenu) {
+            window->draw(logoSprite);
             window->draw(btnPlay); window->draw(txtPlay);
             window->draw(btnSettings); window->draw(txtSettings);
             window->draw(btnExit); window->draw(txtExit);
