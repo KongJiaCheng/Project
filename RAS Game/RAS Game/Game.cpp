@@ -14,6 +14,7 @@
 #include "PigMeat.h"
 #include "ZombieFlesh.h"
 #include "AuthManager.h"
+#include "ItemID.h"
 #include "Settings.h"
 #include "TextInput.h"
 #include <SFML/Graphics.hpp>
@@ -167,6 +168,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     int currency = 0;
     int level = 1;
     int exp = 0;
+    float timeOffset = 0.f;
 
     // rates (per second)
     const float HUNGER_RATE = 1.f;
@@ -185,11 +187,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     sprite.setOrigin({ 32.f, 32.f });
     sprite.setPosition({ MAP_WIDTH / 2.f, MAP_HEIGHT / 2.f });
 
-    sf::Texture woodTex;
-    sf::Texture treeTex;
-    sf::Texture stoneTex;
-    sf::Texture pondTex;
-	sf::Texture saplingTex;
+
 
     sf::Texture hpIconTex, hungerIconTex, thirstIconTex;
     hpIconTex.loadFromFile("../Sprites/UI/hp.png");
@@ -200,11 +198,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     wrenchTex.loadFromFile("../Sprites/UI/wrench.png");
 
     struct NPC {
-        sf::Sprite sprite;
+        std::optional<sf::Sprite> sprite;
         std::string name;
         sf::Texture texture;
-        sf::Sprite wrenchBtn;
-        NPC(const sf::Texture& tex) : sprite(tex), wrenchBtn(tex) {}
+        std::optional<sf::Sprite> wrenchBtn;
+        NPC(const sf::Texture& tex) {
+            sprite.emplace(tex);
+            wrenchBtn.emplace(tex);
+        }
     } npcFemale(wrenchTex), npcMale(wrenchTex);
     npcFemale.name = "Female NPC";
     npcMale.name = "Male NPC";
@@ -219,7 +220,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool placementMode = false;
     bool placementFollowingCursor = true;
 
+    int placementItemID = 0;
     sf::Vector2f placementPos;
+    int placementFromInventorySlot = -1;
+    int playerTradeGold = 0;
+    int npcTradeGold = 0;
 
     bool saplingPlacementMode = false;
     bool saplingFollowingCursor = true;
@@ -240,6 +245,24 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     };
 
     std::vector<PlantedSapling> plantedSaplings;
+    struct PlacedStructure {
+        int id;
+        float health;
+        float maxHealth;
+        bool isHurt = false;
+        float hurtTimer = 0.f;
+        std::optional<sf::Sprite> sprite;
+
+        PlacedStructure(int i, const sf::Texture& tex) : id(i) {
+            sprite.emplace(tex);
+            maxHealth = 100.f;
+            if (id == ITEM_WOOD_WALL) maxHealth = 200.f;
+            else if (id == ITEM_FURNACE) maxHealth = 150.f;
+            else if (id == ITEM_BED) maxHealth = 120.f;
+            health = maxHealth;
+        }
+    };
+    std::vector<PlacedStructure> structures;
     std::vector<PlacedCampfire> campfires;
     sf::Texture campfireFrames[8];
     for (int i = 0; i < 8; i++) {
@@ -253,10 +276,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
     sf::Sprite playerWrenchBtn(wrenchTex);
     playerWrenchBtn.setScale({ 0.05f, 0.05f });
-    npcFemale.wrenchBtn.setTexture(wrenchTex);
-    npcFemale.wrenchBtn.setScale({ 0.05f, 0.05f });
-    npcMale.wrenchBtn.setTexture(wrenchTex);
-    npcMale.wrenchBtn.setScale({ 0.05f, 0.05f });
+    npcFemale.wrenchBtn->setTexture(wrenchTex);
+    npcFemale.wrenchBtn->setScale({ 0.05f, 0.05f });
+    npcMale.wrenchBtn->setTexture(wrenchTex);
+    npcMale.wrenchBtn->setScale({ 0.05f, 0.05f });
 
     sf::Sprite hpIcon(hpIconTex);
     sf::Sprite hungerIcon(hungerIconTex);
@@ -319,22 +342,39 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     Pig::texture.loadFromFile("../Sprites/Animals/Pig/South.png");
     Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/South.png");
 
+    sf::Texture woodTex, treeTex, stoneTex, pondTex, saplingTex, goldTex, woodenSwordTex, shieldTex;
+    sf::Texture furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex;
+    sf::Texture swordIconTex, shieldIconTex, tileIconTex, wallIconTex, doorIconTex, roofIconTex, stairsIconTex, bedIconTex;
+    
     woodTex.loadFromFile("../Items/wood.png");
     treeTex.loadFromFile("../Items/Tree.png");
     stoneTex.loadFromFile("../Items/Stone.png");
-    pondTex.loadFromFile("../Items/Pond.png");
-	saplingTex.loadFromFile("../Items/Sapling.png");
-
-    sf::Texture goldTex;
-    bool goldTexLoaded = goldTex.loadFromFile("../Items/gold.png");
-    sf::Sprite goldSprite(goldTex);
-    goldSprite.setScale({ 0.5f, 0.5f }); // Scale down if it's too large
-
-    sf::Texture woodenSwordTex;
+    pondTex.loadFromFile("../Items/pond.png");
+    saplingTex.loadFromFile("../Items/sapling.png");
+    goldTex.loadFromFile("../Items/gold.png");
     woodenSwordTex.loadFromFile("../Items/wooden sword.png");
-
-    sf::Texture shieldTex;
     shieldTex.loadFromFile("../Items/shield.png");
+    furnaceTex.loadFromFile("../Items/furnance.png");
+    woodTileTex.loadFromFile("../Items/wood tile.png");
+    woodWallTex.loadFromFile("../Items/wood wall.png");
+    woodDoorTex.loadFromFile("../Items/wooden door.png");
+    woodRoofTex.loadFromFile("../Items/wooden roof.png");
+    woodStairsTex.loadFromFile("../Items/wooden stairs.png");
+    bedTex.loadFromFile("../Items/bed.png");
+    
+    // Load high quality icons
+    swordIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
+    shieldIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
+    tileIconTex.loadFromFile("../Items/building_parts_icons.png");
+    wallIconTex.loadFromFile("../Items/building_parts_icons.png");
+    doorIconTex.loadFromFile("../Items/building_parts_icons.png");
+    roofIconTex.loadFromFile("../Items/building_parts_icons.png");
+    stairsIconTex.loadFromFile("../Items/building_parts_icons.png");
+    bedIconTex.loadFromFile("../Items/bed.png");
+
+    bool goldTexLoaded = (goldTex.getSize().x > 0);
+    sf::Sprite goldSprite(goldTex);
+    goldSprite.setScale({ 0.5f, 0.5f });
 
     bool shieldCrafting = false;
     float shieldCraftTimer = 0.f;
@@ -509,7 +549,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         {"COMMUNICATION", "Press [T] to open the global chat and talk to others.", "Say 'Hello' in chat"},
         {"ALL SET!", "You are ready to survive. Good luck!", "Click 'Finish' to start playing"}
     };
-
     sf::RectangleShape tutorialBox({ 800.f, 400.f });
     tutorialBox.setFillColor(sf::Color(20, 20, 20, 240));
     tutorialBox.setOutlineColor(sf::Color::Cyan);
@@ -529,7 +568,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         {3, "Keep Warm", "Craft 1 campfire.", 1},
         {4, "Hunter", "Collect 5 meat items.", 5}
     };
-    
+
+    struct CraftableItem {
+        int id;
+        std::string name;
+        int woodReq;
+        int stoneReq;
+        const sf::Texture* tex;
+    };
+    std::vector<CraftableItem> craftableItems = {
+        {ITEM_NONE, "Campfire", 10, 10, &campfireFrames[0]},
+        {ITEM_WOODEN_SWORD, "Wooden Sword", 8, 0, &woodenSwordTex},
+        {ITEM_SHIELD, "Sturdy Shield", 10, 5, &shieldTex},
+        {ITEM_FURNACE, "Stone Furnace", 0, 10, &furnaceTex},
+        {ITEM_WOOD_TILE, "Wood Tile", 1, 0, &woodTileTex},
+        {ITEM_WOOD_WALL, "Wood Wall", 1, 0, &woodWallTex},
+        {ITEM_WOOD_DOOR, "Wood Door", 5, 0, &woodDoorTex},
+        {ITEM_WOOD_ROOF, "Wood Roof", 5, 0, &woodRoofTex},
+        {ITEM_WOOD_STAIRS, "Wood Stairs", 8, 0, &woodStairsTex},
+        {ITEM_BED, "Comfortable Bed", 12, 0, &bedTex}
+    };
     QuestInfo qInfo = authManager.getQuestInfo(username.c_str());
     
     time_t tnow = time(0);
@@ -554,6 +612,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     while (window.isOpen())
     {
         float dt = deltaClock.restart().asSeconds();
+        UpdateCamera(window, sprite, MAP_WIDTH, MAP_HEIGHT);
+        sf::Vector2f worldPos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
 
         bubbleTimer = std::max(0.f, bubbleTimer - dt);
 
@@ -567,7 +627,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             {
                 hp = std::max(0.f, hp - DAMAGE_RATE * dt);
             }
-            else if (hunger <= 0.01f)
+            else if (hunger < maxHunger * 0.2f) // Hunger bar above 80% (hunger < 20% empty)
             {
                 hp = std::min(maxHP, hp + 5.f * dt);
             }
@@ -659,7 +719,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
 
             authManager.saveInventory(username.c_str(), items);
-            authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp);
+            
+            float currentElapsed = timeOffset + dayNightClock.getElapsedTime().asSeconds();
+            authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
+
+            std::vector<StoredStructure> structData;
+            for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health });
+            authManager.saveStructures(username.c_str(), structData);
+
+            std::vector<StoredCampfire> campData;
+            for (auto& c : campfires) campData.push_back({ c.position.x, c.position.y, c.timeRemaining, c.isCrafted });
+            authManager.saveCampfires(username.c_str(), campData);
 
             std::cout << "[AUTO SAVE]\n";
 
@@ -852,38 +922,54 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     lastMousePosChat = uiPos;
                 }
             }
-
             if (event->is<sf::Event::Closed>())
             {
-                std::vector<std::pair<int, int>> items(8, { 0, 0 });
-                for (int i = 0; i < 8; i++)
-                {
-                    if (inventory.hasItem(i))
-                    {
-                        const sf::Texture* tex = inventory.getItemTexture(i);
-                        int count = inventory.getItemCount(i);
-                        int itemId = 0;
-                        if (tex == ChickenMeat::getTexture()) itemId = 1;
-                        else if (tex == PigMeat::getTexture()) itemId = 2;
-                        else if (tex == ZombieFlesh::getTexture()) itemId = 3;
-                        else if (tex == &woodenSwordTex) itemId = 4;
-                        else if (tex == &shieldTex) itemId = 6;
-                        items[i] = { itemId, count };
-                    }
-                }
-                authManager.saveInventory(username.c_str(), items);
-                authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp);
+                 std::vector<std::pair<int, int>> items(20, { 0, 0 });
+                 for (int i = 0; i < 20; i++)
+                 {
+                     if (inventory.hasItem(i))
+                     {
+                         const sf::Texture* tex = inventory.getItemTexture(i);
+                         int count = inventory.getItemCount(i);
+                         int itemId = 0;
+                         if (tex == ChickenMeat::getTexture()) itemId = 1;
+                         else if (tex == PigMeat::getTexture()) itemId = 2;
+                         else if (tex == ZombieFlesh::getTexture()) itemId = 3;
+                         else if (tex == &woodenSwordTex) itemId = 4;
+                         else if (tex == &shieldTex) itemId = 6;
+                         else if (tex == &furnaceTex) itemId = 7;
+                         else if (tex == &woodTileTex) itemId = 8;
+                         else if (tex == &woodWallTex) itemId = 9;
+                         else if (tex == &woodDoorTex) itemId = 10;
+                         else if (tex == &woodRoofTex) itemId = 11;
+                         else if (tex == &woodStairsTex) itemId = 12;
+                         else if (tex == &bedTex) itemId = 13;
+                         items[i] = { itemId, count };
+                     }
+                 }
+                 authManager.saveInventory(username.c_str(), items);
+                 
+                 float currentElapsed = timeOffset + dayNightClock.getElapsedTime().asSeconds();
+                 authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
+
+                 std::vector<StoredStructure> structData;
+                 for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health });
+                 authManager.saveStructures(username.c_str(), structData);
+
+                 std::vector<StoredCampfire> campData;
+                 for (auto& c : campfires) campData.push_back({ c.position.x, c.position.y, c.timeRemaining, c.isCrafted });
+                 authManager.saveCampfires(username.c_str(), campData);
                 
-                window.close();
+                 window.close();
             }
 
             if (auto* key = event->getIf<sf::Event::KeyPressed>())
             {
                 if (key->scancode == sf::Keyboard::Scancode::Escape)
                 {
-                    std::vector<std::pair<int, int>> items(8, { 0, 0 });
+                    std::vector<std::pair<int, int>> items(20, { 0, 0 });
 
-                    for (int i = 0; i < 8; i++)
+                    for (int i = 0; i < 20; i++)
                     {
                         if (inventory.hasItem(i))
                         {
@@ -891,12 +977,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             int count = inventory.getItemCount(i);
 
                             int itemId = 0;
-
                             if (tex == ChickenMeat::getTexture()) itemId = 1;
                             else if (tex == PigMeat::getTexture()) itemId = 2;
                             else if (tex == ZombieFlesh::getTexture()) itemId = 3;
                             else if (tex == &woodenSwordTex) itemId = 4;
                             else if (tex == &shieldTex) itemId = 6;
+                            else if (tex == &furnaceTex) itemId = 7;
+                            else if (tex == &woodTileTex) itemId = 8;
+                            else if (tex == &woodWallTex) itemId = 9;
+                            else if (tex == &woodDoorTex) itemId = 10;
+                            else if (tex == &woodRoofTex) itemId = 11;
+                            else if (tex == &woodStairsTex) itemId = 12;
+                            else if (tex == &bedTex) itemId = 13;
 
                             items[i] = { itemId, count };
                         }
@@ -904,7 +996,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                     std::cout << "Saving inventory...\n";
                     authManager.saveInventory(username.c_str(), items);
-                    authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp);
+                    
+                    float currentElapsed = timeOffset + dayNightClock.getElapsedTime().asSeconds();
+                    authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
+
+                    std::vector<StoredStructure> structData;
+                    for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health });
+                    authManager.saveStructures(username.c_str(), structData);
+
+                    std::vector<StoredCampfire> campData;
+                    for (auto& c : campfires) campData.push_back({ c.position.x, c.position.y, c.timeRemaining, c.isCrafted });
+                    authManager.saveCampfires(username.c_str(), campData);
+
                     std::cout << "Saved!\n";
 
                     // ✅ CLOSE GAME (or break loop)
@@ -932,10 +1035,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     sf::Vector2f mpos((float)mouse->position.x, (float)mouse->position.y);
                     sf::Vector2f uiPos = window.mapPixelToCoords(mouse->position, window.getDefaultView());
                     
-                    // Temporarily restore the Game View so mapPixelToCoords maps to the world correctly
-                    UpdateCamera(window, sprite, MAP_WIDTH, MAP_HEIGHT);
-                    sf::Vector2f worldPos = window.mapPixelToCoords(mouse->position);
-
                     bool clickHandled = false;
 
                     sf::FloatRect settingsBtnRect({ (float)width - 140.f, 20.f }, { 120.f, 40.f });
@@ -952,13 +1051,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         wrenchMenuPos = uiPos;
                         continue;   // stop further click handling
                     }
-                    else if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && npcFemale.wrenchBtn.getGlobalBounds().contains(worldPos)) {
+                    else if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && npcFemale.wrenchBtn->getGlobalBounds().contains(worldPos)) {
                         wrenchMenuOpen = true;
                         isTargetNPC = true;
                         wrenchMenuPos = uiPos;
                         continue;   // stop further click handling
                     }
-                    else if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && npcMale.wrenchBtn.getGlobalBounds().contains(worldPos)) {
+                    else if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && npcMale.wrenchBtn->getGlobalBounds().contains(worldPos)) {
                         wrenchMenuOpen = true;
                         isTargetNPC = true;
                         wrenchMenuPos = uiPos;
@@ -1001,9 +1100,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         sf::FloatRect yesRect({ (width - 250.f) / 2.f, height / 2.f }, { 100.f, 40.f });
                         sf::FloatRect noRect({ (width + 50.f) / 2.f, height / 2.f }, { 100.f, 40.f });
                         if (yesRect.contains(uiPos)) {
-                            tradeConfirmOpen = false;
-                            tradeMenuOpen = false;
-                            tradeBoxesTicked = false;
+                             tradeConfirmOpen = false;
+                             tradeMenuOpen = false;
+                             tradeBoxesTicked = false;
+
+                             // ✅ TRANSFER GOLD
+                             currency -= playerTradeGold;
+                             currency += npcTradeGold;
+                             playerTradeGold = 0;
+                             npcTradeGold = 0;
 
                             // TRANSFER NPC ITEMS TO PLAYER
                             for(int i = 0; i < 4; i++) {
@@ -1017,8 +1122,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             }
 
                             // ✅ SAVE ONCE
-                            std::vector<std::pair<int, int>> items(8, { 0,0 });
-                            for (int i = 0; i < 8; i++) {
+                            std::vector<std::pair<int, int>> items(20, { 0,0 });
+                            for (int i = 0; i < 20; i++) {
                                 if (inventory.hasItem(i)) {
                                     const sf::Texture* tex = inventory.getItemTexture(i);
                                     int count = inventory.getItemCount(i);
@@ -1028,6 +1133,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     else if (tex == ZombieFlesh::getTexture()) itemId = 3;
                                     else if (tex == &woodenSwordTex) itemId = 4;
                                     else if (tex == &shieldTex) itemId = 6;
+                                    else if (tex == &furnaceTex) itemId = 7;
+                                    else if (tex == &woodTileTex) itemId = 8;
+                                    else if (tex == &woodWallTex) itemId = 9;
+                                    else if (tex == &woodDoorTex) itemId = 10;
+                                    else if (tex == &woodRoofTex) itemId = 11;
+                                    else if (tex == &woodStairsTex) itemId = 12;
+                                    else if (tex == &bedTex) itemId = 13;
                                     items[i] = { itemId, count };
                                 }
                             }
@@ -1055,15 +1167,28 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else if (tradeMenuOpen) {
                         inventory.handleClick(mouse->position, window);
 
-                        sf::FloatRect acceptRect({ (width + 600.f) / 2.f - 120.f, (height + 400.f) / 2.f - 60.f }, { 100.f, 40.f });
+                        sf::FloatRect tBoxRect({ (width - 600.f) / 2.f, (height - 400.f) / 2.f }, { 600.f, 400.f });
+                        sf::FloatRect acceptRect({ tBoxRect.position.x + 480.f, tBoxRect.position.y + 340.f }, { 100.f, 40.f });
+                        
+                        // Gold buttons
+                        sf::FloatRect pGoldPlus({ tBoxRect.position.x + 350.f, tBoxRect.position.y + 115.f }, { 30.f, 30.f });
+                        sf::FloatRect pGoldMinus({ tBoxRect.position.x + 390.f, tBoxRect.position.y + 115.f }, { 30.f, 30.f });
+                        
+                        if (pGoldPlus.contains(uiPos)) {
+                            if (currency >= playerTradeGold + 10) playerTradeGold += 10;
+                            clickHandled = true;
+                        } else if (pGoldMinus.contains(uiPos)) {
+                            if (playerTradeGold >= 10) playerTradeGold -= 10;
+                            clickHandled = true;
+                        }
+
                         if (acceptRect.contains(uiPos)) {
-                            tradeBoxesTicked = true;
                             tradeConfirmOpen = true;
                             clickHandled = true;
                         }
 
                         // Check if player clicked a Player Trade Box to transfer from inventory
-                        sf::Vector2f tBoxPos((width - 600.f) / 2.f, (height - 400.f) / 2.f);
+                        sf::Vector2f tBoxPos(tBoxRect.position);
                         for(int i=0; i<4; i++) {
                             sf::FloatRect pBoxRect({ tBoxPos.x + 50.f + i * 70.f, tBoxPos.y + 100.f }, { 64.f, 64.f });
                             if (pBoxRect.contains(uiPos)) {
@@ -1072,7 +1197,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     playerTradeSlots[i].tex = inventory.getItemTexture(selSlot);
                                     playerTradeSlots[i].count = inventory.getItemCount(selSlot);
                                     
-                                    // Use original consumeItem in a loop to bypass Intellisense caching issues
                                     int countToConsume = playerTradeSlots[i].count;
                                     for (int c = 0; c < countToConsume; c++) {
                                         inventory.consumeItem(selSlot);
@@ -1106,6 +1230,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 npcTradeSlots[0].count = 5;
 
                                 tradeBoxesTicked = false;
+
+                             // TRANSFER GOLD
+                             currency -= playerTradeGold;
+                             currency += npcTradeGold;
+                             playerTradeGold = 0;
+                             npcTradeGold = 0;
                                 clickHandled = true;
                             }
                             else if (questBound.contains(uiPos)) {
@@ -1189,13 +1319,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         else
                         {
                             saplingFollowingCursor = !saplingFollowingCursor;
-
-                            if (!saplingFollowingCursor)
-                                saplingPlacementPos = worldPos;
-
+                            saplingPlacementPos = worldPos;
                             clickHandled = true;
                         }
-                        }
+                    }
 
                     else if (placementMode) {
                         float btnW = 220.f, btnH = 70.f, gap = 40.f;
@@ -1207,24 +1334,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         
                         if (placeBtn.contains(uiPos)) {
                             int totalWood = 0, totalStone = 0;
-                            for (int i = 0; i < 8; i++) {
-                                if (inventory.hasItem(i)) {
-                                    if (inventory.getItemTexture(i) == &woodTex) totalWood += inventory.getItemCount(i);
-                                    if (inventory.getItemTexture(i) == &stoneTex) totalStone += inventory.getItemCount(i);
-                                }
-                            }
-                            if (totalWood >= 10 && totalStone >= 10) {
-                                int woodToConsume = 10, stoneToConsume = 10;
-                                for (int i = 0; i < 8; i++) {
-                                    if (inventory.hasItem(i)) {
-                                        if (inventory.getItemTexture(i) == &woodTex) {
-                                            while(woodToConsume > 0 && inventory.getItemCount(i) > 0) { inventory.consumeItem(i); woodToConsume--; }
-                                        }
-                                        if (inventory.getItemTexture(i) == &stoneTex) {
-                                            while(stoneToConsume > 0 && inventory.getItemCount(i) > 0) { inventory.consumeItem(i); stoneToConsume--; }
-                                        }
-                                    }
-                                }
+                            if (placementItemID == ITEM_NONE) {
                                 PlacedCampfire pc;
                                 pc.position = placementPos;
                                 pc.timeRemaining = 90.f;
@@ -1232,92 +1342,107 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 pc.currentFrame = 0;
                                 pc.frameTimer = 0.f;
                                 campfires.push_back(pc);
-                                placementMode = false;
+
+                                if (!tutorialActive && qInfo.questID == 3 && qInfo.progress < 1) {
+                                    qInfo.progress++;
+                                    authManager.updateQuestProgress(username.c_str(), qInfo.progress, qInfo.isCompleted);
+                                }
+                            } else {
+                                if (placementFromInventorySlot != -1) {
+                                    inventory.consumeItem(placementFromInventorySlot);
+                                }
+                                if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex);
+                                else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex);
+                                else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex);
+                                else if (placementItemID == ITEM_WOOD_DOOR) structures.emplace_back(ITEM_WOOD_DOOR, woodDoorTex);
+                                else if (placementItemID == ITEM_WOOD_ROOF) structures.emplace_back(ITEM_WOOD_ROOF, woodRoofTex);
+                                else if (placementItemID == ITEM_WOOD_STAIRS) structures.emplace_back(ITEM_WOOD_STAIRS, woodStairsTex);
+                                else if (placementItemID == ITEM_BED) structures.emplace_back(ITEM_BED, bedTex);
+                                
+                                auto& newS = structures.back();
+                                sf::Vector2u ts = newS.sprite->getTexture().getSize();
+                                newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y }); // Bottom center for 3D depth
+                                
+                                if (placementItemID == ITEM_WOOD_TILE) newS.sprite->setScale({ 0.4f, 0.2f }); // Flat on X axis
+                                else if (placementItemID == ITEM_WOOD_WALL) newS.sprite->setScale({ 0.15f, 0.4f }); // Vertical on Y axis
+                                else if (placementItemID == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
+                                else if (placementItemID == ITEM_BED) newS.sprite->setScale({ 0.35f, 0.35f });
+                                else newS.sprite->setScale({ 0.3f, 0.3f });
+
+                                newS.sprite->setPosition(placementPos);
                             }
+                            placementMode = false;
                             clickHandled = true;
                         } else if (cancelBtn.contains(uiPos)) {
                             placementMode = false;
                             clickHandled = true;
                         } else {
+                            // Map Click: Toggle following
                             placementFollowingCursor = !placementFollowingCursor;
-                            if (!placementFollowingCursor) {
+                            if (placementFollowingCursor) {
+                                placementPos = worldPos;
+                            } else {
                                 placementPos = worldPos;
                             }
                             clickHandled = true;
                         }
                     }
                     else if (craftMenuOpen) {
-                        sf::FloatRect craftBox({ (width - 1200.f) / 2.f, (height - 650.f) / 2.f }, { 1200.f, 650.f });
-                        sf::FloatRect closeBtn({ craftBox.position.x + 1120.f, craftBox.position.y + 15.f }, { 50.f, 50.f });
-                        sf::FloatRect craftBtn({ craftBox.position.x + 60.f, craftBox.position.y + 520.f }, { 200.f, 80.f });
-                        sf::FloatRect craftSwordBtn({ craftBox.position.x + 460.f, craftBox.position.y + 520.f }, { 200.f, 80.f });
-                        sf::FloatRect craftShieldBtn({ craftBox.position.x + 860.f, craftBox.position.y + 520.f }, { 200.f, 80.f });
+                        sf::FloatRect craftBox({ (width - 1300.f) / 2.f, (height - 950.f) / 2.f }, { 1300.f, 950.f });
+                        sf::FloatRect closeBtn({ craftBox.position.x + 1220.f, craftBox.position.y + 10.f }, { 60.f, 60.f });
                         
                         if (closeBtn.contains(uiPos)) {
                             craftMenuOpen = false;
                             clickHandled = true;
-                        } else if (craftBtn.contains(uiPos)) {
+                        } else {
                             int totalWood = 0, totalStone = 0;
-                            for (int i = 0; i < 8; i++) {
+                            for (int i = 0; i < 20; i++) {
                                 if (inventory.hasItem(i)) {
-                                    if (inventory.getItemTexture(i) == &woodTex) totalWood += inventory.getItemCount(i);
-                                    if (inventory.getItemTexture(i) == &stoneTex) totalStone += inventory.getItemCount(i);
+                                    if (inventory.getItemID(i) == ITEM_WOOD) totalWood += inventory.getItemCount(i);
+                                    if (inventory.getItemID(i) == ITEM_STONE) totalStone += inventory.getItemCount(i);
                                 }
                             }
-                            if (totalWood >= 10 && totalStone >= 10) {
-                                craftMenuOpen = false;
-                                placementMode = true;
-                                placementFollowingCursor = true;
-                                
-                                if (!tutorialActive && qInfo.questID == 3 && qInfo.progress < 1) {
-                                    qInfo.progress++;
-                                    authManager.updateQuestProgress(username.c_str(), qInfo.progress, qInfo.isCompleted);
-                                }
-                            }
-                            clickHandled = true;
-                        } else if (craftSwordBtn.contains(uiPos) && !swordCrafting) {
-                            int totalWood = 0;
-                            for (int i = 0; i < 8; i++) {
-                                if (inventory.hasItem(i) && inventory.getItemTexture(i) == &woodTex) {
-                                    totalWood += inventory.getItemCount(i);
-                                }
-                            }
-                            if (totalWood >= 8) {
-                                int woodToConsume = 8;
-                                for (int i = 0; i < 8; i++) {
-                                    if (inventory.hasItem(i) && inventory.getItemTexture(i) == &woodTex) {
-                                        while(woodToConsume > 0 && inventory.getItemCount(i) > 0) { inventory.consumeItem(i); woodToConsume--; }
+
+                            float startX = craftBox.position.x + 50.f;
+                            float startY = craftBox.position.y + 110.f;
+                            float itemW = 380.f, itemH = 190.f;
+                            float gapX = 30.f, gapY = 20.f;
+
+                            for (int i = 0; i < (int)craftableItems.size(); i++) {
+                                int row = i / 3;
+                                int col = i % 3;
+                                sf::Vector2f pos(startX + col * (itemW + gapX), startY + row * (itemH + gapY));
+                                sf::FloatRect btnRect({ pos.x + 210.f, pos.y + 130.f }, { 140.f, 45.f });
+                                if (btnRect.contains(uiPos)) {
+                                    const auto& item = craftableItems[i];
+                                    if (totalWood >= item.woodReq && totalStone >= item.stoneReq) {
+                                        // Check if already crafting
+                                        if (item.id == ITEM_WOODEN_SWORD && swordCrafting) continue;
+                                        if (item.id == ITEM_SHIELD && shieldCrafting) continue;
+
+                                        // Consume resources
+                                        int wToC = item.woodReq, sToC = item.stoneReq;
+                                        for (int j = 0; j < 20; j++) {
+                                            if (inventory.hasItem(j)) {
+                                                if (inventory.getItemTexture(j) == &woodTex) {
+                                                    while(wToC > 0 && inventory.getItemCount(j) > 0) { inventory.consumeItem(j); wToC--; }
+                                                }
+                                                if (inventory.getItemTexture(j) == &stoneTex) {
+                                                    while(sToC > 0 && inventory.getItemCount(j) > 0) { inventory.consumeItem(j); sToC--; }
+                                                }
+                                            }
+                                        }
+
+                                        if (item.id == ITEM_WOODEN_SWORD) { swordCrafting = true; swordCraftTimer = 30.f; }
+                                        else if (item.id == ITEM_SHIELD) { shieldCrafting = true; shieldCraftTimer = 60.f; }
+                                        else {
+                                            inventory.addItem(item.id, *item.tex, 1);
+                                        }
+                                        clickHandled = true;
+                                        break;
                                     }
                                 }
-                                swordCrafting = true;
-                                swordCraftTimer = 30.f;
                             }
-                            clickHandled = true;
-                        } else if (craftShieldBtn.contains(uiPos) && !shieldCrafting) {
-                            int totalWood = 0, totalStone = 0;
-                            for (int i = 0; i < 8; i++) {
-                                if (inventory.hasItem(i)) {
-                                    if (inventory.getItemTexture(i) == &woodTex) totalWood += inventory.getItemCount(i);
-                                    if (inventory.getItemTexture(i) == &stoneTex) totalStone += inventory.getItemCount(i);
-                                }
-                            }
-                            if (totalWood >= 10 && totalStone >= 5) {
-                                int woodToConsume = 10;
-                                int stoneToConsume = 5;
-                                for (int i = 0; i < 8; i++) {
-                                    if (inventory.hasItem(i)) {
-                                        if (inventory.getItemTexture(i) == &woodTex) {
-                                            while(woodToConsume > 0 && inventory.getItemCount(i) > 0) { inventory.consumeItem(i); woodToConsume--; }
-                                        }
-                                        if (inventory.getItemTexture(i) == &stoneTex) {
-                                            while(stoneToConsume > 0 && inventory.getItemCount(i) > 0) { inventory.consumeItem(i); stoneToConsume--; }
-                                        }
-                                    }
-                                }
-                                shieldCrafting = true;
-                                shieldCraftTimer = 60.f; // 1 minute
-                            }
-                            clickHandled = true;
                         }
                     }
                     else if (!selectionDone)
@@ -1353,7 +1478,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     if (tex == &saplingTex)
                                     {
                                         saplingPlacementMode = true;
-                                        saplingFollowingCursor = true;
+                                        saplingFollowingCursor = false;
+                                    }
+                                    
+                                    int itemId = inventory.getItemID(clickedSlot);
+                                    if (itemId >= ITEM_FURNACE && itemId <= ITEM_BED) {
+                                        inventoryOpen = false;
+                                        placementMode = true;
+                                        placementFollowingCursor = false;
+                                        placementItemID = itemId;
+                                        placementFromInventorySlot = clickedSlot;
+                                        clickHandled = true;
                                     }
 
                                     if (tex == ChickenMeat::getTexture())
@@ -1423,6 +1558,48 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             currency = stats.currency;
             level = stats.level;
             exp = stats.exp;
+            timeOffset = stats.elapsedTime;
+
+            // Load Structures
+            std::vector<StoredStructure> loadedStructures = authManager.loadStructures(username.c_str());
+            for (auto& s : loadedStructures) {
+                const sf::Texture* tex = nullptr;
+                if (s.id == ITEM_FURNACE) tex = &furnaceTex;
+                else if (s.id == ITEM_WOOD_TILE) tex = &woodTileTex;
+                else if (s.id == ITEM_WOOD_WALL) tex = &woodWallTex;
+                else if (s.id == ITEM_WOOD_DOOR) tex = &woodDoorTex;
+                else if (s.id == ITEM_WOOD_ROOF) tex = &woodRoofTex;
+                else if (s.id == ITEM_WOOD_STAIRS) tex = &woodStairsTex;
+                else if (s.id == ITEM_BED) tex = &bedTex;
+
+                if (tex) {
+                    structures.emplace_back(s.id, *tex);
+                    auto& newS = structures.back();
+                    newS.sprite->setPosition({ s.x, s.y });
+                    newS.health = s.health;
+                    
+                    sf::Vector2u ts = newS.sprite->getTexture().getSize();
+                    newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+                    
+                    if (s.id == ITEM_WOOD_TILE) newS.sprite->setScale({ 0.4f, 0.2f });
+                    else if (s.id == ITEM_WOOD_WALL) newS.sprite->setScale({ 0.15f, 0.4f });
+                    else if (s.id == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
+                    else if (s.id == ITEM_BED) newS.sprite->setScale({ 0.35f, 0.35f });
+                    else newS.sprite->setScale({ 0.3f, 0.3f });
+                }
+            }
+
+            // Load Campfires
+            std::vector<StoredCampfire> loadedCampfires = authManager.loadCampfires(username.c_str());
+            for (auto& c : loadedCampfires) {
+                PlacedCampfire pc;
+                pc.position = { c.x, c.y };
+                pc.timeRemaining = c.timeRemaining;
+                pc.isCrafted = c.isCrafted;
+                pc.currentFrame = 0;
+                pc.frameTimer = 0.f;
+                campfires.push_back(pc);
+            }
 
             for (int i = 0; i < 8; i++)
             {
@@ -1445,27 +1622,27 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
 
             if (npcFemale.texture.loadFromFile("../Sprites/NPCFemale/Walk/South/frame_000.png")) {
-                npcFemale.sprite.setTexture(npcFemale.texture);
+                npcFemale.sprite->setTexture(npcFemale.texture);
                 sf::Vector2u ts_npcF = npcFemale.texture.getSize();
                 if (ts_npcF.x > 0 && ts_npcF.y > 0) {
-                    npcFemale.sprite.setOrigin({ ts_npcF.x / 2.f, ts_npcF.y / 2.f });
-                    npcFemale.sprite.setScale({ 500.f / ts_npcF.x, 500.f / ts_npcF.y });
+                    npcFemale.sprite->setOrigin({ ts_npcF.x / 2.f, ts_npcF.y / 2.f });
+                    npcFemale.sprite->setScale({ 500.f / ts_npcF.x, 500.f / ts_npcF.y });
                 }
-                npcFemale.sprite.setPosition({ width / 2.f + 150.f, height / 2.f - 50.f });
+                npcFemale.sprite->setPosition({ width / 2.f + 150.f, height / 2.f - 50.f });
             }
             
             if (npcMale.texture.loadFromFile("../Sprites/NPCMale/Walk/South/frame_000.png")) {
-                npcMale.sprite.setTexture(npcMale.texture);
+                npcMale.sprite->setTexture(npcMale.texture);
                 sf::Vector2u ts_npcM = npcMale.texture.getSize();
                 if (ts_npcM.x > 0 && ts_npcM.y > 0) {
-                    npcMale.sprite.setOrigin({ ts_npcM.x / 2.f, ts_npcM.y / 2.f });
-                    npcMale.sprite.setScale({ 500.f / ts_npcM.x, 500.f / ts_npcM.y });
+                    npcMale.sprite->setOrigin({ ts_npcM.x / 2.f, ts_npcM.y / 2.f });
+                    npcMale.sprite->setScale({ 500.f / ts_npcM.x, 500.f / ts_npcM.y });
                 }
-                npcMale.sprite.setPosition({ MAP_WIDTH / 2.f - 150.f, MAP_HEIGHT / 2.f - 50.f });
+                npcMale.sprite->setPosition({ MAP_WIDTH / 2.f - 150.f, MAP_HEIGHT / 2.f - 50.f });
             }
-            if (npcFemale.sprite.getPosition().x == 0) { // Fallback if load failed or position not set
-                 npcFemale.sprite.setPosition({ MAP_WIDTH / 2.f + 150.f, MAP_HEIGHT / 2.f - 50.f });
-                 npcMale.sprite.setPosition({ MAP_WIDTH / 2.f - 150.f, MAP_HEIGHT / 2.f - 50.f });
+            if (npcFemale.sprite->getPosition().x == 0) { // Fallback if load failed or position not set
+                 npcFemale.sprite->setPosition({ MAP_WIDTH / 2.f + 150.f, MAP_HEIGHT / 2.f - 50.f });
+                 npcMale.sprite->setPosition({ MAP_WIDTH / 2.f - 150.f, MAP_HEIGHT / 2.f - 50.f });
             }
 
             animLoadedForSelection = true;
@@ -1764,6 +1941,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     }
                 }
 
+                for (auto& s : structures)
+                {
+                    if (s.id == ITEM_WOOD_TILE) continue; // Floors are indestructible? Or keep them destroyable?
+                    
+                    sf::FloatRect b = s.sprite->getGlobalBounds();
+                    bool overlap = 
+                        attackBox.position.x < b.position.x + b.size.x &&
+                        attackBox.position.x + attackBox.size.x > b.position.x &&
+                        attackBox.position.y < b.position.y + b.size.y &&
+                        attackBox.position.y + attackBox.size.y > b.position.y;
+
+                    if (overlap && s.health > 0)
+                    {
+                        s.health -= damage;
+                        s.isHurt = true;
+                        s.hurtTimer = 0.15f;
+                        hitSomething = true;
+                    }
+                }
+
                 if (hitSomething && swordEquipped && eqSwordSlot != -1) {
                     int dur = inventory.getDurability(eqSwordSlot);
                     dur -= 1;
@@ -1826,22 +2023,27 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             UpdateCamera(window, sprite, MAP_WIDTH, MAP_HEIGHT);
 
-            sf::Vector2f pondCenter(
-                pondBounds.position.x + pondBounds.size.x * 0.5f,
-                pondBounds.position.y + pondBounds.size.y * 0.5f
-            );
 
-            nearPond = pondBounds.contains(sprite.getPosition());
+            if (!pondBoundsList.empty()) {
+                sf::FloatRect pb = pondBoundsList[0];
+                float centerX = pb.position.x + pb.size.x * 0.5f;
+                float centerY = pb.position.y + pb.size.y * 0.5f;
+            }
 
+            nearPond = isInWater(sprite.getPosition(), pondBoundsList);
 
             window.clear(sf::Color::White);
             window.draw(background);
-            window.draw(pond);
+            for (auto& p : ponds) {
+                window.draw(p);
+            }
             itemManager.draw(window);
 
             for (auto& pc : campfires) {
                 sf::Sprite cs(campfireFrames[pc.currentFrame]);
-                cs.setOrigin({ cs.getGlobalBounds().size.x / 2.f, cs.getGlobalBounds().size.y / 2.f });
+                sf::Vector2u cfs = cs.getTexture().getSize();
+                cs.setOrigin({ cfs.x / 2.f, (float)cfs.y });
+                cs.setScale({ 0.3f, 0.3f });
                 cs.setPosition(pc.position);
                 if (!pc.isCrafted) {
                     cs.setColor(sf::Color(255, 255, 255, 128));
@@ -1858,15 +2060,45 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             if (placementMode) {
                 if (placementFollowingCursor) {
-                    sf::Vector2i pixelPos = sf::Mouse::getPosition(window);
-                    placementPos = window.mapPixelToCoords(pixelPos);
+                    placementPos = worldPos;
                 }
+                sf::Sprite preview(campfireFrames[0]);
+                if (placementItemID == ITEM_NONE) preview.setTexture(campfireFrames[0], true);
+                else if (placementItemID == ITEM_FURNACE) preview.setTexture(furnaceTex, true);
+                else if (placementItemID == ITEM_WOOD_TILE) preview.setTexture(woodTileTex, true);
+                else if (placementItemID == ITEM_WOOD_WALL) preview.setTexture(woodWallTex, true);
+                else if (placementItemID == ITEM_WOOD_DOOR) preview.setTexture(woodDoorTex, true);
+                else if (placementItemID == ITEM_WOOD_ROOF) preview.setTexture(woodRoofTex, true);
+                else if (placementItemID == ITEM_WOOD_STAIRS) preview.setTexture(woodStairsTex, true);
+                else if (placementItemID == ITEM_BED) preview.setTexture(bedTex, true);
+
+                sf::Vector2u pts = preview.getTexture().getSize();
+                preview.setOrigin({ pts.x / 2.f, (float)pts.y });
                 
-                sf::Sprite ghost(campfireFrames[0]);
-                ghost.setOrigin({ ghost.getGlobalBounds().size.x / 2.f, ghost.getGlobalBounds().size.y / 2.f });
-                ghost.setPosition(placementPos);
-                ghost.setColor(sf::Color(255, 255, 255, 128));
-                window.draw(ghost);
+                if (placementItemID == ITEM_WOOD_TILE) preview.setScale({ 0.4f, 0.2f });
+                else if (placementItemID == ITEM_WOOD_WALL) preview.setScale({ 0.15f, 0.4f });
+                else if (placementItemID == ITEM_FURNACE) preview.setScale({ 0.25f, 0.25f });
+                else if (placementItemID == ITEM_BED) preview.setScale({ 0.35f, 0.35f });
+                else preview.setScale({ 0.3f, 0.3f });
+
+                preview.setColor(sf::Color(255, 255, 255, 150));
+                preview.setPosition(placementPos);
+                window.draw(preview);
+            }
+
+            // 1. DRAW FLOORS (Tiles) FIRST
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_TILE) window.draw(*s.sprite);
+            }
+
+            // 2. PREPARE ELEVATED DRAWABLES (for depth sorting)
+            struct Drawable { float y; std::function<void()> draw; };
+            std::vector<Drawable> depthDrawables;
+
+            for (auto& s : structures) {
+                if (s.id != ITEM_WOOD_TILE) {
+                    depthDrawables.push_back({ s.sprite->getPosition().y, [&s, &window]() { window.draw(*s.sprite); } });
+                }
             }
 
             if (saplingPlacementMode)
@@ -1886,13 +2118,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 window.draw(ghost);
             }
 
-            if (isPlayerHurt) {
-                playerHurtTimer -= dt;
-                if (playerHurtTimer <= 0.f) isPlayerHurt = false;
-                sprite.setColor(sf::Color(255, 100, 100));
-            } else {
-                sprite.setColor(sf::Color::White);
-            }
 
             for (auto& s : plantedSaplings)
             {
@@ -1900,7 +2125,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 {
                     sf::Sprite spr(saplingTex);
 
-                    spr.setScale({ 0.1f, 0.1f });
+                    spr.setScale({ 0.2f, 0.2f });
                     spr.setPosition(s.position);
 
                     window.draw(spr);
@@ -1919,13 +2144,32 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
-            window.draw(sprite);
+            // Add Player to depth sorting
+            if (isPlayerHurt) {
+                playerHurtTimer -= dt;
+                if (playerHurtTimer <= 0.f) isPlayerHurt = false;
+                sprite.setColor(sf::Color(255, 100, 100));
+            } else {
+                sprite.setColor(sf::Color::White);
+            }
+            depthDrawables.push_back({ sprite.getPosition().y, [&sprite, &window]() { window.draw(sprite); } });
+
+            // Add Creatures to depth sorting
+            for (auto& a : animals) if (a->health > 0) depthDrawables.push_back({ a->sprite.getPosition().y, [&a, &window]() { window.draw(a->sprite); } });
+            for (auto& m : monsters) if (m->health > 0) depthDrawables.push_back({ m->sprite.getPosition().y, [&m, &window]() { window.draw(m->sprite); } });
+            
+            // Sort by Y and Draw
+            std::sort(depthDrawables.begin(), depthDrawables.end(), [](const Drawable& a, const Drawable& b) {
+                return a.y < b.y;
+            });
+            for (auto& d : depthDrawables) d.draw();
+
             sprite.setColor(sf::Color::White);
 
             // Removed old playerSwordSprite drawing code
             if (animLoadedForSelection) {
-                window.draw(npcFemale.sprite);
-                window.draw(npcMale.sprite);
+                window.draw(*npcFemale.sprite);
+                window.draw(*npcMale.sprite);
             }
 
             // Draw speech bubble if active
@@ -1966,19 +2210,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 npcFemaleNameText.setFillColor(sf::Color::White);
                 npcFemaleNameText.setOutlineColor(sf::Color::Black);
                 npcFemaleNameText.setOutlineThickness(1.5f);
-                npcFemaleNameText.setPosition({ npcFemale.sprite.getPosition().x - npcFemaleNameText.getLocalBounds().size.x / 2.f, npcFemale.sprite.getPosition().y - 280.f });
-                npcFemale.wrenchBtn.setPosition({ npcFemaleNameText.getPosition().x + npcFemaleNameText.getLocalBounds().size.x + 5.f, npcFemaleNameText.getPosition().y });
+                npcFemaleNameText.setPosition({ npcFemale.sprite->getPosition().x - npcFemaleNameText.getLocalBounds().size.x / 2.f, npcFemale.sprite->getPosition().y - 280.f });
+                npcFemale.wrenchBtn->setPosition({ npcFemaleNameText.getPosition().x + npcFemaleNameText.getLocalBounds().size.x + 5.f, npcFemaleNameText.getPosition().y });
                 window.draw(npcFemaleNameText);
-                window.draw(npcFemale.wrenchBtn);
+                window.draw(*npcFemale.wrenchBtn);
 
                 sf::Text npcMaleNameText(font, npcMale.name, 18);
                 npcMaleNameText.setFillColor(sf::Color::White);
                 npcMaleNameText.setOutlineColor(sf::Color::Black);
                 npcMaleNameText.setOutlineThickness(1.5f);
-                npcMaleNameText.setPosition({ npcMale.sprite.getPosition().x - npcMaleNameText.getLocalBounds().size.x / 2.f, npcMale.sprite.getPosition().y - 280.f });
-                npcMale.wrenchBtn.setPosition({ npcMaleNameText.getPosition().x + npcMaleNameText.getLocalBounds().size.x + 5.f, npcMaleNameText.getPosition().y });
+                npcMaleNameText.setPosition({ npcMale.sprite->getPosition().x - npcMaleNameText.getLocalBounds().size.x / 2.f, npcMale.sprite->getPosition().y - 280.f });
+                npcMale.wrenchBtn->setPosition({ npcMaleNameText.getPosition().x + npcMaleNameText.getLocalBounds().size.x + 5.f, npcMaleNameText.getPosition().y });
                 window.draw(npcMaleNameText);
-                window.draw(npcMale.wrenchBtn);
+                window.draw(*npcMale.wrenchBtn);
             }
 
             if (nearPond)
@@ -2082,6 +2326,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
 
 
+
+            for (auto it = structures.begin(); it != structures.end(); ) {
+                if (it->health <= 0) {
+                    it = structures.erase(it);
+                } else {
+                    if (it->isHurt) {
+                        it->hurtTimer -= dt;
+                        if (it->hurtTimer <= 0.f) it->isHurt = false;
+                    }
+                    ++it;
+                }
+            }
 
             for (auto& m : monsters)
             {
@@ -2230,7 +2486,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
         }
         const float totalCycleTime = 900.f;
-        float cycleValue = std::fmod(dayNightClock.getElapsedTime().asSeconds(), totalCycleTime);
+        float cycleValue = std::fmod(timeOffset + dayNightClock.getElapsedTime().asSeconds(), totalCycleTime);
         float t = cycleValue / totalCycleTime;
         float timeOfDay = (t < 0.5f) ? (t * 2.f) : (1.f - (t - 0.5f) * 2.f);
         int darknessLevel = static_cast<int>(timeOfDay * 200.f);
@@ -2351,117 +2607,111 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
 
         if (craftMenuOpen) {
-            static sf::Clock dbgClock;
-            if (dbgClock.getElapsedTime().asSeconds() > 1.f) {
-                std::cout << "Rendering Craft Menu Box! width=" << width << " height=" << height << "\n";
-                dbgClock.restart();
-            }
-            sf::RectangleShape craftBox({ 1200.f, 650.f });
-            craftBox.setPosition({ (width - 1200.f) / 2.f, (height - 650.f) / 2.f });
-            craftBox.setFillColor(sf::Color(40, 40, 40, 245));
-            craftBox.setOutlineThickness(4.f);
-            craftBox.setOutlineColor(sf::Color(120, 120, 120));
+            sf::RectangleShape craftBox({ 1300.f, 950.f });
+            craftBox.setPosition({ (width - 1300.f) / 2.f, (height - 950.f) / 2.f });
+            craftBox.setFillColor(sf::Color(30, 30, 35, 250));
+            craftBox.setOutlineThickness(6.f);
+            craftBox.setOutlineColor(sf::Color(80, 80, 90));
             window.draw(craftBox);
 
-            sf::Text title(uiFont, "CRAFT MENU", 42);
-			title.setStyle(sf::Text::Bold);
-			title.setFillColor(sf::Color::White);
-            title.setPosition({ craftBox.getPosition().x + 20.f, craftBox.getPosition().y + 10.f });
+            // Header bar
+            sf::RectangleShape header({ 1300.f, 80.f });
+            header.setPosition(craftBox.getPosition());
+            header.setFillColor(sf::Color(50, 50, 60));
+            window.draw(header);
+
+            sf::Text title(uiFont, "CRAFTING STATION", 48);
+            title.setStyle(sf::Text::Bold);
+            title.setFillColor(sf::Color(255, 220, 100));
+            title.setPosition({ craftBox.getPosition().x + 40.f, craftBox.getPosition().y + 15.f });
             window.draw(title);
 
-            sf::RectangleShape closeBtn({ 50.f, 50.f });
-            closeBtn.setPosition({ craftBox.getPosition().x + 1120.f, craftBox.getPosition().y + 15.f });
-            closeBtn.setFillColor(sf::Color::Red);
+            sf::RectangleShape closeBtn({ 60.f, 60.f });
+            closeBtn.setPosition({ craftBox.getPosition().x + 1220.f, craftBox.getPosition().y + 10.f });
+            closeBtn.setFillColor(sf::Color(200, 50, 50));
             window.draw(closeBtn);
-            sf::Text closeTxt(uiFont, "X", 32);
-            closeTxt.setPosition({ closeBtn.getPosition().x + 14.f, closeBtn.getPosition().y + 4.f });
+            sf::Text closeTxt(uiFont, "X", 36);
+            closeTxt.setPosition({ closeBtn.getPosition().x + 18.f, closeBtn.getPosition().y + 8.f });
             window.draw(closeTxt);
 
-            // ---- CAMPFIRE (LEFT) ----
-            sf::Sprite preview(campfireFrames[0]);
-            sf::Vector2u ts = preview.getTexture().getSize();
-            preview.setScale({ 300.f / ts.x, 300.f / ts.y });
-            preview.setPosition({ craftBox.getPosition().x + 60.f, craftBox.getPosition().y + 100.f });
-            window.draw(preview);
-
-            sf::Text reqTxt(uiFont, "Requires:\n10 Wood\n10 Stone", 30);
-            reqTxt.setPosition({ craftBox.getPosition().x + 60.f, craftBox.getPosition().y + 420.f });
-            window.draw(reqTxt);
-
-            sf::RectangleShape craftBtn({ 200.f, 80.f });
-            craftBtn.setPosition({ craftBox.getPosition().x + 60.f, craftBox.getPosition().y + 520.f });
-            
             int totalWood = 0, totalStone = 0;
-            for (int i = 0; i < 8; i++) {
+            for (int i = 0; i < 20; i++) {
                 if (inventory.hasItem(i)) {
                     if (inventory.getItemTexture(i) == &woodTex) totalWood += inventory.getItemCount(i);
                     if (inventory.getItemTexture(i) == &stoneTex) totalStone += inventory.getItemCount(i);
                 }
             }
-            if (totalWood >= 10 && totalStone >= 10) craftBtn.setFillColor(sf::Color::Green);
-            else craftBtn.setFillColor(sf::Color(100, 100, 100));
-            
-            window.draw(craftBtn);
-            sf::Text craftTxtBtn(uiFont, "Craft", 35);
-            craftTxtBtn.setPosition({ craftBtn.getPosition().x + 55.f, craftBtn.getPosition().y + 15.f });
-            window.draw(craftTxtBtn);
 
-            // ---- WOODEN SWORD (MIDDLE) ----
-            sf::Sprite previewSword(woodenSwordTex);
-            sf::Vector2u tsw = previewSword.getTexture().getSize();
-            if (tsw.x > 0 && tsw.y > 0) previewSword.setScale({ 300.f / tsw.x, 300.f / tsw.y });
-            previewSword.setPosition({ craftBox.getPosition().x + 460.f, craftBox.getPosition().y + 100.f });
-            window.draw(previewSword);
+            // Draw resource overview
+            sf::Text resTxt(uiFont, "Resources: " + std::to_string(totalWood) + " Wood, " + std::to_string(totalStone) + " Stone", 24);
+            resTxt.setFillColor(sf::Color(180, 180, 180));
+            resTxt.setPosition({ craftBox.getPosition().x + 500.f, craftBox.getPosition().y + 30.f });
+            window.draw(resTxt);
 
-            sf::Text reqSwordTxt(uiFont, "Requires:\n8 Wood", 30);
-            reqSwordTxt.setPosition({ craftBox.getPosition().x + 460.f, craftBox.getPosition().y + 420.f });
-            window.draw(reqSwordTxt);
+            float startX = craftBox.getPosition().x + 50.f;
+            float startY = craftBox.getPosition().y + 110.f;
+            float itemW = 380.f, itemH = 190.f;
+            float gapX = 30.f, gapY = 20.f;
 
-            if (swordCrafting) {
-                sf::Text timerTxt(uiFont, "Crafting: " + std::to_string((int)swordCraftTimer) + "s", 30);
-                timerTxt.setFillColor(sf::Color::Yellow);
-                timerTxt.setPosition({ craftBox.getPosition().x + 460.f, craftBox.getPosition().y + 540.f });
-                window.draw(timerTxt);
-            } else {
-                sf::RectangleShape craftSwordBtn({ 200.f, 80.f });
-                craftSwordBtn.setPosition({ craftBox.getPosition().x + 460.f, craftBox.getPosition().y + 520.f });
+            for (int i = 0; i < (int)craftableItems.size(); i++) {
+                int row = i / 3;
+                int col = i % 3;
+                sf::Vector2f pos(startX + col * (itemW + gapX), startY + row * (itemH + gapY));
                 
-                if (totalWood >= 8) craftSwordBtn.setFillColor(sf::Color::Green);
-                else craftSwordBtn.setFillColor(sf::Color(100, 100, 100));
-                
-                window.draw(craftSwordBtn);
-                sf::Text craftSwordTxtBtn(uiFont, "Craft", 35);
-                craftSwordTxtBtn.setPosition({ craftSwordBtn.getPosition().x + 55.f, craftSwordBtn.getPosition().y + 15.f });
-                window.draw(craftSwordTxtBtn);
-            }
+                sf::RectangleShape itemCard({ itemW, itemH });
+                itemCard.setPosition(pos);
+                itemCard.setFillColor(sf::Color(45, 45, 55));
+                itemCard.setOutlineThickness(2.f);
+                itemCard.setOutlineColor(sf::Color(70, 70, 80));
+                window.draw(itemCard);
 
-            // ---- SHIELD (RIGHT) ----
-            sf::Sprite previewShield(shieldTex);
-            sf::Vector2u tsh = previewShield.getTexture().getSize();
-            if (tsh.x > 0 && tsh.y > 0) previewShield.setScale({ 300.f / tsh.x, 300.f / tsh.y });
-            previewShield.setPosition({ craftBox.getPosition().x + 860.f, craftBox.getPosition().y + 100.f });
-            window.draw(previewShield);
+                const auto& item = craftableItems[i];
+                sf::Sprite s(*item.tex);
+                sf::Vector2u ts = s.getTexture().getSize();
+                float scale = 140.f / std::max(ts.x, ts.y);
+                s.setScale({ scale, scale });
+                s.setOrigin({ ts.x / 2.f, ts.y / 2.f });
+                s.setPosition({ pos.x + 80.f, pos.y + itemH / 2.f });
+                window.draw(s);
 
-            sf::Text reqShieldTxt(uiFont, "Requires:\n10 Wood\n5 Stone", 30);
-            reqShieldTxt.setPosition({ craftBox.getPosition().x + 860.f, craftBox.getPosition().y + 420.f });
-            window.draw(reqShieldTxt);
+                sf::Text name(uiFont, item.name, 26);
+                name.setStyle(sf::Text::Bold);
+                name.setFillColor(sf::Color::White);
+                name.setPosition({ pos.x + 160.f, pos.y + 20.f });
+                window.draw(name);
 
-            if (shieldCrafting) {
-                sf::Text timerShieldTxt(uiFont, "Crafting: " + std::to_string((int)shieldCraftTimer) + "s", 30);
-                timerShieldTxt.setFillColor(sf::Color::Yellow);
-                timerShieldTxt.setPosition({ craftBox.getPosition().x + 860.f, craftBox.getPosition().y + 540.f });
-                window.draw(timerShieldTxt);
-            } else {
-                sf::RectangleShape craftShieldBtn({ 200.f, 80.f });
-                craftShieldBtn.setPosition({ craftBox.getPosition().x + 860.f, craftBox.getPosition().y + 520.f });
+                std::string reqs = "Cost:";
+                if (item.woodReq > 0) reqs += "\n- " + std::to_string(item.woodReq) + " Wood";
+                if (item.stoneReq > 0) reqs += "\n- " + std::to_string(item.stoneReq) + " Stone";
+                if (item.woodReq == 0 && item.stoneReq == 0) reqs += "\nFree";
+
+                sf::Text req(uiFont, reqs, 20);
+                req.setFillColor(sf::Color(200, 200, 200));
+                req.setPosition({ pos.x + 170.f, pos.y + 60.f });
+                window.draw(req);
+
+                sf::RectangleShape btn({ 140.f, 45.f });
+                btn.setPosition({ pos.x + 210.f, pos.y + 130.f });
                 
-                if (totalWood >= 10 && totalStone >= 5) craftShieldBtn.setFillColor(sf::Color::Green);
-                else craftShieldBtn.setFillColor(sf::Color(100, 100, 100));
-                
-                window.draw(craftShieldBtn);
-                sf::Text craftShieldTxtBtn(uiFont, "Craft", 35);
-                craftShieldTxtBtn.setPosition({ craftShieldBtn.getPosition().x + 55.f, craftShieldBtn.getPosition().y + 15.f });
-                window.draw(craftShieldTxtBtn);
+                bool canCraft = (totalWood >= item.woodReq && totalStone >= item.stoneReq);
+                bool inProgress = false;
+                if (item.id == ITEM_WOODEN_SWORD && swordCrafting) inProgress = true;
+                if (item.id == ITEM_SHIELD && shieldCrafting) inProgress = true;
+
+                if (inProgress) {
+                    btn.setFillColor(sf::Color(120, 100, 0));
+                    window.draw(btn);
+                    sf::Text waitTxt(uiFont, "Crafting...", 18);
+                    waitTxt.setPosition({ btn.getPosition().x + 25.f, btn.getPosition().y + 10.f });
+                    window.draw(waitTxt);
+                } else {
+                    btn.setFillColor(canCraft ? sf::Color(40, 160, 70) : sf::Color(80, 80, 80));
+                    window.draw(btn);
+                    sf::Text cTxt(uiFont, canCraft ? "CRAFT" : "LOCKED", 20);
+                    cTxt.setStyle(sf::Text::Bold);
+                    cTxt.setPosition({ btn.getPosition().x + (canCraft ? 38.f : 30.f), btn.getPosition().y + 10.f });
+                    window.draw(cTxt);
+                }
             }
         }
 
@@ -2475,7 +2725,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             placeBtn.setPosition({ sX, yP });
             
             int totalWood = 0, totalStone = 0;
-            for (int i = 0; i < 8; i++) {
+            for (int i = 0; i < 20; i++) {
                 if (inventory.hasItem(i)) {
                     if (inventory.getItemTexture(i) == &woodTex) totalWood += inventory.getItemCount(i);
                     if (inventory.getItemTexture(i) == &stoneTex) totalStone += inventory.getItemCount(i);
@@ -2633,6 +2883,22 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             sf::Text aTxt(uiFont, "Accept", 18);
             aTxt.setPosition({ aBtn.getPosition().x + 15.f, aBtn.getPosition().y + 10.f });
             window.draw(aTxt);
+
+            // Gold Trading UI
+            sf::Text pGold(uiFont, "Your Gold: " + std::to_string(playerTradeGold), 18);
+            pGold.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 80.f });
+            window.draw(pGold);
+
+            sf::RectangleShape gp({30.f, 30.f}), gm({30.f, 30.f});
+            gp.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 115.f });
+            gm.setPosition({ tBox.getPosition().x + 390.f, tBox.getPosition().y + 115.f });
+            gp.setFillColor(sf::Color(100, 200, 100)); gm.setFillColor(sf::Color(200, 100, 100));
+            window.draw(gp); window.draw(gm);
+            
+            sf::Text gpt(uiFont, "+", 20), gmt(uiFont, "-", 20);
+            gpt.setPosition({ gp.getPosition().x + 8.f, gp.getPosition().y + 2.f });
+            gmt.setPosition({ gm.getPosition().x + 10.f, gm.getPosition().y + 2.f });
+            window.draw(gpt); window.draw(gmt);
         }
 
         if (tradeConfirmOpen) {

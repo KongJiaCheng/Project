@@ -33,7 +33,7 @@ public:
 
     const sf::Texture* getFoodTexture() const override
     {
-        return &ZombieFlesh::texture;
+        return ZombieFlesh::getTexture();
     }
 
     int getFoodDropCount() const override

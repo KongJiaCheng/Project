@@ -30,7 +30,7 @@ CREATE TABLE ChatMessages (
 SELECT * FROM Accounts;
 
 UPDATE Accounts
-SET hunger = 0, thirst = 0
+SET Password = 'KJC123@'
 WHERE Username = 'Kong Jia Cheng';
 
 DELETE FROM Accounts

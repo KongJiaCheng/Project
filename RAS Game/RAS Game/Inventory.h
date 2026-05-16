@@ -28,6 +28,7 @@ public:
         return slots[slot].icon ? &slots[slot].icon->getTexture() : nullptr;
     }
     int getItemCount(int slot) const { return slots[slot].count; }
+    int getItemID(int slot) const { return slots[slot].id; }
     void clear();
     void clearSlot(int slot);
     void consumeItem(int slot)
@@ -50,9 +51,9 @@ public:
 
 private:
     // Layout settings
-    static const int SLOT_COUNT = 10;
-    float boxW = 200.f;
-    float boxH = 200.f;
+    static const int SLOT_COUNT = 20;
+    float boxW = 100.f;
+    float boxH = 100.f;
 
     // UI elements
     sf::RectangleShape slotBox[SLOT_COUNT];
@@ -69,6 +70,7 @@ private:
 
     struct Slot
     {
+        int id = 0;
         std::unique_ptr<sf::Sprite> icon;
         int count = 0;
         bool occupied = false;

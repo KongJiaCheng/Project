@@ -41,7 +41,7 @@ int main() {
 
     unsigned int width = 3840;
     unsigned int height = 2160;
-    sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode({ width, height }), "RAS Game");
+    sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode({ width, height }), "RAS Game v8");
 
     sf::Font font;
     if (!font.openFromFile("C:/Windows/Fonts/arial.ttf")) {

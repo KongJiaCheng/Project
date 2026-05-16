@@ -13,7 +13,18 @@ struct PlayerStats {
     int currency;
     int level;
     int exp;
+    float elapsedTime;
     bool isFirstTime;
+};
+
+struct StoredStructure {
+    int id;
+    float x, y, health;
+};
+
+struct StoredCampfire {
+    float x, y, timeRemaining;
+    bool isCrafted;
 };
 
 struct QuestInfo {
@@ -35,7 +46,7 @@ public:
     static AuthManager& getInstance();
 
     void shutdownDB();
-    void savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp);
+    void savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp, float elapsedTime);
     PlayerStats loadPlayerStats(const sql::SQLString& username);
     void setFirstTimeFinished(const sql::SQLString& username);
 
@@ -60,6 +71,12 @@ public:
 
     bool saveInventory(const sql::SQLString& username, const std::vector<std::pair<int, int>>& inventoryData);
     std::vector<std::pair<int, int>> loadInventory(const sql::SQLString& username);
+
+    void saveStructures(const sql::SQLString& username, const std::vector<StoredStructure>& structures);
+    std::vector<StoredStructure> loadStructures(const sql::SQLString& username);
+
+    void saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires);
+    std::vector<StoredCampfire> loadCampfires(const sql::SQLString& username);
 
 private:
     sql::mysql::MySQL_Driver* driver = nullptr;

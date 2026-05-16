@@ -34,7 +34,7 @@ public:
 
     const sf::Texture* getFoodTexture() const override
     {
-        return &PigMeat::texture;
+        return PigMeat::getTexture();
     }
 
     int getFoodDropCount() const override
