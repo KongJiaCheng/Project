@@ -894,6 +894,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         while (std::optional<sf::Event> event = window.pollEvent())
         {
+            bool clickHandled = false;
             if (isChatting) {
                 chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), window.getDefaultView()));
             }
@@ -2417,6 +2418,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
 
             if (nearestDoor) {
+                sf::View currentView = window.getView();
                 window.setView(window.getDefaultView());
                 sf::RectangleShape doorBtn({ 200.f, 60.f });
                 doorBtn.setPosition({ (float)width / 2.f - 100.f, (float)height - 200.f });
@@ -2429,7 +2431,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 sf::FloatRect b = doorTxt.getLocalBounds();
                 doorTxt.setPosition({ doorBtn.getPosition().x + (200.f - b.size.x) / 2.f, doorBtn.getPosition().y + (60.f - b.size.y) / 2.f - 8.f });
                 window.draw(doorTxt);
-                window.setView(gameView);
+                window.setView(currentView);
             }
 
             for (auto& a : animals)
