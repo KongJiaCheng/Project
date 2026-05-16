@@ -2,6 +2,7 @@
 #include "Monster.h"
 #include "ItemID.h"
 #include "ZombieFlesh.h"
+#include <functional>
 
 class Zombie : public Monster
 {

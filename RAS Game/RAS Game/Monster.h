@@ -2,6 +2,7 @@
 #include <SFML/Graphics.hpp>
 #include "Animation.h"
 #include <cmath>
+#include <functional>
 
 class Monster
 {
