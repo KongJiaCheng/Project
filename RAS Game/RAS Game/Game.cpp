@@ -75,8 +75,11 @@ struct AnimSet {
 void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTimeFlag)
 {
     std::cout << "[DEBUG] Entering gameLoop. isFirstTime: " << isFirstTimeFlag << "\n";
-    int option = 0;
-    bool selectionDone = false;
+    AuthManager& authManager = AuthManager::getInstance();
+    PlayerStats stats = authManager.loadPlayerStats(username.c_str());
+    int option = (stats.gender != -1) ? stats.gender : 0;
+    bool selectionDone = (stats.gender != -1);
+    
     bool inventoryOpen = false;
     bool invKeyHeld = false;
     bool itemSpawned = false;
@@ -169,6 +172,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     int level = 1;
     int exp = 0;
     float timeOffset = 0.f;
+
+    PlayerStats stats = authManager.loadPlayerStats(username.c_str());
+    if (stats.gender != -1) {
+        selectionDone = true;
+        option = stats.gender;
+    }
 
     // rates (per second)
     const float HUNGER_RATE = 1.f;
@@ -1451,12 +1460,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         {
                             option = 1;
                             selectionDone = true;
+                            authManager.saveGender(username.c_str(), option);
                             clickHandled = true;
                         }
                         else if (button2.getGlobalBounds().contains(mpos))
                         {
                             option = 2;
                             selectionDone = true;
+                            authManager.saveGender(username.c_str(), option);
                             clickHandled = true;
                         }
                     }
@@ -1552,7 +1563,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             // ✅ LOAD INVENTORY FROM DATABASE
             auto loadedItems = authManager.loadInventory(username.c_str());
-            PlayerStats stats = authManager.loadPlayerStats(username.c_str());
             hunger = stats.hunger;
             thirst = stats.thirst;
             currency = stats.currency;

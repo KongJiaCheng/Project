@@ -14,6 +14,7 @@ struct PlayerStats {
     int level;
     int exp;
     float elapsedTime;
+    int gender; // -1: none, 1: male, 2: female
     bool isFirstTime;
 };
 
@@ -49,6 +50,7 @@ public:
     void savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp, float elapsedTime);
     PlayerStats loadPlayerStats(const sql::SQLString& username);
     void setFirstTimeFinished(const sql::SQLString& username);
+    void saveGender(const sql::SQLString& username, int gender);
 
     QuestInfo getQuestInfo(const sql::SQLString& username);
     void updateQuestProgress(const sql::SQLString& username, int progress, bool completed);
