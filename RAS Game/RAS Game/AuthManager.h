@@ -25,6 +25,7 @@ struct StoredStructure {
     float x, y, health;
     float rotation;
     bool isOpen = false;
+    float shearY = 0.f;
 };
 
 struct StoredCampfire {

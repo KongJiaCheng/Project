@@ -378,11 +378,11 @@ std::vector<StoredStructure> AuthManager::loadStructures(const sql::SQLString& u
     std::vector<StoredStructure> structures;
     if (!con) return structures;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation, IsOpen FROM structures WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username = ?"));
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen") });
+            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY") });
         }
     } catch (sql::SQLException& e) {
         std::cerr << "loadStructures error: " << e.what() << "\n";
