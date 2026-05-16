@@ -2134,11 +2134,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             sf::Vector2f pPos = sprite.getPosition();
 
             for (auto& s : structures) {
-                if (s.id == ITEM_WOOD_ROOF) {
+                if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL) {
                     sf::FloatRect rb = s.sprite->getGlobalBounds();
-                    // Expand roof bounds for easier transparency detection
-                    rb.position.x -= 80.f; rb.size.x += 160.f;
-                    rb.position.y -= 80.f; rb.size.y += 160.f;
+                    // Expand bounds for easier transparency detection
+                    rb.position.x -= 60.f; rb.size.x += 120.f;
+                    rb.position.y -= 60.f; rb.size.y += 120.f;
                     if (rb.contains(pPos)) {
                         isUnderRoof = true;
                     }
@@ -2159,7 +2159,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             // Apply transparency to buildings if player is inside
             for (auto& s : structures) {
                 if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
-                    if (isUnderRoof) s.sprite->setColor(sf::Color(255, 255, 255, 100));
+                    if (isUnderRoof) s.sprite->setColor(sf::Color(255, 255, 255, 70));
                     else s.sprite->setColor(sf::Color::White);
                 }
             }
