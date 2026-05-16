@@ -1337,7 +1337,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         float sX = (width - tWidth) / 2.f;
                         float yP = height - 110.f;
                         sf::FloatRect placeBtn({ sX, yP }, { btnW, btnH });
-                        sf::FloatRect cancelBtn({ sX + btnW + gap, yP }, { btnW, btnH });
+                        sf::FloatRect rotateBtn({ sX + btnW + gap, yP }, { btnW, btnH });
+                        sf::FloatRect cancelBtn({ sX + (btnW + gap) * 2.f, yP }, { btnW, btnH });
                         
                         if (placeBtn.contains(uiPos)) {
                             int totalWood = 0, totalStone = 0;
@@ -1375,7 +1376,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     if (placementRotation == 90.f) newS.sprite->setScale({ 0.4f, 0.15f }); // Horizontal
                                     else newS.sprite->setScale({ 0.15f, 0.4f }); // Vertical
                                 }
-                                else if (placementItemID == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
+                                else if (placementItemID == ITEM_FURNACE) {
+                                    if (placementRotation == 90.f) newS.sprite->setScale({ 0.35f, 0.25f }); 
+                                    else newS.sprite->setScale({ 0.25f, 0.35f });
+                                }
                                 else if (placementItemID == ITEM_BED) {
                                     if (placementRotation == 90.f) newS.sprite->setScale({ 0.45f, 0.25f }); // Horizontal
                                     else newS.sprite->setScale({ 0.25f, 0.45f }); // Vertical
@@ -1384,11 +1388,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     if (placementRotation == 90.f) newS.sprite->setScale({ 0.4f, 0.25f }); // Horizontal
                                     else newS.sprite->setScale({ 0.25f, 0.4f }); // Vertical
                                 }
+                                else if (placementItemID == ITEM_WOOD_ROOF) {
+                                    if (placementRotation == 90.f) newS.sprite->setScale({ 0.4f, 0.25f });
+                                    else newS.sprite->setScale({ 0.25f, 0.4f });
+                                }
                                 else newS.sprite->setScale({ 0.3f, 0.3f });
 
                                 newS.sprite->setPosition(placementPos);
                             }
                             placementMode = false;
+                            clickHandled = true;
+                        } else if (rotateBtn.contains(uiPos)) {
+                            placementRotation = (placementRotation == 0.f) ? 90.f : 0.f;
                             clickHandled = true;
                         } else if (cancelBtn.contains(uiPos)) {
                             placementMode = false;
@@ -1610,12 +1621,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         if (s.rotation == 90.f) newS.sprite->setScale({ 0.4f, 0.15f });
                         else newS.sprite->setScale({ 0.15f, 0.4f });
                     }
-                    else if (s.id == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
+                    else if (s.id == ITEM_FURNACE) {
+                        if (s.rotation == 90.f) newS.sprite->setScale({ 0.35f, 0.25f });
+                        else newS.sprite->setScale({ 0.25f, 0.35f });
+                    }
                     else if (s.id == ITEM_BED) {
                         if (s.rotation == 90.f) newS.sprite->setScale({ 0.45f, 0.25f });
                         else newS.sprite->setScale({ 0.25f, 0.45f });
                     }
                     else if (s.id == ITEM_WOOD_STAIRS) {
+                        if (s.rotation == 90.f) newS.sprite->setScale({ 0.4f, 0.25f });
+                        else newS.sprite->setScale({ 0.25f, 0.4f });
+                    }
+                    else if (s.id == ITEM_WOOD_ROOF) {
                         if (s.rotation == 90.f) newS.sprite->setScale({ 0.4f, 0.25f });
                         else newS.sprite->setScale({ 0.25f, 0.4f });
                     }
@@ -2147,12 +2165,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     if (placementRotation == 90.f) preview.setScale({ 0.4f, 0.15f });
                     else preview.setScale({ 0.15f, 0.4f });
                 }
-                else if (placementItemID == ITEM_FURNACE) preview.setScale({ 0.25f, 0.25f });
+                else if (placementItemID == ITEM_FURNACE) {
+                    if (placementRotation == 90.f) preview.setScale({ 0.35f, 0.25f });
+                    else preview.setScale({ 0.25f, 0.35f });
+                }
                 else if (placementItemID == ITEM_BED) {
                     if (placementRotation == 90.f) preview.setScale({ 0.45f, 0.25f });
                     else preview.setScale({ 0.25f, 0.45f });
                 }
                 else if (placementItemID == ITEM_WOOD_STAIRS) {
+                    if (placementRotation == 90.f) preview.setScale({ 0.4f, 0.25f });
+                    else preview.setScale({ 0.25f, 0.4f });
+                }
+                else if (placementItemID == ITEM_WOOD_ROOF) {
                     if (placementRotation == 90.f) preview.setScale({ 0.4f, 0.25f });
                     else preview.setScale({ 0.25f, 0.4f });
                 }
@@ -2842,7 +2867,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         if (placementMode) {
             float btnW = 220.f, btnH = 70.f, gap = 40.f;
-            float tWidth = btnW * 2.f + gap;
+            float tWidth = btnW * 3.f + gap * 2.f;
             float sX = (width - tWidth) / 2.f;
             float yP = height - 110.f;
 
@@ -2867,8 +2892,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             placeTxt.setPosition({ sX + (btnW - pBounds.size.x) / 2.f, yP + (btnH - pBounds.size.y) / 2.f - 8.f });
             window.draw(placeTxt);
 
+            // ROTATE BUTTON
+            sf::RectangleShape rotateBtn({ btnW, btnH });
+            rotateBtn.setPosition({ sX + btnW + gap, yP });
+            rotateBtn.setFillColor(sf::Color(60, 140, 200));
+            rotateBtn.setOutlineThickness(3.f);
+            rotateBtn.setOutlineColor(sf::Color::White);
+            window.draw(rotateBtn);
+            sf::Text rotateTxt(font, "Rotate", 36);
+            sf::FloatRect rBounds = rotateTxt.getLocalBounds();
+            rotateTxt.setPosition({ rotateBtn.getPosition().x + (btnW - rBounds.size.x) / 2.f, yP + (btnH - rBounds.size.y) / 2.f - 8.f });
+            window.draw(rotateTxt);
+
             sf::RectangleShape cancelBtn({ btnW, btnH });
-            cancelBtn.setPosition({ sX + btnW + gap, yP });
+            cancelBtn.setPosition({ sX + (btnW + gap) * 2.f, yP });
             cancelBtn.setFillColor(sf::Color(200, 60, 60));
             cancelBtn.setOutlineThickness(3.f);
             cancelBtn.setOutlineColor(sf::Color::White);

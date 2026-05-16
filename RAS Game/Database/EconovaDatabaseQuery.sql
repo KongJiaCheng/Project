@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS campfires (
     IsCrafted BOOLEAN
 );
 
+ALTER TABLE structures ADD COLUMN Rotation FLOAT DEFAULT 0;
 
 SELECT * FROM Accounts;
 
