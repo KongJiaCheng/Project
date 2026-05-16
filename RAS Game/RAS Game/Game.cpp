@@ -613,6 +613,31 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         qInfo.lastReset = today;
     }
 
+    auto applyStructureScale = [](sf::Sprite& spr, int id, float rotation) {
+        if (id == ITEM_WOOD_TILE) spr.setScale({ 0.4f, 0.2f });
+        else if (id == ITEM_WOOD_WALL || id == ITEM_WOOD_DOOR) {
+            if (rotation == 90.f) spr.setScale({ 0.4f, 0.15f });
+            else spr.setScale({ 0.15f, 0.4f });
+        }
+        else if (id == ITEM_FURNACE) {
+            if (rotation == 90.f) spr.setScale({ 0.35f, 0.25f });
+            else spr.setScale({ 0.25f, 0.35f });
+        }
+        else if (id == ITEM_BED) {
+            if (rotation == 90.f) spr.setScale({ 0.45f, 0.25f });
+            else spr.setScale({ 0.25f, 0.45f });
+        }
+        else if (id == ITEM_WOOD_STAIRS) {
+            if (rotation == 90.f) spr.setScale({ 0.4f, 0.25f });
+            else spr.setScale({ 0.25f, 0.4f });
+        }
+        else if (id == ITEM_WOOD_ROOF) {
+            if (rotation == 90.f) spr.setScale({ 0.4f, 0.25f });
+            else spr.setScale({ 0.25f, 0.4f });
+        }
+        else spr.setScale({ 0.3f, 0.3f });
+    };
+
     while (window.isOpen())
     {
         float dt = deltaClock.restart().asSeconds();
@@ -1573,32 +1598,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             level = stats.level;
             exp = stats.exp;
             timeOffset = stats.elapsedTime;
-
-            // --- UNIFIED SCALING LOGIC ---
-            auto applyStructureScale = [](sf::Sprite& spr, int id, float rotation) {
-                if (id == ITEM_WOOD_TILE) spr.setScale({ 0.4f, 0.2f });
-                else if (id == ITEM_WOOD_WALL || id == ITEM_WOOD_DOOR) {
-                    if (rotation == 90.f) spr.setScale({ 0.4f, 0.15f });
-                    else spr.setScale({ 0.15f, 0.4f });
-                }
-                else if (id == ITEM_FURNACE) {
-                    if (rotation == 90.f) spr.setScale({ 0.35f, 0.25f });
-                    else spr.setScale({ 0.25f, 0.35f });
-                }
-                else if (id == ITEM_BED) {
-                    if (rotation == 90.f) spr.setScale({ 0.45f, 0.25f });
-                    else spr.setScale({ 0.25f, 0.45f });
-                }
-                else if (id == ITEM_WOOD_STAIRS) {
-                    if (rotation == 90.f) spr.setScale({ 0.4f, 0.25f });
-                    else spr.setScale({ 0.25f, 0.4f });
-                }
-                else if (id == ITEM_WOOD_ROOF) {
-                    if (rotation == 90.f) spr.setScale({ 0.4f, 0.25f });
-                    else spr.setScale({ 0.25f, 0.4f });
-                }
-                else spr.setScale({ 0.3f, 0.3f });
-            };
 
             // Load Structures
             std::vector<StoredStructure> loadedStructures = authManager.loadStructures(username.c_str());
