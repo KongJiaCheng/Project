@@ -111,6 +111,7 @@ bool AuthManager::initDB() {
                 
                 std::cout << "[DEBUG] Creating structures and campfires tables...\n";
                 stmt->execute("CREATE TABLE IF NOT EXISTS structures ("
+                              "ID INT AUTO_INCREMENT PRIMARY KEY, "
                               "Username VARCHAR(50), "
                               "ItemID INT, "
                               "PosX FLOAT, "
@@ -118,6 +119,7 @@ bool AuthManager::initDB() {
                               "Health FLOAT"
                               ")");
                 stmt->execute("CREATE TABLE IF NOT EXISTS campfires ("
+                              "ID INT AUTO_INCREMENT PRIMARY KEY, "
                               "Username VARCHAR(50), "
                               "PosX FLOAT, "
                               "PosY FLOAT, "

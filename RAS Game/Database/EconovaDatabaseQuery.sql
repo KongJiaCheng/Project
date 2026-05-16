@@ -27,10 +27,33 @@ CREATE TABLE ChatMessages (
     SentAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE Accounts ADD COLUMN elapsedTime FLOAT DEFAULT 0;
+ALTER TABLE Accounts ADD COLUMN gender INT DEFAULT -1;
+
+CREATE TABLE IF NOT EXISTS structures (
+    Username VARCHAR(50),
+    ItemID INT,
+    PosX FLOAT,
+    PosY FLOAT,
+    Health FLOAT
+);
+
+CREATE TABLE IF NOT EXISTS campfires (
+    Username VARCHAR(50),
+    PosX FLOAT,
+    PosY FLOAT,
+    TimeRemaining FLOAT,
+    IsCrafted BOOLEAN
+);
+
 SELECT * FROM Accounts;
 
 UPDATE Accounts
 SET Password = 'KJC123@'
+WHERE Username = 'Kong Jia Cheng';
+
+UPDATE Accounts
+SET Hunger = 0, Thirst = 0
 WHERE Username = 'Kong Jia Cheng';
 
 DELETE FROM Accounts
