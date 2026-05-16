@@ -2343,7 +2343,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             for (auto& a : animals)
             {
                 if (a->health > 0)
-                    a->update(dt, sprite.getPosition());
+                    a->update(dt, sprite.getPosition(), isBlocked);
 
                 // ---- CLAMP ANIMAL TO MAP (FULL SPRITE) ----
                 sf::FloatRect bounds = a->sprite.getGlobalBounds();
