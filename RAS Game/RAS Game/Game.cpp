@@ -964,6 +964,29 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     if (sf::FloatRect({chatBoxX, chatBoxY}, {chatBoxWidth, chatBoxHeight}).contains(uiPos)) {
                         isDraggingChat = true;
                         lastMousePosChat = uiPos;
+                    } else {
+                        // Check Door Interaction Button
+                        PlacedStructure* nearestDoor = nullptr;
+                        float minDist = 150.f;
+                        for (auto& s : structures) {
+                            if (s.id == ITEM_WOOD_DOOR) {
+                                sf::Vector2f dPos = s.sprite->getPosition();
+                                sf::Vector2f pPos = sprite.getPosition();
+                                float d = std::sqrt(std::pow(dPos.x - pPos.x, 2) + std::pow(dPos.y - pPos.y, 2));
+                                if (d < minDist) {
+                                    minDist = d;
+                                    nearestDoor = &s;
+                                }
+                            }
+                        }
+                        if (nearestDoor) {
+                            sf::FloatRect doorBtnBounds({ (float)width / 2.f - 100.f, (float)height - 200.f }, { 200.f, 60.f });
+                            if (doorBtnBounds.contains(uiPos)) {
+                                nearestDoor->isOpen = !nearestDoor->isOpen;
+                                applyStructureScale(*nearestDoor->sprite, nearestDoor->id, nearestDoor->rotation, nearestDoor->isOpen);
+                                clickHandled = true;
+                            }
+                        }
                     }
                 }
             }
@@ -2376,6 +2399,37 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     });
 
                 window.draw(drinkText);
+            }
+
+            // Door Interaction UI
+            PlacedStructure* nearestDoor = nullptr;
+            float minDist = 150.f;
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_DOOR) {
+                    sf::Vector2f dPos = s.sprite->getPosition();
+                    sf::Vector2f pPos = sprite.getPosition();
+                    float d = std::sqrt(std::pow(dPos.x - pPos.x, 2) + std::pow(dPos.y - pPos.y, 2));
+                    if (d < minDist) {
+                        minDist = d;
+                        nearestDoor = &s;
+                    }
+                }
+            }
+
+            if (nearestDoor) {
+                window.setView(window.getDefaultView());
+                sf::RectangleShape doorBtn({ 200.f, 60.f });
+                doorBtn.setPosition({ (float)width / 2.f - 100.f, (float)height - 200.f });
+                doorBtn.setFillColor(sf::Color(60, 140, 200, 200));
+                doorBtn.setOutlineThickness(3.f);
+                doorBtn.setOutlineColor(sf::Color::White);
+                window.draw(doorBtn);
+
+                sf::Text doorTxt(font, nearestDoor->isOpen ? "Close Door" : "Open Door", 28);
+                sf::FloatRect b = doorTxt.getLocalBounds();
+                doorTxt.setPosition({ doorBtn.getPosition().x + (200.f - b.size.x) / 2.f, doorBtn.getPosition().y + (60.f - b.size.y) / 2.f - 8.f });
+                window.draw(doorTxt);
+                window.setView(gameView);
             }
 
             for (auto& a : animals)
