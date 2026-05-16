@@ -1386,6 +1386,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             } else {
                                 placementPos = worldPos;
                             }
+
+                            // Snap to grid for building items
+                            if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
+                                placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
+                                placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                            }
                             clickHandled = true;
                         }
                     }
@@ -2062,6 +2068,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             if (placementMode) {
                 if (placementFollowingCursor) {
                     placementPos = worldPos;
+                    // Snap to grid for building items
+                    if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
+                        placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
+                        placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                    }
                 }
                 sf::Sprite preview(campfireFrames[0]);
                 if (placementItemID == ITEM_NONE) preview.setTexture(campfireFrames[0], true);
