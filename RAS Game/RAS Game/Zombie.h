@@ -41,7 +41,7 @@ public:
         return 2 + rand() % 3;
     }
 
-    void update(float dt, const sf::Vector2f& playerPos) override
+    void update(float dt, const sf::Vector2f& playerPos, std::function<bool(sf::Vector2f)> isBlocked = nullptr) override
     {
         sf::Vector2f pos = sprite.getPosition();
         sf::Vector2f dir = playerPos - pos; // Vector from zombie to player
@@ -64,7 +64,17 @@ public:
         if (len > 10.0f) 
         {
             dir /= len;
-            sprite.move(dir * speed * dt);
+            sf::Vector2f moveVec = dir * speed * dt;
+            
+            sf::Vector2f nextPos = pos + moveVec;
+            if (!isBlocked || !isBlocked(nextPos)) {
+                sprite.move(moveVec);
+            }
+            else {
+                // Try sliding
+                if (!isBlocked({ pos.x + moveVec.x, pos.y })) sprite.move({ moveVec.x, 0.f });
+                else if (!isBlocked({ pos.x, pos.y + moveVec.y })) sprite.move({ 0.f, moveVec.y });
+            }
 
             if (std::abs(dir.x) > std::abs(dir.y))
                 currentDir = (dir.x > 0) ? Dir::East : Dir::West;

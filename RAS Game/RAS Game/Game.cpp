@@ -1702,10 +1702,35 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
+            // --- COLLISION CHECK LAMBDA ---
+            auto isBlocked = [&](sf::Vector2f targetPos) {
+                // 1. Structures (Walls, Furnace, Bed, Door)
+                for (auto& s : structures) {
+                    if (s.id == ITEM_WOOD_WALL || s.id == ITEM_FURNACE || s.id == ITEM_BED || s.id == ITEM_WOOD_DOOR) {
+                        sf::FloatRect b = s.sprite->getGlobalBounds();
+                        // Shrink collision box to player's feet area
+                        b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
+                        b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                        if (b.contains(targetPos)) return true;
+                    }
+                }
+                // 2. Resources (Trees, Stones)
+                for (auto& it : itemManager.getItems()) {
+                    if (it.id == ITEM_TREE || it.id == ITEM_STONE) {
+                        sf::FloatRect b = it.sprite.getGlobalBounds();
+                        // Trees/Stones also collision at bottom
+                        b.position.x += b.size.x * 0.3f; b.size.x *= 0.4f;
+                        b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                        if (b.contains(targetPos)) return true;
+                    }
+                }
+                return false;
+            };
+
             for (auto& m : monsters)
             {
                 if (m->health > 0)
-                    m->update(dt, sprite.getPosition());
+                    m->update(dt, sprite.getPosition(), isBlocked);
 
                 sf::FloatRect zombieBounds = m->sprite.getGlobalBounds();
                 sf::FloatRect playerBounds = sprite.getGlobalBounds();
@@ -1810,25 +1835,30 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                 if (moveUp)
                 {
-                    sprite.move({ 0.f, -currentSpeed * dt });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(0.f, -currentSpeed * dt);
+                    if (!isBlocked(nextPos)) sprite.move({ 0.f, -currentSpeed * dt });
                     currentDir = Dir::North;
                     currentAnimSet->setDirPlaying(1, true);
                 }
                 else if (moveDown)
                 {
-                    sprite.move({ 0.f, currentSpeed * dt });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(0.f, currentSpeed * dt);
+                    if (!isBlocked(nextPos)) sprite.move({ 0.f, currentSpeed * dt });
                     currentDir = Dir::South;
                     currentAnimSet->setDirPlaying(0, true);
                 }
-                else if (moveLeft)
+                
+                if (moveLeft)
                 {
-                    sprite.move({ -currentSpeed * dt, 0.f });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(-currentSpeed * dt, 0.f);
+                    if (!isBlocked(nextPos)) sprite.move({ -currentSpeed * dt, 0.f });
                     currentDir = Dir::West;
                     currentAnimSet->setDirPlaying(3, true);
                 }
                 else if (moveRight)
                 {
-                    sprite.move({ currentSpeed * dt, 0.f });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(currentSpeed * dt, 0.f);
+                    if (!isBlocked(nextPos)) sprite.move({ currentSpeed * dt, 0.f });
                     currentDir = Dir::East;
                     currentAnimSet->setDirPlaying(2, true);
                 }
@@ -2105,7 +2135,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             for (auto& s : structures) {
                 if (s.id == ITEM_WOOD_ROOF) {
-                    if (s.sprite->getGlobalBounds().contains(pPos)) {
+                    sf::FloatRect rb = s.sprite->getGlobalBounds();
+                    // Expand roof bounds for easier transparency detection
+                    rb.position.x -= 80.f; rb.size.x += 160.f;
+                    rb.position.y -= 80.f; rb.size.y += 160.f;
+                    if (rb.contains(pPos)) {
                         isUnderRoof = true;
                     }
                 }
