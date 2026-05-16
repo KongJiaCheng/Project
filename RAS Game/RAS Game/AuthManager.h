@@ -18,6 +18,8 @@ struct PlayerStats {
     bool isFirstTime;
 };
 
+// Character persistence methods
+
 struct StoredStructure {
     int id;
     float x, y, health;
