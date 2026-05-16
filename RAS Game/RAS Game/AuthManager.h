@@ -23,6 +23,7 @@ struct PlayerStats {
 struct StoredStructure {
     int id;
     float x, y, health;
+    float rotation;
 };
 
 struct StoredCampfire {

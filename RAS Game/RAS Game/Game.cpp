@@ -220,6 +220,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
     bool craftMenuOpen = false;
     bool placementMode = false;
+    float placementRotation = 0.f; // 0: Vertical, 90: Horizontal
     bool placementFollowingCursor = true;
 
     int placementItemID = 0;
@@ -254,8 +255,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         bool isHurt = false;
         float hurtTimer = 0.f;
         std::optional<sf::Sprite> sprite;
+        float rotation = 0.f;
 
-        PlacedStructure(int i, const sf::Texture& tex) : id(i) {
+        PlacedStructure(int i, const sf::Texture& tex, float rot = 0.f) : id(i), rotation(rot) {
             sprite.emplace(tex);
             maxHealth = 100.f;
             if (id == ITEM_WOOD_WALL) maxHealth = 200.f;
@@ -890,6 +892,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     isChatting = false;
                     chatInput.setFocus(false);
                     chatInput.clear();
+                } else if (key->scancode == sf::Keyboard::Scancode::R && placementMode) {
+                    // Toggle rotation
+                    placementRotation = (placementRotation == 0.f) ? 90.f : 0.f;
                 }
             }
 
@@ -1353,20 +1358,23 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 if (placementFromInventorySlot != -1) {
                                     inventory.consumeItem(placementFromInventorySlot);
                                 }
-                                if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex);
-                                else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex);
-                                else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex);
-                                else if (placementItemID == ITEM_WOOD_DOOR) structures.emplace_back(ITEM_WOOD_DOOR, woodDoorTex);
-                                else if (placementItemID == ITEM_WOOD_ROOF) structures.emplace_back(ITEM_WOOD_ROOF, woodRoofTex);
-                                else if (placementItemID == ITEM_WOOD_STAIRS) structures.emplace_back(ITEM_WOOD_STAIRS, woodStairsTex);
-                                else if (placementItemID == ITEM_BED) structures.emplace_back(ITEM_BED, bedTex);
+                                if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex, placementRotation);
+                                else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex, placementRotation);
+                                else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex, placementRotation);
+                                else if (placementItemID == ITEM_WOOD_DOOR) structures.emplace_back(ITEM_WOOD_DOOR, woodDoorTex, placementRotation);
+                                else if (placementItemID == ITEM_WOOD_ROOF) structures.emplace_back(ITEM_WOOD_ROOF, woodRoofTex, placementRotation);
+                                else if (placementItemID == ITEM_WOOD_STAIRS) structures.emplace_back(ITEM_WOOD_STAIRS, woodStairsTex, placementRotation);
+                                else if (placementItemID == ITEM_BED) structures.emplace_back(ITEM_BED, bedTex, placementRotation);
                                 
                                 auto& newS = structures.back();
                                 sf::Vector2u ts = newS.sprite->getTexture().getSize();
                                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y }); // Bottom center for 3D depth
                                 
-                                if (placementItemID == ITEM_WOOD_TILE) newS.sprite->setScale({ 0.4f, 0.2f }); // Flat on X axis
-                                else if (placementItemID == ITEM_WOOD_WALL) newS.sprite->setScale({ 0.15f, 0.4f }); // Vertical on Y axis
+                                if (placementItemID == ITEM_WOOD_TILE) newS.sprite->setScale({ 0.4f, 0.2f });
+                                else if (placementItemID == ITEM_WOOD_WALL) {
+                                    if (placementRotation == 90.f) newS.sprite->setScale({ 0.4f, 0.15f }); // Horizontal
+                                    else newS.sprite->setScale({ 0.15f, 0.4f }); // Vertical
+                                }
                                 else if (placementItemID == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
                                 else if (placementItemID == ITEM_BED) newS.sprite->setScale({ 0.35f, 0.35f });
                                 else newS.sprite->setScale({ 0.3f, 0.3f });
@@ -1582,7 +1590,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 else if (s.id == ITEM_BED) tex = &bedTex;
 
                 if (tex) {
-                    structures.emplace_back(s.id, *tex);
+                    structures.emplace_back(s.id, *tex, s.rotation);
                     auto& newS = structures.back();
                     newS.sprite->setPosition({ s.x, s.y });
                     newS.health = s.health;
@@ -1591,7 +1599,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
                     
                     if (s.id == ITEM_WOOD_TILE) newS.sprite->setScale({ 0.4f, 0.2f });
-                    else if (s.id == ITEM_WOOD_WALL) newS.sprite->setScale({ 0.15f, 0.4f });
+                    else if (s.id == ITEM_WOOD_WALL) {
+                        if (s.rotation == 90.f) newS.sprite->setScale({ 0.4f, 0.15f });
+                        else newS.sprite->setScale({ 0.15f, 0.4f });
+                    }
                     else if (s.id == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
                     else if (s.id == ITEM_BED) newS.sprite->setScale({ 0.35f, 0.35f });
                     else newS.sprite->setScale({ 0.3f, 0.3f });
@@ -2118,7 +2129,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 preview.setOrigin({ pts.x / 2.f, (float)pts.y });
                 
                 if (placementItemID == ITEM_WOOD_TILE) preview.setScale({ 0.4f, 0.2f });
-                else if (placementItemID == ITEM_WOOD_WALL) preview.setScale({ 0.15f, 0.4f });
+                else if (placementItemID == ITEM_WOOD_WALL) {
+                    if (placementRotation == 90.f) preview.setScale({ 0.4f, 0.15f });
+                    else preview.setScale({ 0.15f, 0.4f });
+                }
                 else if (placementItemID == ITEM_FURNACE) preview.setScale({ 0.25f, 0.25f });
                 else if (placementItemID == ITEM_BED) preview.setScale({ 0.35f, 0.35f });
                 else preview.setScale({ 0.3f, 0.3f });

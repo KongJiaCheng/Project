@@ -116,7 +116,8 @@ bool AuthManager::initDB() {
                               "ItemID INT, "
                               "PosX FLOAT, "
                               "PosY FLOAT, "
-                              "Health FLOAT"
+                              "Health FLOAT, "
+                              "Rotation FLOAT DEFAULT 0"
                               ")");
                 stmt->execute("CREATE TABLE IF NOT EXISTS campfires ("
                               "ID INT AUTO_INCREMENT PRIMARY KEY, "
@@ -355,13 +356,14 @@ void AuthManager::saveStructures(const sql::SQLString& username, const std::vect
         delStmt->setString(1, username);
         delStmt->executeUpdate();
 
-        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO structures (Username, ItemID, PosX, PosY, Health) VALUES (?, ?, ?, ?, ?)"));
+        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO structures (Username, ItemID, PosX, PosY, Health, Rotation) VALUES (?, ?, ?, ?, ?, ?)"));
         for (auto& s : structures) {
             insStmt->setString(1, username);
             insStmt->setInt(2, s.id);
             insStmt->setDouble(3, s.x);
             insStmt->setDouble(4, s.y);
             insStmt->setDouble(5, s.health);
+            insStmt->setDouble(6, s.rotation);
             insStmt->executeUpdate();
         }
     } catch (sql::SQLException& e) {
@@ -373,11 +375,11 @@ std::vector<StoredStructure> AuthManager::loadStructures(const sql::SQLString& u
     std::vector<StoredStructure> structures;
     if (!con) return structures;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health FROM structures WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation FROM structures WHERE Username = ?"));
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health") });
+            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation") });
         }
     } catch (sql::SQLException& e) {
         std::cerr << "loadStructures error: " << e.what() << "\n";
