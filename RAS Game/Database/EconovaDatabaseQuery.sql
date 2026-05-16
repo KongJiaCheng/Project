@@ -27,10 +27,8 @@ CREATE TABLE ChatMessages (
     SentAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-ALTER TABLE Accounts ADD COLUMN elapsedTime FLOAT DEFAULT 0;
-ALTER TABLE Accounts ADD COLUMN gender INT DEFAULT -1;
-
 CREATE TABLE IF NOT EXISTS structures (
+    ID INT AUTO_INCREMENT PRIMARY KEY,
     Username VARCHAR(50),
     ItemID INT,
     PosX FLOAT,
@@ -38,13 +36,16 @@ CREATE TABLE IF NOT EXISTS structures (
     Health FLOAT
 );
 
+
 CREATE TABLE IF NOT EXISTS campfires (
+    ID INT AUTO_INCREMENT PRIMARY KEY,
     Username VARCHAR(50),
     PosX FLOAT,
     PosY FLOAT,
     TimeRemaining FLOAT,
     IsCrafted BOOLEAN
 );
+
 
 SELECT * FROM Accounts;
 

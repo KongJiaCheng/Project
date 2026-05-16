@@ -11,9 +11,9 @@ public:
     {
         maxHealth = 500.f;
         health = maxHealth;
-        speed = 30.f;
-        attackDamage = 12.f;
-        attackCooldown = 1.0f;
+        speed = 80.f;
+        attackDamage = 15.f;
+        attackCooldown = 1.2f;
 
         loadAnimations(
             "../Sprites/Monsters/Zombie/Walk/South",

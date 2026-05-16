@@ -1713,17 +1713,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 float dy = zCenter.y - pCenter.y;
                 float dist = std::sqrt(dx * dx + dy * dy);
 
-                bool hit = dist < 35.f; // Closer contact threshold
+                bool hit = dist < 60.f; // Increased contact threshold for better reliability
                 if (!introActive && hit)
                 {
-                    zombieAttackTimer += dt;
-
-                    if (zombieAttackTimer >= ZOMBIE_ATTACK_COOLDOWN)
+                    if (m->attackTimer >= m->attackCooldown)
                     {
                         if (!tutorialActive) {
                             if (shieldEquipped && eqShieldSlot != -1) {
                                 int shieldDur = inventory.getDurability(eqShieldSlot);
-                                shieldDur -= ZOMBIE_DAMAGE;
+                                shieldDur -= (int)m->attackDamage;
                                 if (shieldDur <= 0) {
                                     shieldDur = 0;
                                     inventory.consumeItem(eqShieldSlot);
@@ -1734,17 +1732,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 }
                             }
                             else {
-                                hp -= ZOMBIE_DAMAGE;
+                                hp -= m->attackDamage;
                             }
                         }
-                        zombieAttackTimer = 0.f;
+                        m->attackTimer = 0.f;
                         isPlayerHurt = true;
                         playerHurtTimer = 0.25f;
 
-                        sf::Vector2f dir = sprite.getPosition() - m->sprite.getPosition();
-                        float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
-                        if (len != 0.f) dir /= len;
-                        sprite.move(dir * 50.f);
+                        sf::Vector2f pushDir = sprite.getPosition() - m->sprite.getPosition();
+                        float len = std::sqrt(pushDir.x * pushDir.x + pushDir.y * pushDir.y);
+                        if (len != 0.f) pushDir /= len;
+                        sprite.move(pushDir * 30.f); // Slight knockback
                     }
                 }
 
@@ -2089,6 +2087,38 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 window.draw(preview);
             }
 
+            // --- HOUSE TRANSPARENCY & STAIRS LOGIC ---
+            bool isUnderRoof = false;
+            float stairOffset = 0.f;
+            sf::Vector2f pPos = sprite.getPosition();
+
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_ROOF) {
+                    if (s.sprite->getGlobalBounds().contains(pPos)) {
+                        isUnderRoof = true;
+                    }
+                }
+                if (s.id == ITEM_WOOD_STAIRS) {
+                    sf::FloatRect sb = s.sprite->getGlobalBounds();
+                    // Expand bounds slightly for better detection
+                    sb.position.x -= 20.f; sb.size.x += 40.f;
+                    if (sb.contains(pPos)) {
+                        float progress = 1.0f - (pPos.y - sb.position.y) / sb.size.y;
+                        if (progress < 0.f) progress = 0.f;
+                        if (progress > 1.f) progress = 1.f;
+                        stairOffset = progress * -180.f; // Elevate player up to 180 units
+                    }
+                }
+            }
+
+            // Apply transparency to buildings if player is inside
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                    if (isUnderRoof) s.sprite->setColor(sf::Color(255, 255, 255, 100));
+                    else s.sprite->setColor(sf::Color::White);
+                }
+            }
+
             // 1. DRAW FLOORS (Tiles) FIRST
             for (auto& s : structures) {
                 if (s.id == ITEM_WOOD_TILE) window.draw(*s.sprite);
@@ -2155,17 +2185,21 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             } else {
                 sprite.setColor(sf::Color::White);
             }
-            depthDrawables.push_back({ sprite.getPosition().y, [&sprite, &window]() { window.draw(sprite); } });
-
-            // Add Creatures to depth sorting
+            sf::Vector2f originalPlayerPos = sprite.getPosition();
+            sprite.move({0.f, stairOffset});
+            depthDrawables.push_back({ originalPlayerPos.y, [&sprite, &window]() { window.draw(sprite); } });
+            
             for (auto& a : animals) if (a->health > 0) depthDrawables.push_back({ a->sprite.getPosition().y, [&a, &window]() { window.draw(a->sprite); } });
             for (auto& m : monsters) if (m->health > 0) depthDrawables.push_back({ m->sprite.getPosition().y, [&m, &window]() { window.draw(m->sprite); } });
-            
-            // Sort by Y and Draw
+
             std::sort(depthDrawables.begin(), depthDrawables.end(), [](const Drawable& a, const Drawable& b) {
                 return a.y < b.y;
             });
+
             for (auto& d : depthDrawables) d.draw();
+            
+            // Restore player position for logic
+            sprite.setPosition(originalPlayerPos);
 
             sprite.setColor(sf::Color::White);
 
