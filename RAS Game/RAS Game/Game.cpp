@@ -2159,7 +2159,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             // Apply transparency to buildings if player is inside
             for (auto& s : structures) {
                 if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
-                    if (isUnderRoof) s.sprite->setColor(sf::Color(255, 255, 255, 70));
+                    if (isUnderRoof) s.sprite->setColor(sf::Color(255, 255, 255, 128));
                     else s.sprite->setColor(sf::Color::White);
                 }
             }
