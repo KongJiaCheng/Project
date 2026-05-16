@@ -72,11 +72,24 @@ struct AnimSet {
     }
 };
 
+struct StockItem {
+    int id;
+    std::string name;
+    float currentPrice;
+    float basePrice;
+    std::vector<float> history;
+    float predictedPrice;
+    std::string trend;
+};
+
 void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTimeFlag)
 {
     std::cout << "[DEBUG] Entering gameLoop. isFirstTime: " << isFirstTimeFlag << "\n";
-    int option = 0;
-    bool selectionDone = false;
+    AuthManager& authManager = AuthManager::getInstance();
+    PlayerStats stats = authManager.loadPlayerStats(username.c_str());
+    int option = (stats.gender != -1) ? stats.gender : 0;
+    bool selectionDone = (stats.gender != -1);
+    
     bool inventoryOpen = false;
     bool invKeyHeld = false;
     bool itemSpawned = false;
@@ -98,7 +111,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     darkness.setFillColor(sf::Color(0, 0, 0, 0));
 
     Inventory inventory;
-    AuthManager& authManager = AuthManager::getInstance();
     ItemManager itemManager;
     Animation animation;
 
@@ -145,7 +157,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     buttonText2.setPosition(button2.getPosition());
 
     sf::Texture bgTexture;
-    bgTexture.loadFromFile("../Items/Background.jpg");
+    (void)bgTexture.loadFromFile("../Items/Background.jpg");
 
     sf::Sprite background(bgTexture);
     float scaleX = float(MAP_WIDTH) / bgTexture.getSize().x;
@@ -190,12 +202,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
 
     sf::Texture hpIconTex, hungerIconTex, thirstIconTex;
-    hpIconTex.loadFromFile("../Sprites/UI/hp.png");
-    hungerIconTex.loadFromFile("../Sprites/UI/hunger.png");
-    thirstIconTex.loadFromFile("../Sprites/UI/thirst.png");
+    (void)hpIconTex.loadFromFile("../Sprites/UI/hp.png");
+    (void)hungerIconTex.loadFromFile("../Sprites/UI/hunger.png");
+    (void)thirstIconTex.loadFromFile("../Sprites/UI/thirst.png");
 
     sf::Texture wrenchTex;
-    wrenchTex.loadFromFile("../Sprites/UI/wrench.png");
+    (void)wrenchTex.loadFromFile("../Sprites/UI/wrench.png");
 
     struct NPC {
         std::optional<sf::Sprite> sprite;
@@ -218,6 +230,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
     bool craftMenuOpen = false;
     bool placementMode = false;
+    float placementRotation = 0.f; // 0: Vertical, 90: Horizontal
     bool placementFollowingCursor = true;
 
     int placementItemID = 0;
@@ -252,8 +265,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         bool isHurt = false;
         float hurtTimer = 0.f;
         std::optional<sf::Sprite> sprite;
+        float rotation = 0.f;
+        bool isOpen = false;
+        float shearY = 0.f;
 
-        PlacedStructure(int i, const sf::Texture& tex) : id(i) {
+        PlacedStructure(int i, const sf::Texture& tex, float rot = 0.f, bool open = false, float sh = 0.f) 
+            : id(i), rotation(rot), isOpen(open), shearY(sh) {
             sprite.emplace(tex);
             maxHealth = 100.f;
             if (id == ITEM_WOOD_WALL) maxHealth = 200.f;
@@ -270,9 +287,33 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     }
 
     bool isTargetNPC = false;
-    struct TradeSlot { const sf::Texture* tex = nullptr; int count = 0; };
+    struct TradeSlot { int id = 0; const sf::Texture* tex = nullptr; int count = 0; };
     TradeSlot playerTradeSlots[4];
     TradeSlot npcTradeSlots[4];
+
+    bool stockPageOpen = false;
+    sf::Clock stockUpdateClock;
+
+    std::vector<StockItem> stockMarket = {
+        { ITEM_WOOD, "Wood", 5.f, 5.f, {5.f}, 5.f, "STABLE" },
+        { ITEM_STONE, "Stone", 8.f, 8.f, {8.f}, 8.f, "STABLE" },
+        { ITEM_SAPLING, "Sapling", 12.f, 12.f, {12.f}, 12.f, "STABLE" },
+        { ITEM_CHICKEN_MEAT, "Chicken Meat", 15.f, 15.f, {15.f}, 15.f, "STABLE" },
+        { ITEM_PIG_MEAT, "Pig Meat", 25.f, 25.f, {25.f}, 25.f, "STABLE" },
+        { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE" }
+    };
+
+    // Prepopulate history for beautiful stock charts on start
+    for (int step = 0; step < 8; ++step) {
+        for (auto& item : stockMarket) {
+            item.history.push_back(item.currentPrice);
+            float percentChange = (-15 + (rand() % 31)) / 100.f;
+            float dev = (item.currentPrice - item.basePrice) / item.basePrice;
+            percentChange -= dev * 0.05f;
+            item.currentPrice = std::round(item.currentPrice * (1.f + percentChange));
+            if (item.currentPrice < 1.f) item.currentPrice = 1.f;
+        }
+    }
 
     sf::Sprite playerWrenchBtn(wrenchTex);
     playerWrenchBtn.setScale({ 0.05f, 0.05f });
@@ -338,39 +379,39 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     ChickenMeat::loadTexture();
     PigMeat::loadTexture();
     ZombieFlesh::loadTexture();
-    Chicken::texture.loadFromFile("../Sprites/Animals/Chicken/South.png");
-    Pig::texture.loadFromFile("../Sprites/Animals/Pig/South.png");
-    Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/South.png");
+    (void)Chicken::texture.loadFromFile("../Sprites/Animals/Chicken/South.png");
+    (void)Pig::texture.loadFromFile("../Sprites/Animals/Pig/South.png");
+    (void)Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/South.png");
 
     sf::Texture woodTex, treeTex, stoneTex, pondTex, saplingTex, goldTex, woodenSwordTex, shieldTex;
     sf::Texture furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex;
     sf::Texture swordIconTex, shieldIconTex, tileIconTex, wallIconTex, doorIconTex, roofIconTex, stairsIconTex, bedIconTex;
     
-    woodTex.loadFromFile("../Items/wood.png");
-    treeTex.loadFromFile("../Items/Tree.png");
-    stoneTex.loadFromFile("../Items/Stone.png");
-    pondTex.loadFromFile("../Items/pond.png");
-    saplingTex.loadFromFile("../Items/sapling.png");
-    goldTex.loadFromFile("../Items/gold.png");
-    woodenSwordTex.loadFromFile("../Items/wooden sword.png");
-    shieldTex.loadFromFile("../Items/shield.png");
-    furnaceTex.loadFromFile("../Items/furnance.png");
-    woodTileTex.loadFromFile("../Items/wood tile.png");
-    woodWallTex.loadFromFile("../Items/wood wall.png");
-    woodDoorTex.loadFromFile("../Items/wooden door.png");
-    woodRoofTex.loadFromFile("../Items/wooden roof.png");
-    woodStairsTex.loadFromFile("../Items/wooden stairs.png");
-    bedTex.loadFromFile("../Items/bed.png");
+    (void)woodTex.loadFromFile("../Items/wood.png");
+    (void)treeTex.loadFromFile("../Items/Tree.png");
+    (void)stoneTex.loadFromFile("../Items/Stone.png");
+    (void)pondTex.loadFromFile("../Items/pond.png");
+    (void)saplingTex.loadFromFile("../Items/sapling.png");
+    (void)goldTex.loadFromFile("../Items/gold.png");
+    (void)woodenSwordTex.loadFromFile("../Items/wooden sword.png");
+    (void)shieldTex.loadFromFile("../Items/shield.png");
+    (void)furnaceTex.loadFromFile("../Items/furnance.png");
+    (void)woodTileTex.loadFromFile("../Items/wood tile.png");
+    (void)woodWallTex.loadFromFile("../Items/wood wall.png");
+    (void)woodDoorTex.loadFromFile("../Items/wooden door.png");
+    (void)woodRoofTex.loadFromFile("../Items/wooden roof.png");
+    (void)woodStairsTex.loadFromFile("../Items/wooden stairs.png");
+    (void)bedTex.loadFromFile("../Items/bed.png");
     
     // Load high quality icons
-    swordIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
-    shieldIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
-    tileIconTex.loadFromFile("../Items/building_parts_icons.png");
-    wallIconTex.loadFromFile("../Items/building_parts_icons.png");
-    doorIconTex.loadFromFile("../Items/building_parts_icons.png");
-    roofIconTex.loadFromFile("../Items/building_parts_icons.png");
-    stairsIconTex.loadFromFile("../Items/building_parts_icons.png");
-    bedIconTex.loadFromFile("../Items/bed.png");
+    (void)swordIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
+    (void)shieldIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
+    (void)tileIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)wallIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)doorIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)roofIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)stairsIconTex.loadFromFile("../Items/building_parts_icons.png");
+    (void)bedIconTex.loadFromFile("../Items/bed.png");
 
     bool goldTexLoaded = (goldTex.getSize().x > 0);
     sf::Sprite goldSprite(goldTex);
@@ -609,6 +650,44 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         qInfo.lastReset = today;
     }
 
+    auto applyStructureScale = [](sf::Sprite& spr, int id, float rotation, bool isOpen, float& outShearY) {
+        outShearY = 0.f;
+        if (id == ITEM_WOOD_TILE) spr.setScale({ 0.4f, 0.2f });
+        else if (id == ITEM_WOOD_WALL) {
+            if (rotation == 90.f) {
+                spr.setScale({ 0.25f, 0.45f }); 
+                outShearY = -0.3f; 
+            }
+            else spr.setScale({ 0.45f, 0.45f });
+        }
+        else if (id == ITEM_WOOD_DOOR) {
+            if (isOpen) {
+                if (rotation == 90.f) { spr.setScale({ 0.05f, 0.45f }); outShearY = -0.3f; }
+                else spr.setScale({ 0.45f, 0.05f });
+            } else {
+                if (rotation == 90.f) { spr.setScale({ 0.25f, 0.45f }); outShearY = -0.3f; }
+                else spr.setScale({ 0.45f, 0.45f });
+            }
+        }
+        else if (id == ITEM_FURNACE) {
+            if (rotation == 90.f) { spr.setScale({ 0.25f, 0.35f }); outShearY = -0.3f; }
+            else spr.setScale({ 0.35f, 0.35f });
+        }
+        else if (id == ITEM_BED) {
+            if (rotation == 90.f) { spr.setScale({ 0.25f, 0.48f }); outShearY = -0.3f; }
+            else spr.setScale({ 0.48f, 0.48f });
+        }
+        else if (id == ITEM_WOOD_STAIRS) {
+            if (rotation == 90.f) { spr.setScale({ 0.25f, 0.45f }); outShearY = -0.3f; }
+            else spr.setScale({ 0.45f, 0.45f });
+        }
+        else if (id == ITEM_WOOD_ROOF) {
+            if (rotation == 90.f) { spr.setScale({ 0.25f, 0.45f }); outShearY = -0.3f; }
+            else spr.setScale({ 0.45f, 0.45f });
+        }
+        else spr.setScale({ 0.3f, 0.3f });
+    };
+
     while (window.isOpen())
     {
         float dt = deltaClock.restart().asSeconds();
@@ -724,7 +803,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
 
             std::vector<StoredStructure> structData;
-            for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health });
+            for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY });
             authManager.saveStructures(username.c_str(), structData);
 
             std::vector<StoredCampfire> campData;
@@ -853,6 +932,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         while (std::optional<sf::Event> event = window.pollEvent())
         {
+            bool clickHandled = false;
             if (isChatting) {
                 chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), window.getDefaultView()));
             }
@@ -888,6 +968,24 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     isChatting = false;
                     chatInput.setFocus(false);
                     chatInput.clear();
+                } else if (key->scancode == globalSettings.keyRotate && placementMode) {
+                    // Toggle rotation
+                    placementRotation = (placementRotation == 0.f) ? 90.f : 0.f;
+                } else if (key->scancode == globalSettings.keyInteract && !isChatting && !placementMode) {
+                    // Try to interact with Door
+                    for (auto& s : structures) {
+                        if (s.id == ITEM_WOOD_DOOR) {
+                            sf::Vector2f dPos = s.sprite->getPosition();
+                            sf::Vector2f pPos = sprite.getPosition();
+                            float dist = std::sqrt(std::pow(dPos.x - pPos.x, 2) + std::pow(dPos.y - pPos.y, 2));
+                            if (dist < 150.f) {
+                                s.isOpen = !s.isOpen;
+                                float ignore;
+                                applyStructureScale(*s.sprite, s.id, s.rotation, s.isOpen, ignore);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -906,6 +1004,30 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     if (sf::FloatRect({chatBoxX, chatBoxY}, {chatBoxWidth, chatBoxHeight}).contains(uiPos)) {
                         isDraggingChat = true;
                         lastMousePosChat = uiPos;
+                    } else {
+                        // Check Door Interaction Button
+                        PlacedStructure* nearestDoor = nullptr;
+                        float minDist = 150.f;
+                        for (auto& s : structures) {
+                            if (s.id == ITEM_WOOD_DOOR) {
+                                sf::Vector2f dPos = s.sprite->getPosition();
+                                sf::Vector2f pPos = sprite.getPosition();
+                                float d = std::sqrt(std::pow(dPos.x - pPos.x, 2) + std::pow(dPos.y - pPos.y, 2));
+                                if (d < minDist) {
+                                    minDist = d;
+                                    nearestDoor = &s;
+                                }
+                            }
+                        }
+                        if (nearestDoor) {
+                            sf::FloatRect doorBtnBounds({ (float)width / 2.f - 100.f, (float)height - 200.f }, { 200.f, 60.f });
+                            if (doorBtnBounds.contains(uiPos)) {
+                                nearestDoor->isOpen = !nearestDoor->isOpen;
+                                float ignore;
+                                applyStructureScale(*nearestDoor->sprite, nearestDoor->id, nearestDoor->rotation, nearestDoor->isOpen, ignore);
+                                clickHandled = true;
+                            }
+                        }
                     }
                 }
             }
@@ -953,7 +1075,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                  authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
 
                  std::vector<StoredStructure> structData;
-                 for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health });
+                 for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY });
                  authManager.saveStructures(username.c_str(), structData);
 
                  std::vector<StoredCampfire> campData;
@@ -1001,7 +1123,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
 
                     std::vector<StoredStructure> structData;
-                    for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health });
+                    for (auto& s : structures) structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY });
                     authManager.saveStructures(username.c_str(), structData);
 
                     std::vector<StoredCampfire> campData;
@@ -1037,10 +1159,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     
                     bool clickHandled = false;
 
+                    if (stockPageOpen) {
+                        sf::FloatRect sBoxRect({ (width - 800.f) / 2.f, (height - 600.f) / 2.f }, { 800.f, 600.f });
+                        sf::FloatRect closeBtnRect({ sBoxRect.position.x + 740.f, sBoxRect.position.y + 20.f }, { 40.f, 40.f });
+                        if (closeBtnRect.contains(uiPos)) {
+                            stockPageOpen = false;
+                        }
+                        clickHandled = true;
+                        continue;
+                    }
+
                     sf::FloatRect settingsBtnRect({ (float)width - 140.f, 20.f }, { 120.f, 40.f });
                     if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && settingsBtnRect.contains(uiPos)) {
                         openSettingsWindow(window, width, height);
                         deltaClock.restart();
+                        continue;
+                    }
+
+                    sf::FloatRect marketBtnRect({ (float)width - 300.f, 20.f }, { 150.f, 40.f });
+                    if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && marketBtnRect.contains(uiPos)) {
+                        stockPageOpen = true;
                         continue;
                     }
 
@@ -1104,6 +1242,54 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                              tradeMenuOpen = false;
                              tradeBoxesTicked = false;
 
+                             // ✅ LOG PLAYER SOLD ITEMS (SELL)
+                             for (int i = 0; i < 4; i++) {
+                                 if (playerTradeSlots[i].tex != nullptr && playerTradeSlots[i].count > 0) {
+                                     std::string name = "";
+                                     int price = 0;
+                                     for (auto& item : stockMarket) {
+                                         if (item.id == playerTradeSlots[i].id) {
+                                             name = item.name;
+                                             price = item.currentPrice;
+                                             break;
+                                         }
+                                     }
+                                     if (name.empty()) {
+                                         if (playerTradeSlots[i].id == 1) name = "Chicken Meat";
+                                         else if (playerTradeSlots[i].id == 2) name = "Pig Meat";
+                                         else if (playerTradeSlots[i].id == 3) name = "Zombie Flesh";
+                                         else if (playerTradeSlots[i].id == 4) name = "Wooden Sword";
+                                         else if (playerTradeSlots[i].id == 6) name = "Shield";
+                                         else name = "Unknown";
+                                     }
+                                     authManager.addTradeRecord(username.c_str(), "SELL", name, playerTradeSlots[i].count, price, playerTradeSlots[i].count * price);
+                                 }
+                             }
+
+                             // ✅ LOG PLAYER BOUGHT ITEMS (BUY)
+                             for (int i = 0; i < 4; i++) {
+                                 if (npcTradeSlots[i].tex != nullptr && npcTradeSlots[i].count > 0) {
+                                     std::string name = "";
+                                     int price = 0;
+                                     for (auto& item : stockMarket) {
+                                         if (item.id == npcTradeSlots[i].id) {
+                                             name = item.name;
+                                             price = item.currentPrice;
+                                             break;
+                                         }
+                                     }
+                                     if (name.empty()) {
+                                         if (npcTradeSlots[i].id == 1) name = "Chicken Meat";
+                                         else if (npcTradeSlots[i].id == 2) name = "Pig Meat";
+                                         else if (npcTradeSlots[i].id == 3) name = "Zombie Flesh";
+                                         else if (npcTradeSlots[i].id == 4) name = "Wooden Sword";
+                                         else if (npcTradeSlots[i].id == 6) name = "Shield";
+                                         else name = "Unknown";
+                                     }
+                                     authManager.addTradeRecord(username.c_str(), "BUY", name, npcTradeSlots[i].count, price, npcTradeSlots[i].count * price);
+                                 }
+                             }
+
                              // ✅ TRANSFER GOLD
                              currency -= playerTradeGold;
                              currency += npcTradeGold;
@@ -1113,12 +1299,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             // TRANSFER NPC ITEMS TO PLAYER
                             for(int i = 0; i < 4; i++) {
                                 if (npcTradeSlots[i].tex != nullptr && npcTradeSlots[i].count > 0) {
-                                    inventory.addItem(0, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
+                                    inventory.addItem(npcTradeSlots[i].id, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
                                     npcTradeSlots[i].tex = nullptr;
                                     npcTradeSlots[i].count = 0;
+                                    npcTradeSlots[i].id = 0;
                                 }
                                 playerTradeSlots[i].tex = nullptr;
                                 playerTradeSlots[i].count = 0;
+                                playerTradeSlots[i].id = 0;
                             }
 
                             // ✅ SAVE ONCE
@@ -1144,6 +1332,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 }
                             }
                             authManager.saveInventory(username.c_str(), items);
+
+                            float currentElapsed = timeOffset + dayNightClock.getElapsedTime().asSeconds();
+                            authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
+
                             clickHandled = true;
                         } else if (noRect.contains(uiPos)) {
                             tradeConfirmOpen = false;
@@ -1153,12 +1345,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             // Cancel Trade! Return items to Inventory
                             for(int i=0; i<4; i++) {
                                 if (playerTradeSlots[i].tex != nullptr) {
-                                    inventory.addItem(0, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
+                                    inventory.addItem(playerTradeSlots[i].id, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
                                     playerTradeSlots[i].tex = nullptr;
                                     playerTradeSlots[i].count = 0;
+                                    playerTradeSlots[i].id = 0;
                                 }
                                 npcTradeSlots[i].tex = nullptr;
                                 npcTradeSlots[i].count = 0;
+                                npcTradeSlots[i].id = 0;
                             }
                             clickHandled = true;
                         }
@@ -1173,6 +1367,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         // Gold buttons
                         sf::FloatRect pGoldPlus({ tBoxRect.position.x + 350.f, tBoxRect.position.y + 115.f }, { 30.f, 30.f });
                         sf::FloatRect pGoldMinus({ tBoxRect.position.x + 390.f, tBoxRect.position.y + 115.f }, { 30.f, 30.f });
+
+                        sf::FloatRect nGoldPlus({ tBoxRect.position.x + 350.f, tBoxRect.position.y + 190.f }, { 30.f, 30.f });
+                        sf::FloatRect nGoldMinus({ tBoxRect.position.x + 390.f, tBoxRect.position.y + 190.f }, { 30.f, 30.f });
+
+                        sf::FloatRect statsBtnRect({ tBoxRect.position.x + 350.f, tBoxRect.position.y + 245.f }, { 150.f, 40.f });
                         
                         if (pGoldPlus.contains(uiPos)) {
                             if (currency >= playerTradeGold + 10) playerTradeGold += 10;
@@ -1180,26 +1379,91 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         } else if (pGoldMinus.contains(uiPos)) {
                             if (playerTradeGold >= 10) playerTradeGold -= 10;
                             clickHandled = true;
-                        }
-
-                        if (acceptRect.contains(uiPos)) {
-                            tradeConfirmOpen = true;
+                        } else if (nGoldPlus.contains(uiPos)) {
+                            // Compute Player Trade Value
+                            int pVal = playerTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (playerTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    pVal += playerTradeSlots[i].count * price;
+                                }
+                            }
+                            int nVal = npcTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (npcTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    nVal += npcTradeSlots[i].count * price;
+                                }
+                            }
+                            // NPC increases gold up to what the player offered
+                            if (nVal + 10 <= pVal) {
+                                npcTradeGold += 10;
+                            }
+                            clickHandled = true;
+                        } else if (nGoldMinus.contains(uiPos)) {
+                            if (npcTradeGold >= 10) npcTradeGold -= 10;
+                            clickHandled = true;
+                        } else if (statsBtnRect.contains(uiPos)) {
+                            stockPageOpen = true;
                             clickHandled = true;
                         }
 
-                        // Check if player clicked a Player Trade Box to transfer from inventory
+                        if (acceptRect.contains(uiPos)) {
+                            // Only allow accept if the trade is fair
+                            int pVal = playerTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (playerTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    pVal += playerTradeSlots[i].count * price;
+                                }
+                            }
+                            int nVal = npcTradeGold;
+                            for (int i = 0; i < 4; i++) {
+                                if (npcTradeSlots[i].tex != nullptr) {
+                                    int price = 0;
+                                    for (auto& item : stockMarket) {
+                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
+                                    }
+                                    nVal += npcTradeSlots[i].count * price;
+                                }
+                            }
+                            if (pVal >= nVal) {
+                                tradeConfirmOpen = true;
+                            }
+                            clickHandled = true;
+                        }
+
+                        // Check if player clicked a Player Trade Box to transfer from or return to inventory
                         sf::Vector2f tBoxPos(tBoxRect.position);
                         for(int i=0; i<4; i++) {
                             sf::FloatRect pBoxRect({ tBoxPos.x + 50.f + i * 70.f, tBoxPos.y + 100.f }, { 64.f, 64.f });
                             if (pBoxRect.contains(uiPos)) {
-                                int selSlot = inventory.getSelectedSlot();
-                                if (selSlot != -1 && inventory.hasItem(selSlot) && playerTradeSlots[i].tex == nullptr) {
-                                    playerTradeSlots[i].tex = inventory.getItemTexture(selSlot);
-                                    playerTradeSlots[i].count = inventory.getItemCount(selSlot);
-                                    
-                                    int countToConsume = playerTradeSlots[i].count;
-                                    for (int c = 0; c < countToConsume; c++) {
-                                        inventory.consumeItem(selSlot);
+                                if (playerTradeSlots[i].tex != nullptr) {
+                                    // Return item to inventory
+                                    inventory.addItem(playerTradeSlots[i].id, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
+                                    playerTradeSlots[i].tex = nullptr;
+                                    playerTradeSlots[i].count = 0;
+                                    playerTradeSlots[i].id = 0;
+                                } else {
+                                    int selSlot = inventory.getSelectedSlot();
+                                    if (selSlot != -1 && inventory.hasItem(selSlot)) {
+                                        playerTradeSlots[i].id = inventory.getItemID(selSlot);
+                                        playerTradeSlots[i].tex = inventory.getItemTexture(selSlot);
+                                        playerTradeSlots[i].count = inventory.getItemCount(selSlot);
+                                        
+                                        int countToConsume = playerTradeSlots[i].count;
+                                        for (int c = 0; c < countToConsume; c++) {
+                                            inventory.consumeItem(selSlot);
+                                        }
                                     }
                                 }
                                 clickHandled = true;
@@ -1209,9 +1473,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else if (wrenchMenuOpen) {
 
                         if (isTargetNPC) {
-                            // ✅ TRADE & QUEST for NPC
+                            // ✅ TRADE & QUEST & STOCK STATS for NPC
                             sf::FloatRect tradeBound({ wrenchMenuPos.x, wrenchMenuPos.y }, { 150.f, 30.f });
                             sf::FloatRect questBound({ wrenchMenuPos.x, wrenchMenuPos.y + 30.f }, { 150.f, 30.f });
+                            sf::FloatRect statsBound({ wrenchMenuPos.x, wrenchMenuPos.y + 60.f }, { 150.f, 30.f });
 
                             if (tradeBound.contains(uiPos)) {
                                 tradeMenuOpen = true;
@@ -1221,21 +1486,37 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 for (int i = 0; i < 4; i++) {
                                     playerTradeSlots[i].tex = nullptr;
                                     playerTradeSlots[i].count = 0;
+                                    playerTradeSlots[i].id = 0;
                                     npcTradeSlots[i].tex = nullptr;
                                     npcTradeSlots[i].count = 0;
+                                    npcTradeSlots[i].id = 0;
                                 }
 
-                                // Mock NPC items
-                                npcTradeSlots[0].tex = ChickenMeat::getTexture();
-                                npcTradeSlots[0].count = 5;
+                                // Populate NPC slots randomly with 1-3 items
+                                int itemsCount = 1 + (rand() % 3);
+                                std::vector<int> possibleIds = { ITEM_WOOD, ITEM_STONE, ITEM_SAPLING, ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_ZOMBIE_FLESH };
+                                for (int i = 0; i < itemsCount; i++) {
+                                    int randIdx = rand() % possibleIds.size();
+                                    int id = possibleIds[randIdx];
+                                    
+                                    const sf::Texture* tex = nullptr;
+                                    if (id == ITEM_WOOD) tex = &woodTex;
+                                    else if (id == ITEM_STONE) tex = &stoneTex;
+                                    else if (id == ITEM_SAPLING) tex = &saplingTex;
+                                    else if (id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
+                                    else if (id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
+                                    else if (id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
+
+                                    if (tex) {
+                                        npcTradeSlots[i].id = id;
+                                        npcTradeSlots[i].tex = tex;
+                                        npcTradeSlots[i].count = 1 + (rand() % 8);
+                                    }
+                                }
 
                                 tradeBoxesTicked = false;
-
-                             // TRANSFER GOLD
-                             currency -= playerTradeGold;
-                             currency += npcTradeGold;
-                             playerTradeGold = 0;
-                             npcTradeGold = 0;
+                                playerTradeGold = 0;
+                                npcTradeGold = 0;
                                 clickHandled = true;
                             }
                             else if (questBound.contains(uiPos)) {
@@ -1251,6 +1532,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     latestPlayerMsg = "No quest available right now.";
                                 }
                                 bubbleTimer = 5.0f;
+                                wrenchMenuOpen = false;
+                                clickHandled = true;
+                            }
+                            else if (statsBound.contains(uiPos)) {
+                                stockPageOpen = true;
                                 wrenchMenuOpen = false;
                                 clickHandled = true;
                             }
@@ -1330,7 +1616,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         float sX = (width - tWidth) / 2.f;
                         float yP = height - 110.f;
                         sf::FloatRect placeBtn({ sX, yP }, { btnW, btnH });
-                        sf::FloatRect cancelBtn({ sX + btnW + gap, yP }, { btnW, btnH });
+                        sf::FloatRect rotateBtn({ sX + btnW + gap, yP }, { btnW, btnH });
+                        sf::FloatRect cancelBtn({ sX + (btnW + gap) * 2.f, yP }, { btnW, btnH });
                         
                         if (placeBtn.contains(uiPos)) {
                             int totalWood = 0, totalStone = 0;
@@ -1351,27 +1638,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 if (placementFromInventorySlot != -1) {
                                     inventory.consumeItem(placementFromInventorySlot);
                                 }
-                                if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex);
-                                else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex);
-                                else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex);
-                                else if (placementItemID == ITEM_WOOD_DOOR) structures.emplace_back(ITEM_WOOD_DOOR, woodDoorTex);
-                                else if (placementItemID == ITEM_WOOD_ROOF) structures.emplace_back(ITEM_WOOD_ROOF, woodRoofTex);
-                                else if (placementItemID == ITEM_WOOD_STAIRS) structures.emplace_back(ITEM_WOOD_STAIRS, woodStairsTex);
-                                else if (placementItemID == ITEM_BED) structures.emplace_back(ITEM_BED, bedTex);
+                                if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_DOOR) structures.emplace_back(ITEM_WOOD_DOOR, woodDoorTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_ROOF) structures.emplace_back(ITEM_WOOD_ROOF, woodRoofTex, placementRotation, false);
+                                else if (placementItemID == ITEM_WOOD_STAIRS) structures.emplace_back(ITEM_WOOD_STAIRS, woodStairsTex, placementRotation, false);
+                                else if (placementItemID == ITEM_BED) structures.emplace_back(ITEM_BED, bedTex, placementRotation, false);
                                 
                                 auto& newS = structures.back();
                                 sf::Vector2u ts = newS.sprite->getTexture().getSize();
                                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y }); // Bottom center for 3D depth
                                 
-                                if (placementItemID == ITEM_WOOD_TILE) newS.sprite->setScale({ 0.4f, 0.2f }); // Flat on X axis
-                                else if (placementItemID == ITEM_WOOD_WALL) newS.sprite->setScale({ 0.15f, 0.4f }); // Vertical on Y axis
-                                else if (placementItemID == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
-                                else if (placementItemID == ITEM_BED) newS.sprite->setScale({ 0.35f, 0.35f });
-                                else newS.sprite->setScale({ 0.3f, 0.3f });
+                                applyStructureScale(*newS.sprite, placementItemID, placementRotation, false, newS.shearY);
 
                                 newS.sprite->setPosition(placementPos);
                             }
                             placementMode = false;
+                            clickHandled = true;
+                        } else if (rotateBtn.contains(uiPos)) {
+                            placementRotation = (placementRotation == 0.f) ? 90.f : 0.f;
                             clickHandled = true;
                         } else if (cancelBtn.contains(uiPos)) {
                             placementMode = false;
@@ -1383,6 +1669,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 placementPos = worldPos;
                             } else {
                                 placementPos = worldPos;
+                            }
+
+                            // Snap to grid for building items
+                            if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
+                                placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
+                                placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
                             }
                             clickHandled = true;
                         }
@@ -1451,12 +1743,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         {
                             option = 1;
                             selectionDone = true;
+                            authManager.saveGender(username.c_str(), option);
                             clickHandled = true;
                         }
                         else if (button2.getGlobalBounds().contains(mpos))
                         {
                             option = 2;
                             selectionDone = true;
+                            authManager.saveGender(username.c_str(), option);
                             clickHandled = true;
                         }
                     }
@@ -1552,7 +1846,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             // ✅ LOAD INVENTORY FROM DATABASE
             auto loadedItems = authManager.loadInventory(username.c_str());
-            PlayerStats stats = authManager.loadPlayerStats(username.c_str());
             hunger = stats.hunger;
             thirst = stats.thirst;
             currency = stats.currency;
@@ -1573,7 +1866,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 else if (s.id == ITEM_BED) tex = &bedTex;
 
                 if (tex) {
-                    structures.emplace_back(s.id, *tex);
+                    structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY);
                     auto& newS = structures.back();
                     newS.sprite->setPosition({ s.x, s.y });
                     newS.health = s.health;
@@ -1581,11 +1874,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     sf::Vector2u ts = newS.sprite->getTexture().getSize();
                     newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
                     
-                    if (s.id == ITEM_WOOD_TILE) newS.sprite->setScale({ 0.4f, 0.2f });
-                    else if (s.id == ITEM_WOOD_WALL) newS.sprite->setScale({ 0.15f, 0.4f });
-                    else if (s.id == ITEM_FURNACE) newS.sprite->setScale({ 0.25f, 0.25f });
-                    else if (s.id == ITEM_BED) newS.sprite->setScale({ 0.35f, 0.35f });
-                    else newS.sprite->setScale({ 0.3f, 0.3f });
+                    applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, newS.shearY);
                 }
             }
 
@@ -1693,10 +1982,40 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
+            // --- COLLISION CHECK LAMBDA ---
+            auto isBlocked = [&](sf::Vector2f targetPos) {
+                // 1. Structures (Walls, Furnace, Bed, Door)
+                for (auto& s : structures) {
+                    if (s.id == ITEM_WOOD_WALL || s.id == ITEM_FURNACE || s.id == ITEM_BED) {
+                        sf::FloatRect b = s.sprite->getGlobalBounds();
+                        b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
+                        b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                        if (b.contains(targetPos)) return true;
+                    }
+                    if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
+                        sf::FloatRect b = s.sprite->getGlobalBounds();
+                        b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
+                        b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                        if (b.contains(targetPos)) return true;
+                    }
+                }
+                // 2. Resources (Trees, Stones)
+                for (auto& it : itemManager.getItems()) {
+                    if (it.id == ITEM_TREE || it.id == ITEM_STONE) {
+                        sf::FloatRect b = it.sprite.getGlobalBounds();
+                        // Trees/Stones also collision at bottom
+                        b.position.x += b.size.x * 0.3f; b.size.x *= 0.4f;
+                        b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                        if (b.contains(targetPos)) return true;
+                    }
+                }
+                return false;
+            };
+
             for (auto& m : monsters)
             {
                 if (m->health > 0)
-                    m->update(dt, sprite.getPosition());
+                    m->update(dt, sprite.getPosition(), isBlocked);
 
                 sf::FloatRect zombieBounds = m->sprite.getGlobalBounds();
                 sf::FloatRect playerBounds = sprite.getGlobalBounds();
@@ -1710,17 +2029,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 float dy = zCenter.y - pCenter.y;
                 float dist = std::sqrt(dx * dx + dy * dy);
 
-                bool hit = dist < 35.f; // Closer contact threshold
+                bool hit = dist < 60.f; // Increased contact threshold for better reliability
                 if (!introActive && hit)
                 {
-                    zombieAttackTimer += dt;
-
-                    if (zombieAttackTimer >= ZOMBIE_ATTACK_COOLDOWN)
+                    if (m->attackTimer >= m->attackCooldown)
                     {
                         if (!tutorialActive) {
                             if (shieldEquipped && eqShieldSlot != -1) {
                                 int shieldDur = inventory.getDurability(eqShieldSlot);
-                                shieldDur -= ZOMBIE_DAMAGE;
+                                shieldDur -= (int)m->attackDamage;
                                 if (shieldDur <= 0) {
                                     shieldDur = 0;
                                     inventory.consumeItem(eqShieldSlot);
@@ -1731,17 +2048,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 }
                             }
                             else {
-                                hp -= ZOMBIE_DAMAGE;
+                                hp -= m->attackDamage;
                             }
                         }
-                        zombieAttackTimer = 0.f;
+                        m->attackTimer = 0.f;
                         isPlayerHurt = true;
                         playerHurtTimer = 0.25f;
 
-                        sf::Vector2f dir = sprite.getPosition() - m->sprite.getPosition();
-                        float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
-                        if (len != 0.f) dir /= len;
-                        sprite.move(dir * 50.f);
+                        sf::Vector2f pushDir = sprite.getPosition() - m->sprite.getPosition();
+                        float len = std::sqrt(pushDir.x * pushDir.x + pushDir.y * pushDir.y);
+                        if (len != 0.f) pushDir /= len;
+                        sprite.move(pushDir * 30.f); // Slight knockback
                     }
                 }
 
@@ -1803,25 +2120,30 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                 if (moveUp)
                 {
-                    sprite.move({ 0.f, -currentSpeed * dt });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(0.f, -currentSpeed * dt);
+                    if (!isBlocked(nextPos)) sprite.move({ 0.f, -currentSpeed * dt });
                     currentDir = Dir::North;
                     currentAnimSet->setDirPlaying(1, true);
                 }
                 else if (moveDown)
                 {
-                    sprite.move({ 0.f, currentSpeed * dt });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(0.f, currentSpeed * dt);
+                    if (!isBlocked(nextPos)) sprite.move({ 0.f, currentSpeed * dt });
                     currentDir = Dir::South;
                     currentAnimSet->setDirPlaying(0, true);
                 }
-                else if (moveLeft)
+                
+                if (moveLeft)
                 {
-                    sprite.move({ -currentSpeed * dt, 0.f });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(-currentSpeed * dt, 0.f);
+                    if (!isBlocked(nextPos)) sprite.move({ -currentSpeed * dt, 0.f });
                     currentDir = Dir::West;
                     currentAnimSet->setDirPlaying(3, true);
                 }
                 else if (moveRight)
                 {
-                    sprite.move({ currentSpeed * dt, 0.f });
+                    sf::Vector2f nextPos = sprite.getPosition() + sf::Vector2f(currentSpeed * dt, 0.f);
+                    if (!isBlocked(nextPos)) sprite.move({ currentSpeed * dt, 0.f });
                     currentDir = Dir::East;
                     currentAnimSet->setDirPlaying(2, true);
                 }
@@ -2061,6 +2383,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             if (placementMode) {
                 if (placementFollowingCursor) {
                     placementPos = worldPos;
+                    // Snap to grid for building items
+                    if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
+                        placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
+                        placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                    }
                 }
                 sf::Sprite preview(campfireFrames[0]);
                 if (placementItemID == ITEM_NONE) preview.setTexture(campfireFrames[0], true);
@@ -2075,20 +2402,72 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 sf::Vector2u pts = preview.getTexture().getSize();
                 preview.setOrigin({ pts.x / 2.f, (float)pts.y });
                 
-                if (placementItemID == ITEM_WOOD_TILE) preview.setScale({ 0.4f, 0.2f });
-                else if (placementItemID == ITEM_WOOD_WALL) preview.setScale({ 0.15f, 0.4f });
-                else if (placementItemID == ITEM_FURNACE) preview.setScale({ 0.25f, 0.25f });
-                else if (placementItemID == ITEM_BED) preview.setScale({ 0.35f, 0.35f });
-                else preview.setScale({ 0.3f, 0.3f });
+                float previewShear = 0.f;
+                applyStructureScale(preview, placementItemID, placementRotation, false, previewShear);
 
-                preview.setColor(sf::Color(255, 255, 255, 150));
+                preview.setColor(sf::Color(255, 255, 255, 180)); // Slightly more opaque for better visibility
                 preview.setPosition(placementPos);
-                window.draw(preview);
+                
+                sf::Transform pTrans;
+                pTrans.translate(placementPos);
+                pTrans.combine(sf::Transform(1.f, 0.f, 0.f, previewShear, 1.f, 0.f, 0.f, 0.f, 1.f));
+                pTrans.translate(-placementPos);
+                window.draw(preview, pTrans);
+            }
+
+            // --- HOUSE TRANSPARENCY & STAIRS LOGIC ---
+            bool isUnderRoof = false;
+            float stairOffset = 0.f;
+            sf::Vector2f pPos = sprite.getPosition();
+
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL) {
+                    sf::FloatRect rb = s.sprite->getGlobalBounds();
+                    // Expand bounds for easier transparency detection
+                    rb.position.x -= 60.f; rb.size.x += 120.f;
+                    rb.position.y -= 60.f; rb.size.y += 120.f;
+                    if (rb.contains(pPos)) {
+                        isUnderRoof = true;
+                    }
+                }
+                if (s.id == ITEM_WOOD_STAIRS) {
+                    sf::FloatRect sb = s.sprite->getGlobalBounds();
+                    // Expand bounds slightly for better detection
+                    sb.position.x -= 30.f; sb.size.x += 60.f;
+                    sb.position.y -= 30.f; sb.size.y += 60.f;
+                    if (sb.contains(pPos)) {
+                        float progress = 0.f;
+                        if (s.rotation == 90.f) {
+                            // Horizontal stairs: climb based on X
+                            progress = (pPos.x - sb.position.x) / sb.size.x;
+                        } else {
+                            // Vertical stairs: climb based on Y
+                            progress = 1.0f - (pPos.y - sb.position.y) / sb.size.y;
+                        }
+                        if (progress < 0.f) progress = 0.f;
+                        if (progress > 1.f) progress = 1.f;
+                        stairOffset = progress * -180.f; // Elevate player up to 180 units
+                    }
+                }
+            }
+
+            // Apply transparency to buildings if player is inside
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                    if (isUnderRoof) s.sprite->setColor(sf::Color(255, 255, 255, 128));
+                    else s.sprite->setColor(sf::Color::White);
+                }
             }
 
             // 1. DRAW FLOORS (Tiles) FIRST
             for (auto& s : structures) {
-                if (s.id == ITEM_WOOD_TILE) window.draw(*s.sprite);
+                if (s.id == ITEM_WOOD_TILE) {
+                    sf::Transform trans;
+                    trans.translate(s.sprite->getPosition());
+                    trans.combine(sf::Transform(1.f, 0.f, 0.f, s.shearY, 1.f, 0.f, 0.f, 0.f, 1.f));
+                    trans.translate(-s.sprite->getPosition());
+                    window.draw(*s.sprite, trans);
+                }
             }
 
             // 2. PREPARE ELEVATED DRAWABLES (for depth sorting)
@@ -2097,7 +2476,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             for (auto& s : structures) {
                 if (s.id != ITEM_WOOD_TILE) {
-                    depthDrawables.push_back({ s.sprite->getPosition().y, [&s, &window]() { window.draw(*s.sprite); } });
+                    depthDrawables.push_back({ s.sprite->getPosition().y, [&s, &window]() { 
+                        sf::Transform trans;
+                        trans.translate(s.sprite->getPosition());
+                        trans.combine(sf::Transform(1.f, 0.f, 0.f, s.shearY, 1.f, 0.f, 0.f, 0.f, 1.f));
+                        trans.translate(-s.sprite->getPosition());
+                        window.draw(*s.sprite, trans); 
+                    } });
                 }
             }
 
@@ -2152,17 +2537,21 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             } else {
                 sprite.setColor(sf::Color::White);
             }
-            depthDrawables.push_back({ sprite.getPosition().y, [&sprite, &window]() { window.draw(sprite); } });
-
-            // Add Creatures to depth sorting
+            sf::Vector2f originalPlayerPos = sprite.getPosition();
+            sprite.move({0.f, stairOffset});
+            depthDrawables.push_back({ originalPlayerPos.y, [&sprite, &window]() { window.draw(sprite); } });
+            
             for (auto& a : animals) if (a->health > 0) depthDrawables.push_back({ a->sprite.getPosition().y, [&a, &window]() { window.draw(a->sprite); } });
             for (auto& m : monsters) if (m->health > 0) depthDrawables.push_back({ m->sprite.getPosition().y, [&m, &window]() { window.draw(m->sprite); } });
-            
-            // Sort by Y and Draw
+
             std::sort(depthDrawables.begin(), depthDrawables.end(), [](const Drawable& a, const Drawable& b) {
                 return a.y < b.y;
             });
+
             for (auto& d : depthDrawables) d.draw();
+            
+            // Restore player position for logic
+            sprite.setPosition(originalPlayerPos);
 
             sprite.setColor(sf::Color::White);
 
@@ -2235,6 +2624,38 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 window.draw(drinkText);
             }
 
+            // Door Interaction UI
+            PlacedStructure* nearestDoor = nullptr;
+            float minDist = 150.f;
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_DOOR) {
+                    sf::Vector2f dPos = s.sprite->getPosition();
+                    sf::Vector2f pPos = sprite.getPosition();
+                    float d = std::sqrt(std::pow(dPos.x - pPos.x, 2) + std::pow(dPos.y - pPos.y, 2));
+                    if (d < minDist) {
+                        minDist = d;
+                        nearestDoor = &s;
+                    }
+                }
+            }
+
+            if (nearestDoor) {
+                sf::View currentView = window.getView();
+                window.setView(window.getDefaultView());
+                sf::RectangleShape doorBtn({ 200.f, 60.f });
+                doorBtn.setPosition({ (float)width / 2.f - 100.f, (float)height - 200.f });
+                doorBtn.setFillColor(sf::Color(60, 140, 200, 200));
+                doorBtn.setOutlineThickness(3.f);
+                doorBtn.setOutlineColor(sf::Color::White);
+                window.draw(doorBtn);
+
+                sf::Text doorTxt(font, nearestDoor->isOpen ? "Close Door" : "Open Door", 28);
+                sf::FloatRect b = doorTxt.getLocalBounds();
+                doorTxt.setPosition({ doorBtn.getPosition().x + (200.f - b.size.x) / 2.f, doorBtn.getPosition().y + (60.f - b.size.y) / 2.f - 8.f });
+                window.draw(doorTxt);
+                window.setView(currentView);
+            }
+
             for (auto& a : animals)
             {
                 if (a->health > 0)
@@ -2261,7 +2682,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             for (auto& a : animals)
             {
                 if (a->health > 0)
-                    a->update(dt, sprite.getPosition());
+                    a->update(dt, sprite.getPosition(), isBlocked);
 
                 // ---- CLAMP ANIMAL TO MAP (FULL SPRITE) ----
                 sf::FloatRect bounds = a->sprite.getGlobalBounds();
@@ -2485,6 +2906,50 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 stoneRespawnClock.restart();
             }
         }
+
+        // Update Stock Market Prices every 60 seconds
+        if (stockUpdateClock.getElapsedTime().asSeconds() >= 60.f) {
+            stockUpdateClock.restart();
+            for (auto& item : stockMarket) {
+                if (item.history.size() >= 10) {
+                    item.history.erase(item.history.begin());
+                }
+                item.history.push_back(item.currentPrice);
+
+                float percentChange = (-15 + (rand() % 31)) / 100.f;
+                float dev = (item.currentPrice - item.basePrice) / item.basePrice;
+                percentChange -= dev * 0.05f;
+
+                item.currentPrice = item.currentPrice * (1.f + percentChange);
+                float minP = item.basePrice * 0.4f;
+                float maxP = item.basePrice * 2.5f;
+                if (item.currentPrice < minP) item.currentPrice = minP;
+                if (item.currentPrice > maxP) item.currentPrice = maxP;
+
+                item.currentPrice = std::round(item.currentPrice);
+                if (item.currentPrice < 1.f) item.currentPrice = 1.f;
+
+                if (item.history.size() >= 2) {
+                    float lastPrice = item.history.back();
+                    float diff = item.currentPrice - lastPrice;
+                    float noise = (-8 + (rand() % 17)) / 100.f;
+                    item.predictedPrice = std::round(item.currentPrice + diff * 0.5f + item.currentPrice * noise);
+                    if (item.predictedPrice < 1.f) item.predictedPrice = 1.f;
+
+                    if (item.predictedPrice > item.currentPrice * 1.05f) {
+                        item.trend = "UP";
+                    } else if (item.predictedPrice < item.currentPrice * 0.95f) {
+                        item.trend = "DOWN";
+                    } else {
+                        item.trend = "STABLE";
+                    }
+                } else {
+                    item.predictedPrice = item.currentPrice;
+                    item.trend = "STABLE";
+                }
+            }
+        }
+
         const float totalCycleTime = 900.f;
         float cycleValue = std::fmod(timeOffset + dayNightClock.getElapsedTime().asSeconds(), totalCycleTime);
         float t = cycleValue / totalCycleTime;
@@ -2575,18 +3040,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         window.setView(window.getDefaultView());
 
         if (wrenchMenuOpen) {
-            float boxHeight = 30.f;
-
-            sf::RectangleShape menuBox({ 150.f, boxHeight });
+            sf::RectangleShape menuBox({ 150.f, 30.f });
             menuBox.setPosition(wrenchMenuPos);
             menuBox.setFillColor(sf::Color(40, 40, 40, 240));
             menuBox.setOutlineColor(sf::Color::White);
             menuBox.setOutlineThickness(1.f);
 
-            window.draw(menuBox);
-
             if (isTargetNPC) {
-                // ✅ NPC → TRADE & QUEST
+                // ✅ NPC → TRADE, QUEST, MARKET STATS
+                menuBox.setSize({ 150.f, 90.f });
+                window.draw(menuBox);
+
                 sf::Text tradeTxt(uiFont, "1. Trade", 18);
                 tradeTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 5.f });
                 window.draw(tradeTxt);
@@ -2594,12 +3058,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 sf::Text questTxt(uiFont, "2. Daily Quest", 18);
                 questTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 35.f });
                 window.draw(questTxt);
-                
-                // Adjust menu height for two items
-                menuBox.setSize({ 150.f, 60.f });
+
+                sf::Text statsTxt(uiFont, "3. Market Stats", 18);
+                statsTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 65.f });
+                window.draw(statsTxt);
             }
             else {
                 // ✅ PLAYER → ONLY CRAFT
+                menuBox.setSize({ 150.f, 30.f });
+                window.draw(menuBox);
+
                 sf::Text craftTxt(uiFont, "Craft Items", 18);
                 craftTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 5.f });
                 window.draw(craftTxt);
@@ -2717,7 +3185,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         if (placementMode) {
             float btnW = 220.f, btnH = 70.f, gap = 40.f;
-            float tWidth = btnW * 2.f + gap;
+            float tWidth = btnW * 3.f + gap * 2.f;
             float sX = (width - tWidth) / 2.f;
             float yP = height - 110.f;
 
@@ -2742,8 +3210,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             placeTxt.setPosition({ sX + (btnW - pBounds.size.x) / 2.f, yP + (btnH - pBounds.size.y) / 2.f - 8.f });
             window.draw(placeTxt);
 
+            // ROTATE BUTTON
+            sf::RectangleShape rotateBtn({ btnW, btnH });
+            rotateBtn.setPosition({ sX + btnW + gap, yP });
+            rotateBtn.setFillColor(sf::Color(60, 140, 200));
+            rotateBtn.setOutlineThickness(3.f);
+            rotateBtn.setOutlineColor(sf::Color::White);
+            window.draw(rotateBtn);
+            sf::Text rotateTxt(font, "Rotate", 36);
+            sf::FloatRect rBounds = rotateTxt.getLocalBounds();
+            rotateTxt.setPosition({ rotateBtn.getPosition().x + (btnW - rBounds.size.x) / 2.f, yP + (btnH - rBounds.size.y) / 2.f - 8.f });
+            window.draw(rotateTxt);
+
             sf::RectangleShape cancelBtn({ btnW, btnH });
-            cancelBtn.setPosition({ sX + btnW + gap, yP });
+            cancelBtn.setPosition({ sX + (btnW + gap) * 2.f, yP });
             cancelBtn.setFillColor(sf::Color(200, 60, 60));
             cancelBtn.setOutlineThickness(3.f);
             cancelBtn.setOutlineColor(sf::Color::White);
@@ -2820,6 +3300,28 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             tTitle.setPosition({ tBox.getPosition().x + 20.f, tBox.getPosition().y + 10.f });
             window.draw(tTitle);
 
+            // Calculate total values
+            int playerTotalValue = playerTradeGold;
+            for (int i = 0; i < 4; i++) {
+                if (playerTradeSlots[i].tex != nullptr) {
+                    int price = 0;
+                    for (auto& item : stockMarket) {
+                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
+                    }
+                    playerTotalValue += playerTradeSlots[i].count * price;
+                }
+            }
+            int npcTotalValue = npcTradeGold;
+            for (int i = 0; i < 4; i++) {
+                if (npcTradeSlots[i].tex != nullptr) {
+                    int price = 0;
+                    for (auto& item : stockMarket) {
+                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
+                    }
+                    npcTotalValue += npcTradeSlots[i].count * price;
+                }
+            }
+
             // Draw player boxes
             for(int i=0; i<4; ++i) {
                 sf::RectangleShape b({64.f, 64.f});
@@ -2874,10 +3376,36 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
+            // Offers total values text
+            sf::Text pValText(uiFont, "Your Offer: " + std::to_string(playerTotalValue) + " G", 18);
+            pValText.setPosition({ tBox.getPosition().x + 50.f, tBox.getPosition().y + 290.f });
+            window.draw(pValText);
+
+            sf::Text nValText(uiFont, "NPC Offer: " + std::to_string(npcTotalValue) + " G", 18);
+            nValText.setPosition({ tBox.getPosition().x + 50.f, tBox.getPosition().y + 320.f });
+            window.draw(nValText);
+
+            // Status message
+            sf::Text statusTxt(uiFont, "", 16);
+            if (playerTotalValue >= npcTotalValue) {
+                statusTxt.setString("NPC: I accept this trade!");
+                statusTxt.setFillColor(sf::Color::Green);
+            } else {
+                statusTxt.setString("NPC: Need " + std::to_string(npcTotalValue - playerTotalValue) + " more Gold!");
+                statusTxt.setFillColor(sf::Color::Red);
+            }
+            statusTxt.setPosition({ tBox.getPosition().x + 50.f, tBox.getPosition().y + 355.f });
+            window.draw(statusTxt);
+
+            // Accept button
             sf::RectangleShape aBtn({100.f, 40.f});
             aBtn.setPosition({ tBox.getPosition().x + tBox.getGlobalBounds().size.x - 120.f, 
                                tBox.getPosition().y + tBox.getGlobalBounds().size.y - 60.f });
-            aBtn.setFillColor(sf::Color::Green);
+            if (playerTotalValue >= npcTotalValue) {
+                aBtn.setFillColor(sf::Color::Green);
+            } else {
+                aBtn.setFillColor(sf::Color(100, 100, 100)); // Disabled look
+            }
             window.draw(aBtn);
 
             sf::Text aTxt(uiFont, "Accept", 18);
@@ -2899,6 +3427,34 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             gpt.setPosition({ gp.getPosition().x + 8.f, gp.getPosition().y + 2.f });
             gmt.setPosition({ gm.getPosition().x + 10.f, gm.getPosition().y + 2.f });
             window.draw(gpt); window.draw(gmt);
+
+            // NPC Gold UI
+            sf::Text nGold(uiFont, "NPC Gold: " + std::to_string(npcTradeGold), 18);
+            nGold.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 155.f });
+            window.draw(nGold);
+
+            sf::RectangleShape ngp({30.f, 30.f}), ngm({30.f, 30.f});
+            ngp.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 190.f });
+            ngm.setPosition({ tBox.getPosition().x + 390.f, tBox.getPosition().y + 190.f });
+            ngp.setFillColor(sf::Color(100, 200, 100)); ngm.setFillColor(sf::Color(200, 100, 100));
+            window.draw(ngp); window.draw(ngm);
+            
+            sf::Text ngpt(uiFont, "+", 20), ngmt(uiFont, "-", 20);
+            ngpt.setPosition({ ngp.getPosition().x + 8.f, ngp.getPosition().y + 2.f });
+            ngmt.setPosition({ ngm.getPosition().x + 10.f, ngm.getPosition().y + 2.f });
+            window.draw(ngpt); window.draw(ngmt);
+
+            // Stock Predict Stats Button
+            sf::RectangleShape statsBtn({150.f, 40.f});
+            statsBtn.setPosition({ tBox.getPosition().x + 350.f, tBox.getPosition().y + 245.f });
+            statsBtn.setFillColor(sf::Color(50, 100, 150));
+            statsBtn.setOutlineColor(sf::Color::White);
+            statsBtn.setOutlineThickness(1.f);
+            window.draw(statsBtn);
+
+            sf::Text statsBtnTxt(uiFont, "Stock Stats", 16);
+            statsBtnTxt.setPosition({ statsBtn.getPosition().x + 28.f, statsBtn.getPosition().y + 10.f });
+            window.draw(statsBtnTxt);
         }
 
         if (tradeConfirmOpen) {
@@ -2931,6 +3487,234 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             nTxt.setPosition({ nBtn.getPosition().x + 35.f, nBtn.getPosition().y + 10.f });
             window.draw(nTxt);
         }
+
+        if (stockPageOpen) {
+            sf::RectangleShape sBox({800.f, 600.f});
+            sBox.setPosition({ (width - 800.f) / 2.f, (height - 600.f) / 2.f });
+            sBox.setFillColor(sf::Color(25, 25, 30, 245));
+            sBox.setOutlineThickness(3.f);
+            sBox.setOutlineColor(sf::Color(100, 100, 120));
+            window.draw(sBox);
+
+            // Title
+            sf::Text sTitle(uiFont, "STOCK MARKET PREDICTIONS", 28);
+            sTitle.setStyle(sf::Text::Bold);
+            sTitle.setFillColor(sf::Color(255, 215, 0)); // Gold title
+            sTitle.setPosition({ sBox.getPosition().x + 40.f, sBox.getPosition().y + 20.f });
+            window.draw(sTitle);
+
+            // Close button (X)
+            sf::RectangleShape closeBtn({40.f, 40.f});
+            closeBtn.setPosition({ sBox.getPosition().x + 740.f, sBox.getPosition().y + 20.f });
+            closeBtn.setFillColor(sf::Color(200, 50, 50));
+            window.draw(closeBtn);
+
+            sf::Text closeTxt(uiFont, "X", 22);
+            closeTxt.setStyle(sf::Text::Bold);
+            closeTxt.setPosition({ closeBtn.getPosition().x + 12.f, closeBtn.getPosition().y + 5.f });
+            window.draw(closeTxt);
+
+            // Table headers
+            float startY = sBox.getPosition().y + 80.f;
+            sf::Text hItem(uiFont, "Item", 16);
+            hItem.setFillColor(sf::Color(180, 180, 180));
+            hItem.setPosition({ sBox.getPosition().x + 40.f, startY });
+            window.draw(hItem);
+
+            sf::Text hPrice(uiFont, "Price", 16);
+            hPrice.setFillColor(sf::Color(180, 180, 180));
+            hPrice.setPosition({ sBox.getPosition().x + 220.f, startY });
+            window.draw(hPrice);
+
+            sf::Text hTrend(uiFont, "Trend", 16);
+            hTrend.setFillColor(sf::Color(180, 180, 180));
+            hTrend.setPosition({ sBox.getPosition().x + 320.f, startY });
+            window.draw(hTrend);
+
+            sf::Text hHistory(uiFont, "History (Last 10 Cycles)", 16);
+            hHistory.setFillColor(sf::Color(180, 180, 180));
+            hHistory.setPosition({ sBox.getPosition().x + 440.f, startY });
+            window.draw(hHistory);
+
+            sf::Text hPred(uiFont, "Forecast / Signal", 16);
+            hPred.setFillColor(sf::Color(180, 180, 180));
+            hPred.setPosition({ sBox.getPosition().x + 630.f, startY });
+            window.draw(hPred);
+
+            // Draw line dividers
+            sf::RectangleShape divider({720.f, 2.f});
+            divider.setPosition({ sBox.getPosition().x + 40.f, startY + 25.f });
+            divider.setFillColor(sf::Color(80, 80, 80));
+            window.draw(divider);
+
+            float rowHeight = 75.f;
+            for (size_t idx = 0; idx < stockMarket.size(); idx++) {
+                auto& item = stockMarket[idx];
+                float y = startY + 40.f + idx * rowHeight;
+
+                // Alternate row backgrounds for sleek premium feel
+                sf::RectangleShape rBg({720.f, rowHeight - 8.f});
+                rBg.setPosition({ sBox.getPosition().x + 40.f, y - 5.f });
+                rBg.setFillColor(sf::Color(45, 45, 55, idx % 2 == 0 ? 100 : 180));
+                window.draw(rBg);
+
+                // Draw Item Texture
+                const sf::Texture* tex = nullptr;
+                if (item.id == ITEM_WOOD) tex = &woodTex;
+                else if (item.id == ITEM_STONE) tex = &stoneTex;
+                else if (item.id == ITEM_SAPLING) tex = &saplingTex;
+                else if (item.id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
+                else if (item.id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
+                else if (item.id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
+
+                if (tex) {
+                    sf::Sprite icon(*tex);
+                    icon.setPosition({ sBox.getPosition().x + 45.f, y + 5.f });
+                    sf::Vector2u sz = tex->getSize();
+                    icon.setScale({ 36.f / sz.x, 36.f / sz.y });
+                    window.draw(icon);
+                }
+
+                // Item Name
+                sf::Text nameTxt(uiFont, item.name, 18);
+                nameTxt.setPosition({ sBox.getPosition().x + 95.f, y + 12.f });
+                window.draw(nameTxt);
+
+                // Current Price
+                sf::Text priceTxt(uiFont, std::to_string((int)item.currentPrice) + " G", 18);
+                priceTxt.setPosition({ sBox.getPosition().x + 220.f, y + 12.f });
+                window.draw(priceTxt);
+
+                // Trend (▲ UP, ▼ DOWN, ─ STABLE)
+                sf::Text trendTxt(uiFont, "", 18);
+                if (item.trend == "UP") {
+                    trendTxt.setString("▲ UP");
+                    trendTxt.setFillColor(sf::Color::Green);
+                } else if (item.trend == "DOWN") {
+                    trendTxt.setString("▼ DOWN");
+                    trendTxt.setFillColor(sf::Color::Red);
+                } else {
+                    trendTxt.setString("─ STABLE");
+                    trendTxt.setFillColor(sf::Color(150, 150, 150));
+                }
+                trendTxt.setPosition({ sBox.getPosition().x + 320.f, y + 12.f });
+                window.draw(trendTxt);
+
+                // Forecast & Signal
+                sf::Text predTxt(uiFont, "Est: " + std::to_string((int)item.predictedPrice) + " G", 16);
+                predTxt.setPosition({ sBox.getPosition().x + 630.f, y + 2.f });
+                window.draw(predTxt);
+
+                sf::Text sigTxt(uiFont, "", 16);
+                sigTxt.setStyle(sf::Text::Bold);
+                if (item.trend == "UP") {
+                    sigTxt.setString("SIGNAL: BUY");
+                    sigTxt.setFillColor(sf::Color::Green);
+                } else if (item.trend == "DOWN") {
+                    sigTxt.setString("SIGNAL: SELL");
+                    sigTxt.setFillColor(sf::Color::Red);
+                } else {
+                    sigTxt.setString("SIGNAL: HOLD");
+                    sigTxt.setFillColor(sf::Color(200, 200, 200));
+                }
+                sigTxt.setPosition({ sBox.getPosition().x + 630.f, y + 24.f });
+                window.draw(sigTxt);
+
+                // Draw History Chart Graph!
+                if (!item.history.empty()) {
+                    // Let's find min and max in history to scale nicely
+                    float minH = item.currentPrice;
+                    float maxH = item.currentPrice;
+                    for (float hp : item.history) {
+                        if (hp < minH) minH = hp;
+                        if (hp > maxH) maxH = hp;
+                    }
+                    float range = maxH - minH;
+                    if (range < 1.f) range = 1.f; // Avoid division by zero
+
+                    // Chart dimensions
+                    float graphW = 150.f;
+                    float graphH = 40.f;
+                    float graphX = sBox.getPosition().x + 440.f;
+                    float graphY = y + 2.f;
+
+                    // Background bounding box for the graph
+                    sf::RectangleShape graphBg({graphW, graphH});
+                    graphBg.setPosition({graphX, graphY});
+                    graphBg.setFillColor(sf::Color(20, 20, 25, 200));
+                    graphBg.setOutlineThickness(1.f);
+                    graphBg.setOutlineColor(sf::Color(60, 60, 70));
+                    window.draw(graphBg);
+
+                    // Combine history + current price for plotting
+                    std::vector<float> points = item.history;
+                    points.push_back(item.currentPrice);
+
+                    // Let's draw the lines connecting history points
+                    sf::Color lineColor = (item.currentPrice >= points.front()) ? sf::Color(100, 220, 100) : sf::Color(220, 100, 100);
+
+                    // We can draw it using tiny rectangles/lines
+                    float stepX = graphW / (points.size() - 1);
+                    for (size_t p = 0; p < points.size() - 1; p++) {
+                        float x1 = graphX + p * stepX;
+                        float y1 = graphY + graphH - 5.f - ((points[p] - minH) / range) * (graphH - 10.f);
+                        float x2 = graphX + (p + 1) * stepX;
+                        float y2 = graphY + graphH - 5.f - ((points[p + 1] - minH) / range) * (graphH - 10.f);
+
+                        // Draw line segment
+                        sf::RectangleShape line;
+                        float dist = std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+                        line.setSize({dist, 2.f});
+                        line.setOrigin({0.f, 1.f});
+                        line.setPosition({x1, y1});
+                        float angle = std::atan2(y2 - y1, x2 - x1) * 180.f / 3.14159f;
+                        line.setRotation(sf::degrees(angle));
+                        line.setFillColor(lineColor);
+                        window.draw(line);
+                    }
+                }
+            }
+
+            // ✅ RECENT MARKET TRADE TRANSACTION TICKER
+            sf::RectangleShape tickerBg({720.f, 32.f});
+            tickerBg.setPosition({ sBox.getPosition().x + 40.f, sBox.getPosition().y + 545.f });
+            tickerBg.setFillColor(sf::Color(35, 35, 45, 220));
+            tickerBg.setOutlineThickness(1.f);
+            tickerBg.setOutlineColor(sf::Color(80, 80, 100));
+            window.draw(tickerBg);
+
+            // Fetch and draw recent trades!
+            std::vector<TradeRecord> recentTrades = authManager.getRecentTrades(3); // Show last 3
+            std::string tickerText = "RECENT ACTIVITY: ";
+            if (recentTrades.empty()) {
+                tickerText += "No transactions recorded yet.";
+            } else {
+                for (size_t rIdx = 0; rIdx < recentTrades.size(); rIdx++) {
+                    auto& r = recentTrades[rIdx];
+                    tickerText += r.username + " " + (r.actionType == "SELL" ? "sold" : "bought") + " " + std::to_string(r.quantity) + "x " + r.itemName + " (per unit: " + std::to_string(r.pricePerUnit) + "G)";
+                    if (rIdx < recentTrades.size() - 1) {
+                        tickerText += "  |  ";
+                    }
+                }
+            }
+
+            sf::Text tickerTxt(uiFont, tickerText, 14);
+            tickerTxt.setFillColor(sf::Color(255, 215, 0)); // Sleek gold color
+            tickerTxt.setPosition({ tickerBg.getPosition().x + 15.f, tickerBg.getPosition().y + 6.f });
+            window.draw(tickerTxt);
+        }
+
+        // ✅ HUD Market Stats Button
+        sf::RectangleShape marketBtnTopRight({ 150.f, 40.f });
+        marketBtnTopRight.setPosition({ (float)width - 300.f, 20.f });
+        marketBtnTopRight.setFillColor(sf::Color(40, 110, 90, 200)); // Premium emerald green
+        marketBtnTopRight.setOutlineThickness(2.f);
+        marketBtnTopRight.setOutlineColor(sf::Color(255, 215, 0)); // Gold outline
+        window.draw(marketBtnTopRight);
+
+        sf::Text marketBtnTxtTopRight(uiFont, "Market Stats", 18);
+        marketBtnTxtTopRight.setPosition({ (float)width - 280.f, 28.f });
+        window.draw(marketBtnTxtTopRight);
 
         sf::RectangleShape settingsBtnTopRight({ 120.f, 40.f });
         settingsBtnTopRight.setPosition({ (float)width - 140.f, 20.f });

@@ -102,26 +102,29 @@ bool AuthManager::initDB() {
                 stmt->execute("UPDATE Accounts SET isFirstTime=1, tutorialVersion=2 WHERE tutorialVersion < 2");
             }
         }
-        try {
-            std::unique_ptr<sql::Statement> stmt(con->createStatement());
-            if (stmt) {
-                try { stmt->execute("ALTER TABLE Accounts ADD COLUMN elapsedTime FLOAT DEFAULT 0"); }
-                catch (...) {}
-            }
-        }
         catch (...) {}
-
         try {
             std::unique_ptr<sql::Statement> stmt(con->createStatement());
             if (stmt) {
-                stmt->execute("CREATE TABLE IF NOT EXISTS Structures ("
+                try { stmt->execute("ALTER TABLE Accounts ADD COLUMN elapsedTime FLOAT DEFAULT 0"); } catch (...) {}
+                try { stmt->execute("ALTER TABLE Accounts ADD COLUMN gender INT DEFAULT -1"); } catch (...) {}
+                
+                std::cout << "[DEBUG] Creating structures and campfires tables...\n";
+                stmt->execute("CREATE TABLE IF NOT EXISTS structures ("
+                              "ID INT AUTO_INCREMENT PRIMARY KEY, "
                               "Username VARCHAR(50), "
                               "ItemID INT, "
                               "PosX FLOAT, "
                               "PosY FLOAT, "
-                              "Health FLOAT"
+                              "Health FLOAT, "
+                              "Rotation FLOAT DEFAULT 0, "
+                              "IsOpen TINYINT(1) DEFAULT 0, "
+                              "ShearY FLOAT DEFAULT 0"
                               ")");
-                stmt->execute("CREATE TABLE IF NOT EXISTS Campfires ("
+                try { stmt->execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS IsOpen TINYINT(1) DEFAULT 0"); } catch(...) {}
+                try { stmt->execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS ShearY FLOAT DEFAULT 0"); } catch(...) {}
+                stmt->execute("CREATE TABLE IF NOT EXISTS campfires ("
+                              "ID INT AUTO_INCREMENT PRIMARY KEY, "
                               "Username VARCHAR(50), "
                               "PosX FLOAT, "
                               "PosY FLOAT, "
@@ -129,7 +132,9 @@ bool AuthManager::initDB() {
                               "IsCrafted BOOLEAN"
                               ")");
             }
-        } catch (...) {}
+        } catch (sql::SQLException& e) {
+            std::cout << "[DEBUG] Table creation error: " << e.what() << "\n";
+        }
 
         try {
             std::unique_ptr<sql::Statement> stmt(con->createStatement());
@@ -140,6 +145,33 @@ bool AuthManager::initDB() {
                               "Message TEXT, "
                               "SentAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
                               ")");
+            }
+        } catch (...) {}
+
+        try {
+            std::unique_ptr<sql::Statement> stmt(con->createStatement());
+            if (stmt) {
+                stmt->execute("CREATE TABLE IF NOT EXISTS TradeHistory ("
+                              "ID INT AUTO_INCREMENT PRIMARY KEY, "
+                              "Username VARCHAR(50), "
+                              "ActionType VARCHAR(10), "
+                              "ItemName VARCHAR(50), "
+                              "Quantity INT, "
+                              "PricePerUnit INT, "
+                              "TotalGold INT, "
+                              "TradeTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                              ")");
+
+                // Prepopulate with sample trades if empty
+                std::unique_ptr<sql::ResultSet> countRes(stmt->executeQuery("SELECT COUNT(*) AS total FROM TradeHistory"));
+                if (countRes && countRes->next() && countRes->getInt("total") == 0) {
+                    stmt->execute("INSERT INTO TradeHistory (Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold) VALUES "
+                                  "('TraderJoe', 'SELL', 'Wood', 15, 5, 75), "
+                                  "('MerchantAl', 'BUY', 'Stone', 8, 8, 64), "
+                                  "('AlphaBuilder', 'SELL', 'Sapling', 4, 12, 48), "
+                                  "('HunterMax', 'BUY', 'Chicken Meat', 6, 15, 90), "
+                                  "('ChefGourmet', 'SELL', 'Pig Meat', 3, 25, 75)");
+                }
             }
         } catch (...) {}
 
@@ -306,11 +338,11 @@ void AuthManager::savePlayerStats(const sql::SQLString& username, float hunger, 
 
 PlayerStats AuthManager::loadPlayerStats(const sql::SQLString& username)
 {
-    if (!con) return { 0.f, 0.f, 0, 1, 0, 0.f, false };
+    if (!con) return { 0.f, 0.f, 0, 1, 0, 0.f, -1, false };
 
     try {
         std::unique_ptr<sql::PreparedStatement> pstmt(
-            con->prepareStatement("SELECT hunger, thirst, Gold, Level, Exp, elapsedTime, isFirstTime FROM Accounts WHERE Username=?")
+            con->prepareStatement("SELECT hunger, thirst, Gold, Level, Exp, elapsedTime, gender, isFirstTime FROM Accounts WHERE Username=?")
         );
 
         pstmt->setString(1, username);
@@ -318,12 +350,13 @@ PlayerStats AuthManager::loadPlayerStats(const sql::SQLString& username)
 
         if (res && res->next()) {
             PlayerStats stats;
-            stats.hunger = res->getDouble("hunger");
-            stats.thirst = res->getDouble("thirst");
+            stats.hunger = (float)res->getDouble("hunger");
+            stats.thirst = (float)res->getDouble("thirst");
             stats.currency = res->getInt("Gold");
             stats.level = res->getInt("Level");
             stats.exp = res->getInt("Exp");
-            stats.elapsedTime = res->getDouble("elapsedTime");
+            stats.elapsedTime = (float)res->getDouble("elapsedTime");
+            stats.gender = res->getInt("gender");
             stats.isFirstTime = res->getBoolean("isFirstTime");
             return stats;
         }
@@ -332,23 +365,37 @@ PlayerStats AuthManager::loadPlayerStats(const sql::SQLString& username)
         std::cout << "Load stats error: " << e.what() << std::endl;
     }
 
-    return { 0.f, 0.f, 0, 1, 0, 0.f, false };
+    return { 0.f, 0.f, 0, 1, 0, 0.f, -1, false };
+}
+
+void AuthManager::saveGender(const sql::SQLString& username, int gender) {
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("UPDATE Accounts SET gender = ? WHERE Username = ?"));
+        pstmt->setInt(1, gender);
+        pstmt->setString(2, username);
+        pstmt->executeUpdate();
+    } catch (sql::SQLException& e) {
+        std::cerr << "saveGender error: " << e.what() << "\n";
+    }
 }
 
 void AuthManager::saveStructures(const sql::SQLString& username, const std::vector<StoredStructure>& structures) {
     if (!con) return;
     try {
-        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM Structures WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM structures WHERE Username = ?"));
         delStmt->setString(1, username);
         delStmt->executeUpdate();
 
-        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO Structures (Username, ItemID, PosX, PosY, Health) VALUES (?, ?, ?, ?, ?)"));
+        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO structures (Username, ItemID, PosX, PosY, Health, Rotation, IsOpen) VALUES (?, ?, ?, ?, ?, ?, ?)"));
         for (auto& s : structures) {
             insStmt->setString(1, username);
             insStmt->setInt(2, s.id);
-            insStmt->setDouble(3, s.x);
-            insStmt->setDouble(4, s.y);
-            insStmt->setDouble(5, s.health);
+            insStmt->setDouble(3, (double)s.x);
+            insStmt->setDouble(4, (double)s.y);
+            insStmt->setDouble(5, (double)s.health);
+            insStmt->setDouble(6, (double)s.rotation);
+            insStmt->setBoolean(7, s.isOpen);
             insStmt->executeUpdate();
         }
     } catch (sql::SQLException& e) {
@@ -360,11 +407,11 @@ std::vector<StoredStructure> AuthManager::loadStructures(const sql::SQLString& u
     std::vector<StoredStructure> structures;
     if (!con) return structures;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health FROM Structures WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username = ?"));
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health") });
+            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY") });
         }
     } catch (sql::SQLException& e) {
         std::cerr << "loadStructures error: " << e.what() << "\n";
@@ -375,11 +422,11 @@ std::vector<StoredStructure> AuthManager::loadStructures(const sql::SQLString& u
 void AuthManager::saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires) {
     if (!con) return;
     try {
-        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM Campfires WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM campfires WHERE Username = ?"));
         delStmt->setString(1, username);
         delStmt->executeUpdate();
 
-        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO Campfires (Username, PosX, PosY, TimeRemaining, IsCrafted) VALUES (?, ?, ?, ?, ?)"));
+        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO campfires (Username, PosX, PosY, TimeRemaining, IsCrafted) VALUES (?, ?, ?, ?, ?)"));
         for (auto& c : campfires) {
             insStmt->setString(1, username);
             insStmt->setDouble(2, c.x);
@@ -397,7 +444,7 @@ std::vector<StoredCampfire> AuthManager::loadCampfires(const sql::SQLString& use
     std::vector<StoredCampfire> campfires;
     if (!con) return campfires;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT PosX, PosY, TimeRemaining, IsCrafted FROM Campfires WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT PosX, PosY, TimeRemaining, IsCrafted FROM campfires WHERE Username = ?"));
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
@@ -626,5 +673,49 @@ void AuthManager::clearPull(const sql::SQLString& username) {
     catch (sql::SQLException& e) {
         std::cerr << "SQL Error in clearPull: " << e.what() << "\n";
     }
+}
+
+void AuthManager::addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold) {
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(
+            con->prepareStatement("INSERT INTO TradeHistory (Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold) VALUES (?, ?, ?, ?, ?, ?)")
+        );
+        pstmt->setString(1, username);
+        pstmt->setString(2, actionType);
+        pstmt->setString(3, itemName);
+        pstmt->setInt(4, quantity);
+        pstmt->setInt(5, pricePerUnit);
+        pstmt->setInt(6, totalGold);
+        pstmt->executeUpdate();
+    } catch (sql::SQLException& e) {
+        std::cerr << "addTradeRecord error: " << e.what() << "\n";
+    }
+}
+
+std::vector<TradeRecord> AuthManager::getRecentTrades(int limit) {
+    std::vector<TradeRecord> records;
+    if (!con) return records;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(
+            con->prepareStatement("SELECT Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold, TradeTime FROM TradeHistory ORDER BY TradeTime DESC LIMIT ?")
+        );
+        pstmt->setInt(1, limit);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        while (res && res->next()) {
+            TradeRecord r;
+            r.username = res->getString("Username").c_str();
+            r.actionType = res->getString("ActionType").c_str();
+            r.itemName = res->getString("ItemName").c_str();
+            r.quantity = res->getInt("Quantity");
+            r.pricePerUnit = res->getInt("PricePerUnit");
+            r.totalGold = res->getInt("TotalGold");
+            r.tradeTime = res->getString("TradeTime").c_str();
+            records.push_back(r);
+        }
+    } catch (sql::SQLException& e) {
+        std::cerr << "getRecentTrades error: " << e.what() << "\n";
+    }
+    return records;
 }
 

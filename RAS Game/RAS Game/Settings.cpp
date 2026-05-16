@@ -146,6 +146,7 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int width, unsigned i
     addBind("Right", &globalSettings.keyRight, bindCol2, bindStartY + bindGapY);
     addBind("Interact", &globalSettings.keyInteract, bindCol2, bindStartY + bindGapY * 2);
     addBind("Attack", &globalSettings.keyAttack, bindCol2, bindStartY + bindGapY * 3);
+    addBind("Rotate", &globalSettings.keyRotate, bindCol2, bindStartY + bindGapY * 4);
 
 	bool draggingVol = false;
 	bool draggingBright = false;

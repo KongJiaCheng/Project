@@ -2,6 +2,7 @@
 #include <SFML/Graphics.hpp>
 #include "Animation.h"
 #include <cmath>
+#include <functional>
 
 class Animal
 {
@@ -55,7 +56,7 @@ public:
         sprite.setOrigin({ 32.f, 32.f });
     }
 
-    virtual void update(float dt, const sf::Vector2f& playerPos)
+    virtual void update(float dt, const sf::Vector2f& playerPos, std::function<bool(sf::Vector2f)> isBlocked = nullptr)
     {
         sf::Vector2f pos = sprite.getPosition();
         sf::Vector2f dir = pos - playerPos;
@@ -77,7 +78,17 @@ public:
         if (len > 0.01f)
         {
             dir /= len;
-            sprite.move(dir * speed * dt);
+            sf::Vector2f moveVec = dir * speed * dt;
+            
+            sf::Vector2f nextPos = pos + moveVec;
+            if (!isBlocked || !isBlocked(nextPos)) {
+                sprite.move(moveVec);
+            }
+            else {
+                // Try sliding
+                if (!isBlocked({ pos.x + moveVec.x, pos.y })) sprite.move({ moveVec.x, 0.f });
+                else if (!isBlocked({ pos.x, pos.y + moveVec.y })) sprite.move({ 0.f, moveVec.y });
+            }
 
             if (std::abs(dir.x) > std::abs(dir.y))
                 currentDir = (dir.x > 0) ? Dir::East : Dir::West;
