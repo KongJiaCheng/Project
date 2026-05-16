@@ -101,7 +101,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     darkness.setFillColor(sf::Color(0, 0, 0, 0));
 
     Inventory inventory;
-    AuthManager& authManager = AuthManager::getInstance();
     ItemManager itemManager;
     Animation animation;
 
@@ -172,12 +171,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     int level = 1;
     int exp = 0;
     float timeOffset = 0.f;
-
-    PlayerStats stats = authManager.loadPlayerStats(username.c_str());
-    if (stats.gender != -1) {
-        selectionDone = true;
-        option = stats.gender;
-    }
 
     // rates (per second)
     const float HUNGER_RATE = 1.f;

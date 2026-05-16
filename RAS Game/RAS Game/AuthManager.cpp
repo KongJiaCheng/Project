@@ -316,12 +316,12 @@ PlayerStats AuthManager::loadPlayerStats(const sql::SQLString& username)
 
         if (res && res->next()) {
             PlayerStats stats;
-            stats.hunger = res->getDouble("hunger");
-            stats.thirst = res->getDouble("thirst");
+            stats.hunger = (float)res->getDouble("hunger");
+            stats.thirst = (float)res->getDouble("thirst");
             stats.currency = res->getInt("Gold");
             stats.level = res->getInt("Level");
             stats.exp = res->getInt("Exp");
-            stats.elapsedTime = res->getDouble("elapsedTime");
+            stats.elapsedTime = (float)res->getDouble("elapsedTime");
             stats.gender = res->getInt("gender");
             stats.isFirstTime = res->getBoolean("isFirstTime");
             return stats;
