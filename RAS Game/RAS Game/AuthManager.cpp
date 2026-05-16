@@ -118,9 +118,11 @@ bool AuthManager::initDB() {
                               "PosY FLOAT, "
                               "Health FLOAT, "
                               "Rotation FLOAT DEFAULT 0, "
-                              "IsOpen TINYINT(1) DEFAULT 0"
+                              "IsOpen TINYINT(1) DEFAULT 0, "
+                              "ShearY FLOAT DEFAULT 0"
                               ")");
                 try { stmt->execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS IsOpen TINYINT(1) DEFAULT 0"); } catch(...) {}
+                try { stmt->execute("ALTER TABLE structures ADD COLUMN IF NOT EXISTS ShearY FLOAT DEFAULT 0"); } catch(...) {}
                 stmt->execute("CREATE TABLE IF NOT EXISTS campfires ("
                               "ID INT AUTO_INCREMENT PRIMARY KEY, "
                               "Username VARCHAR(50), "
