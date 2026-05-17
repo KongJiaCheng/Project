@@ -2218,7 +2218,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             auto isBlocked = [&](sf::Vector2f targetPos) {
                 // 1. Structures (Walls, Furnace, Bed, Door)
                 for (auto& s : structures) {
-                    if (s.id == ITEM_WOOD_WALL || s.id == ITEM_FURNACE || s.id == ITEM_BED) {
+                    if (s.id == ITEM_WOOD_WALL) {
+                        sf::FloatRect b = s.sprite->getGlobalBounds();
+                        // Wood walls block the entire width and height to prevent walking through or behind
+                        b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                        b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                        if (b.contains(targetPos)) return true;
+                    }
+                    else if (s.id == ITEM_FURNACE || s.id == ITEM_BED) {
                         sf::FloatRect b = s.sprite->getGlobalBounds();
                         b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
                         b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
@@ -2226,8 +2233,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     }
                     if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
                         sf::FloatRect b = s.sprite->getGlobalBounds();
-                        b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
-                        b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                        // Closed doors block fully like a wall
+                        b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                        b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
                         if (b.contains(targetPos)) return true;
                     }
                 }
