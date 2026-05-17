@@ -131,7 +131,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool animLoadedForSelection = false;
 
     sf::Font font;
-    (void)font.openFromFile("C:/Windows/Fonts/arial.ttf");
+    bool fontLoaded = font.openFromFile("C:/Windows/Fonts/arial.ttf");
+    if (!fontLoaded) fontLoaded = font.openFromFile("C:/Windows/Fonts/calibri.ttf");
+    if (!fontLoaded) fontLoaded = font.openFromFile("C:/Windows/Fonts/segoeui.ttf");
+    if (!fontLoaded) fontLoaded = font.openFromFile("C:/Windows/Fonts/tahoma.ttf");
     sf::Font& uiFont = font;
 
     sf::Texture selBgTexture;
