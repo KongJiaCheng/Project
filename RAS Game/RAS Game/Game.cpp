@@ -46,35 +46,7 @@ bool isInWater(const sf::Vector2f& pos, const std::vector<sf::FloatRect>& waters
     return false;
 }
 
-std::string resolvePath(const std::string& path) {
-    if (std::filesystem::exists(path)) {
-        return path;
-    }
-    if (path.rfind("../", 0) == 0) {
-        std::string stripped = path.substr(3);
-        if (std::filesystem::exists(stripped)) {
-            return stripped;
-        }
-        std::string deep = "../" + stripped;
-        if (std::filesystem::exists(deep)) {
-            return deep;
-        }
-        std::string extraDeep = "../../" + stripped;
-        if (std::filesystem::exists(extraDeep)) {
-            return extraDeep;
-        }
-    } else {
-        std::string addParent = "../" + path;
-        if (std::filesystem::exists(addParent)) {
-            return addParent;
-        }
-        std::string addTwoParents = "../../" + path;
-        if (std::filesystem::exists(addTwoParents)) {
-            return addTwoParents;
-        }
-    }
-    return path;
-}
+
 
 struct AnimSet {
     Animation south, north, east, west;
@@ -163,7 +135,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     sf::Font& uiFont = font;
 
     sf::Texture selBgTexture;
-    selBgTexture.loadFromFile("../Main Menu/Background.png");
+    selBgTexture.loadFromFile(resolvePath("../Main Menu/Background.png"));
     sf::Sprite selBgSprite(selBgTexture);
     if (selBgSprite.getLocalBounds().size.x > 0 && selBgSprite.getLocalBounds().size.y > 0) {
         selBgSprite.setScale({ width / selBgSprite.getLocalBounds().size.x, height / selBgSprite.getLocalBounds().size.y });
@@ -192,7 +164,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     buttonText2.setPosition(button2.getPosition());
 
     sf::Texture bgTexture;
-    (void)bgTexture.loadFromFile("../Items/Background.jpg");
+    (void)bgTexture.loadFromFile(resolvePath("../Items/Background.jpg"));
 
     sf::Sprite background(bgTexture);
     float scaleX = float(MAP_WIDTH) / bgTexture.getSize().x;
@@ -237,12 +209,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
 
     sf::Texture hpIconTex, hungerIconTex, thirstIconTex;
-    (void)hpIconTex.loadFromFile("../Sprites/UI/hp.png");
-    (void)hungerIconTex.loadFromFile("../Sprites/UI/hunger.png");
-    (void)thirstIconTex.loadFromFile("../Sprites/UI/thirst.png");
+    (void)hpIconTex.loadFromFile(resolvePath("../Sprites/UI/hp.png"));
+    (void)hungerIconTex.loadFromFile(resolvePath("../Sprites/UI/hunger.png"));
+    (void)thirstIconTex.loadFromFile(resolvePath("../Sprites/UI/thirst.png"));
 
     sf::Texture wrenchTex;
-    (void)wrenchTex.loadFromFile("../Sprites/UI/wrench.png");
+    (void)wrenchTex.loadFromFile(resolvePath("../Sprites/UI/wrench.png"));
 
     struct NPC {
         std::optional<sf::Sprite> sprite;
@@ -318,7 +290,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::vector<PlacedCampfire> campfires;
     sf::Texture campfireFrames[8];
     for (int i = 0; i < 8; i++) {
-        campfireFrames[i].loadFromFile("../Items/campfire/frame_" + std::to_string(i) + "_campfire.png");
+        campfireFrames[i].loadFromFile(resolvePath("../Items/campfire/frame_" + std::to_string(i) + "_campfire.png"));
     }
 
     bool isTargetNPC = false;
@@ -483,39 +455,39 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     ChickenMeat::loadTexture();
     PigMeat::loadTexture();
     ZombieFlesh::loadTexture();
-    (void)Chicken::texture.loadFromFile("../Sprites/Animals/Chicken/South.png");
-    (void)Pig::texture.loadFromFile("../Sprites/Animals/Pig/South.png");
-    (void)Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/South.png");
+    (void)Chicken::texture.loadFromFile(resolvePath("../Sprites/Animals/Chicken/South.png"));
+    (void)Pig::texture.loadFromFile(resolvePath("../Sprites/Animals/Pig/South.png"));
+    (void)Zombie::texture.loadFromFile(resolvePath("../Sprites/Monsters/Zombie/South.png"));
 
     sf::Texture woodTex, treeTex, stoneTex, pondTex, saplingTex, goldTex, woodenSwordTex, shieldTex;
     sf::Texture furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex;
     sf::Texture swordIconTex, shieldIconTex, tileIconTex, wallIconTex, doorIconTex, roofIconTex, stairsIconTex, bedIconTex;
     
-    (void)woodTex.loadFromFile("../Items/wood.png");
-    (void)treeTex.loadFromFile("../Items/Tree.png");
-    (void)stoneTex.loadFromFile("../Items/Stone.png");
-    (void)pondTex.loadFromFile("../Items/pond.png");
-    (void)saplingTex.loadFromFile("../Items/sapling.png");
-    (void)goldTex.loadFromFile("../Items/gold.png");
-    (void)woodenSwordTex.loadFromFile("../Items/wooden sword.png");
-    (void)shieldTex.loadFromFile("../Items/shield.png");
-    (void)furnaceTex.loadFromFile("../Items/furnance.png");
-    (void)woodTileTex.loadFromFile("../Items/wood tile.png");
-    (void)woodWallTex.loadFromFile("../Items/wood wall.png");
-    (void)woodDoorTex.loadFromFile("../Items/wooden door.png");
-    (void)woodRoofTex.loadFromFile("../Items/wooden roof.png");
-    (void)woodStairsTex.loadFromFile("../Items/wooden stairs.png");
-    (void)bedTex.loadFromFile("../Items/bed.png");
+    (void)woodTex.loadFromFile(resolvePath("../Items/wood.png"));
+    (void)treeTex.loadFromFile(resolvePath("../Items/Tree.png"));
+    (void)stoneTex.loadFromFile(resolvePath("../Items/Stone.png"));
+    (void)pondTex.loadFromFile(resolvePath("../Items/pond.png"));
+    (void)saplingTex.loadFromFile(resolvePath("../Items/sapling.png"));
+    (void)goldTex.loadFromFile(resolvePath("../Items/gold.png"));
+    (void)woodenSwordTex.loadFromFile(resolvePath("../Items/wooden sword.png"));
+    (void)shieldTex.loadFromFile(resolvePath("../Items/shield.png"));
+    (void)furnaceTex.loadFromFile(resolvePath("../Items/furnance.png"));
+    (void)woodTileTex.loadFromFile(resolvePath("../Items/wood tile.png"));
+    (void)woodWallTex.loadFromFile(resolvePath("../Items/wood wall.png"));
+    (void)woodDoorTex.loadFromFile(resolvePath("../Items/wooden door.png"));
+    (void)woodRoofTex.loadFromFile(resolvePath("../Items/wooden roof.png"));
+    (void)woodStairsTex.loadFromFile(resolvePath("../Items/wooden stairs.png"));
+    (void)bedTex.loadFromFile(resolvePath("../Items/bed.png"));
     
     // Load high quality icons
-    (void)swordIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
-    (void)shieldIconTex.loadFromFile("../Items/wooden_sword_shield_icons.png");
-    (void)tileIconTex.loadFromFile("../Items/building_parts_icons.png");
-    (void)wallIconTex.loadFromFile("../Items/building_parts_icons.png");
-    (void)doorIconTex.loadFromFile("../Items/building_parts_icons.png");
-    (void)roofIconTex.loadFromFile("../Items/building_parts_icons.png");
-    (void)stairsIconTex.loadFromFile("../Items/building_parts_icons.png");
-    (void)bedIconTex.loadFromFile("../Items/bed.png");
+    (void)swordIconTex.loadFromFile(resolvePath("../Items/wooden_sword_shield_icons.png"));
+    (void)shieldIconTex.loadFromFile(resolvePath("../Items/wooden_sword_shield_icons.png"));
+    (void)tileIconTex.loadFromFile(resolvePath("../Items/building_parts_icons.png"));
+    (void)wallIconTex.loadFromFile(resolvePath("../Items/building_parts_icons.png"));
+    (void)doorIconTex.loadFromFile(resolvePath("../Items/building_parts_icons.png"));
+    (void)roofIconTex.loadFromFile(resolvePath("../Items/building_parts_icons.png"));
+    (void)stairsIconTex.loadFromFile(resolvePath("../Items/building_parts_icons.png"));
+    (void)bedIconTex.loadFromFile(resolvePath("../Items/bed.png"));
 
     bool goldTexLoaded = (goldTex.getSize().x > 0);
     sf::Sprite goldSprite(goldTex);
@@ -609,9 +581,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::vector<sf::Texture> introFrames;
     
     // Load entity textures
-    Chicken::texture.loadFromFile("../Sprites/Animals/Chicken/Walk/South/frame_000.png");
-    Pig::texture.loadFromFile("../Sprites/Animals/Pig/Walk/South/frame_000.png");
-    Zombie::texture.loadFromFile("../Sprites/Monsters/Zombie/Walk/South/frame_000.png");
+    Chicken::texture.loadFromFile(resolvePath("../Sprites/Animals/Chicken/Walk/South/frame_000.png"));
+    Pig::texture.loadFromFile(resolvePath("../Sprites/Animals/Pig/Walk/South/frame_000.png"));
+    Zombie::texture.loadFromFile(resolvePath("../Sprites/Monsters/Zombie/Walk/South/frame_000.png"));
     ChickenMeat::loadTexture();
     PigMeat::loadTexture();
     ZombieFlesh::loadTexture();
@@ -628,7 +600,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             
             if (std::filesystem::exists(path)) {
                 sf::Texture tex;
-                if (tex.loadFromFile(path)) {
+                if (tex.loadFromFile(resolvePath(path))) {
                     introFrames.push_back(tex);
                 } else {
                     break;
@@ -2167,7 +2139,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
-            if (npcFemale.texture.loadFromFile("../Sprites/NPCFemale/Walk/South/frame_000.png")) {
+            if (npcFemale.texture.loadFromFile(resolvePath("../Sprites/NPCFemale/Walk/South/frame_000.png"))) {
                 npcFemale.sprite->setTexture(npcFemale.texture);
                 sf::Vector2u ts_npcF = npcFemale.texture.getSize();
                 if (ts_npcF.x > 0 && ts_npcF.y > 0) {
@@ -2177,7 +2149,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 npcFemale.sprite->setPosition({ width / 2.f + 150.f, height / 2.f - 50.f });
             }
             
-            if (npcMale.texture.loadFromFile("../Sprites/NPCMale/Walk/South/frame_000.png")) {
+            if (npcMale.texture.loadFromFile(resolvePath("../Sprites/NPCMale/Walk/South/frame_000.png"))) {
                 npcMale.sprite->setTexture(npcMale.texture);
                 sf::Vector2u ts_npcM = npcMale.texture.getSize();
                 if (ts_npcM.x > 0 && ts_npcM.y > 0) {

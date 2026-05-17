@@ -1,5 +1,6 @@
 #pragma once
 #include "Food.h"
+#include "ViewUtils.h"
 
 class ZombieFlesh : public Food
 {
@@ -13,7 +14,7 @@ public:
 
     static void loadTexture()
     {
-        (void)texture.loadFromFile("../Items/ZombieFlesh.png");
+        (void)texture.loadFromFile(resolvePath("../Items/ZombieFlesh.png"));
     }
 
     static const sf::Texture* getTexture();

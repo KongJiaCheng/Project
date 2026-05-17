@@ -1,5 +1,7 @@
 #pragma once
 #include <SFML/Graphics.hpp>
+#include <filesystem>
+#include <string>
 
 // Update the view to exactly match the current window size (SFML 3)
 inline void UpdateViewToWindow(sf::RenderWindow* window)
@@ -15,4 +17,35 @@ inline void UpdateViewToWindow(sf::RenderWindow* window)
         view.getSize().y / 2.f));
 
     window->setView(view);
+}
+
+// Automatically resolves asset paths, prioritizing local directory structure next to the executable
+inline std::string resolvePath(const std::string& path) {
+    if (std::filesystem::exists(path)) {
+        return path;
+    }
+    if (path.rfind("../", 0) == 0) {
+        std::string stripped = path.substr(3);
+        if (std::filesystem::exists(stripped)) {
+            return stripped;
+        }
+        std::string deep = "../" + stripped;
+        if (std::filesystem::exists(deep)) {
+            return deep;
+        }
+        std::string extraDeep = "../../" + stripped;
+        if (std::filesystem::exists(extraDeep)) {
+            return extraDeep;
+        }
+    } else {
+        std::string addParent = "../" + path;
+        if (std::filesystem::exists(addParent)) {
+            return addParent;
+        }
+        std::string addTwoParents = "../../" + path;
+        if (std::filesystem::exists(addTwoParents)) {
+            return addTwoParents;
+        }
+    }
+    return path;
 }
