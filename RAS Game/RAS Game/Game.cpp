@@ -1290,8 +1290,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     }
 
                                     if (useRealStripeGateway) {
-                                        // Open local Node.js Express server which securely handles Stripe CheckoutSession creation & redirects
-                                        std::string url = "http://localhost:3000/checkout?user=" + username + "&gold=" + std::to_string(gold) + "&price=" + priceStr + "&tier=" + urlTier;
+                                        // Open live hosted Node.js Express server which securely handles Stripe CheckoutSession creation & redirects
+                                        std::string url = "https://econova-qfhu.onrender.com/checkout?user=" + username + "&gold=" + std::to_string(gold) + "&price=" + priceStr + "&tier=" + urlTier;
                                         ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
                                     } else {
                                         // 1. Launch PowerShell local server in background (hidden)

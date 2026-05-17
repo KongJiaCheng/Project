@@ -47,8 +47,8 @@ app.get('/checkout', async (req, res) => {
         username: user,
         gold: gold
       },
-      success_url: `http://localhost:${port}/success?user=${encodeURIComponent(user)}&gold=${gold}`,
-      cancel_url: `http://localhost:${port}/cancel`,
+      success_url: `${req.protocol}://${req.get('host')}/success?user=${encodeURIComponent(user)}&gold=${gold}`,
+      cancel_url: `${req.protocol}://${req.get('host')}/cancel`,
     });
     
     // Redirect browser directly to Stripe's secure Checkout Page
