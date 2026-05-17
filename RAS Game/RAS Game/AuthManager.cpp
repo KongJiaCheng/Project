@@ -29,8 +29,7 @@ bool AuthManager::initDB() {
         driver = sql::mysql::get_mysql_driver_instance();
         std::cout << "[DEBUG] Driver successfully acquired!" << std::endl;
         sql::ConnectOptionsMap connection_properties;
-        connection_properties["hostName"] = "mysql-308a256a-econovadb.h.aivencloud.com";
-        connection_properties["port"] = 22311;
+        connection_properties["hostName"] = "tcp://mysql-308a256a-econovadb.h.aivencloud.com:22311";
         connection_properties["userName"] = "avnadmin";
         connection_properties["password"] = std::string("AVNS_YV3eowX") + "Wv3Q2tArX8fd";
         connection_properties["sslCa"] = "ca.pem";

@@ -8,8 +8,7 @@ int main() {
     try {
         sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
         sql::ConnectOptionsMap connection_properties;
-        connection_properties["hostName"] = "mysql-308a256a-econovadb.h.aivencloud.com";
-        connection_properties["port"] = 22311;
+        connection_properties["hostName"] = "tcp://mysql-308a256a-econovadb.h.aivencloud.com:22311";
         connection_properties["userName"] = "avnadmin";
         connection_properties["password"] = "AVNS_YV3eowXWv3Q2tArX8fd";
         connection_properties["sslCa"] = "ca.pem";
