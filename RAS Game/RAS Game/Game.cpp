@@ -29,6 +29,11 @@
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
+#include <fstream>
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 const int MAP_WIDTH = 50000;
 const int MAP_HEIGHT = 50000;
@@ -292,6 +297,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     TradeSlot npcTradeSlots[4];
 
     bool stockPageOpen = false;
+    bool iapPageOpen = false;
+    bool iapVerifyingOpen = false;
+    int iapVerifyingGold = 0;
+    float iapVerifyingPrice = 0.f;
+    std::string iapVerifyingTier = "";
     sf::Clock stockUpdateClock;
 
     std::vector<StockItem> stockMarket = {
@@ -301,6 +311,70 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         { ITEM_CHICKEN_MEAT, "Chicken Meat", 15.f, 15.f, {15.f}, 15.f, "STABLE" },
         { ITEM_PIG_MEAT, "Pig Meat", 25.f, 25.f, {25.f}, 25.f, "STABLE" },
         { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE" }
+    };
+
+    auto getItemPrice = [&](int id) -> int {
+        // If it's a raw material in stock market, get its current price
+        for (auto& sItem : stockMarket) {
+            if (sItem.id == id) {
+                return (int)sItem.currentPrice;
+            }
+        }
+        
+        // Otherwise, base it on the current ingredient values!
+        int woodPrice = 5;
+        int stonePrice = 8;
+        for (auto& sItem : stockMarket) {
+            if (sItem.id == ITEM_WOOD) woodPrice = (int)sItem.currentPrice;
+            if (sItem.id == ITEM_STONE) stonePrice = (int)sItem.currentPrice;
+        }
+        
+        switch (id) {
+            case ITEM_WOODEN_SWORD: // 8 Wood
+                return woodPrice * 8 + 15;
+            case ITEM_SHIELD: // 10 Wood + 5 Stone
+                return woodPrice * 10 + stonePrice * 5 + 25;
+            case ITEM_FURNACE: // 8 Stone
+                return stonePrice * 8 + 20;
+            case ITEM_WOOD_TILE: // 1 Wood
+                return woodPrice * 1;
+            case ITEM_WOOD_WALL: // 1 Wood
+                return woodPrice * 1;
+            case ITEM_WOOD_DOOR: // 5 Wood
+                return woodPrice * 5 + 5;
+            case ITEM_WOOD_ROOF: // 5 Wood
+                return woodPrice * 5 + 5;
+            case ITEM_WOOD_STAIRS: // 8 Wood
+                return woodPrice * 8 + 8;
+            case ITEM_BED: // 4 Wood + 3 Zombie Flesh (as wool substitute!)
+                {
+                    int fleshPrice = 12;
+                    for (auto& sItem : stockMarket) {
+                        if (sItem.id == ITEM_ZOMBIE_FLESH) fleshPrice = (int)sItem.currentPrice;
+                    }
+                    return woodPrice * 4 + fleshPrice * 3 + 30;
+                }
+            default:
+                return 10; // Default fallback
+        }
+    };
+
+    auto getItemName = [&](int id) -> std::string {
+        for (auto& sItem : stockMarket) {
+            if (sItem.id == id) return sItem.name;
+        }
+        switch (id) {
+            case ITEM_WOODEN_SWORD: return "Wooden Sword";
+            case ITEM_SHIELD: return "Sturdy Shield";
+            case ITEM_FURNACE: return "Furnace";
+            case ITEM_WOOD_TILE: return "Wood Tile";
+            case ITEM_WOOD_WALL: return "Wood Wall";
+            case ITEM_WOOD_DOOR: return "Wood Door";
+            case ITEM_WOOD_ROOF: return "Wood Roof";
+            case ITEM_WOOD_STAIRS: return "Wood Stairs";
+            case ITEM_BED: return "Bed";
+            default: return "Unknown Item";
+        }
     };
 
     // Prepopulate history for beautiful stock charts on start
@@ -489,6 +563,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     float chatBoxX = (width - chatBoxWidth) / 2.f;
     float chatBoxY = 20.f;
     TextInput chatInput(font, { chatBoxX + 10.f, chatBoxY + chatBoxHeight - 50.f }, { chatBoxWidth - 20.f, 40.f });
+    TextInput iapCodeInput(font, { (width - 400.f) / 2.f, (height - 40.f) / 2.f + 40.f }, { 400.f, 40.f });
     bool isChatting = false;
     std::vector<std::pair<std::string, std::string>> chatMessages;
     sf::Clock chatFetchClock;
@@ -936,6 +1011,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             if (isChatting) {
                 chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), window.getDefaultView()));
             }
+            if (iapVerifyingOpen) {
+                iapCodeInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), window.getDefaultView()));
+            }
 
             if (auto* key = event->getIf<sf::Event::KeyPressed>()) {
                 if (key->scancode == sf::Keyboard::Scancode::Enter || key->scancode == globalSettings.keyChat) {
@@ -1160,11 +1238,150 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     bool clickHandled = false;
 
                     if (stockPageOpen) {
-                        sf::FloatRect sBoxRect({ (width - 800.f) / 2.f, (height - 600.f) / 2.f }, { 800.f, 600.f });
-                        sf::FloatRect closeBtnRect({ sBoxRect.position.x + 740.f, sBoxRect.position.y + 20.f }, { 40.f, 40.f });
+                        sf::FloatRect sBoxRect({ (width - 900.f) / 2.f, (height - 600.f) / 2.f }, { 900.f, 600.f });
+                        sf::FloatRect closeBtnRect({ sBoxRect.position.x + 840.f, sBoxRect.position.y + 20.f }, { 40.f, 40.f });
                         if (closeBtnRect.contains(uiPos)) {
                             stockPageOpen = false;
                         }
+                        clickHandled = true;
+                        continue;
+                    }
+
+                    if (iapPageOpen && !iapVerifyingOpen) {
+                        sf::FloatRect sBoxRect({ (width - 900.f) / 2.f, (height - 600.f) / 2.f }, { 900.f, 600.f });
+                        sf::FloatRect closeBtnRect({ sBoxRect.position.x + 840.f, sBoxRect.position.y + 20.f }, { 40.f, 40.f });
+                        if (closeBtnRect.contains(uiPos)) {
+                            iapPageOpen = false;
+                        } else {
+                            float cardW = 190.f;
+                            float cardH = 360.f;
+                            float cardY = sBoxRect.position.y + 160.f;
+                            float cardGap = 20.f;
+                            float startX = sBoxRect.position.x + 45.f;
+                            
+                            for (int i = 0; i < 4; i++) {
+                                sf::FloatRect buyBtnRect({ startX + i * (cardW + cardGap) + 15.f, cardY + cardH - 55.f }, { cardW - 30.f, 40.f });
+                                if (buyBtnRect.contains(uiPos)) {
+                                    int gold = 100;
+                                    float price = 0.99f;
+                                    std::string tierName = "Handful of Gold";
+                                    if (i == 1) { gold = 1000; price = 9.99f; tierName = "Sack of Gold"; }
+                                    else if (i == 2) { gold = 5000; price = 39.99f; tierName = "Chest of Gold"; }
+                                    else if (i == 3) { gold = 10000; price = 79.99f; tierName = "Vault of Gold"; }
+                                    
+                                    iapVerifyingOpen = true;
+                                    iapVerifyingGold = gold;
+                                    iapVerifyingPrice = price;
+                                    iapVerifyingTier = tierName;
+                                    iapCodeInput.clear();
+                                    iapCodeInput.setFocus(true);
+                                    
+                                    #ifdef _WIN32
+                                    bool useRealStripeGateway = true; // Toggle to false to use local PowerShell sandbox instead!
+                                    
+                                    std::string priceStr = std::to_string(price);
+                                    priceStr = priceStr.substr(0, priceStr.find(".") + 3);
+                                    
+                                    std::string urlTier = tierName;
+                                    size_t spacePos = urlTier.find(" ");
+                                    while (spacePos != std::string::npos) {
+                                        urlTier.replace(spacePos, 1, "%20");
+                                        spacePos = urlTier.find(" ");
+                                    }
+
+                                    if (useRealStripeGateway) {
+                                        // Open local Node.js Express server which securely handles Stripe CheckoutSession creation & redirects
+                                        std::string url = "http://localhost:3000/checkout?user=" + username + "&gold=" + std::to_string(gold) + "&price=" + priceStr + "&tier=" + urlTier;
+                                        ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                                    } else {
+                                        // 1. Launch PowerShell local server in background (hidden)
+                                        ShellExecuteA(NULL, "open", "powershell.exe", "-WindowStyle Hidden -ExecutionPolicy Bypass -File ..\\payment_portal\\local_server.ps1", NULL, SW_HIDE);
+                                        
+                                        // 2. Open local payment portal with solved absolute path
+                                        std::filesystem::path absPath = std::filesystem::absolute("../payment_portal/index.html");
+                                        std::string url = absPath.string() + "?user=" + username + "&gold=" + std::to_string(gold) + "&price=" + priceStr + "&tier=" + urlTier;
+                                        ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                                    }
+                                    #endif
+                                }
+                            }
+                        }
+                        clickHandled = true;
+                        continue;
+                    }
+
+                    if (iapVerifyingOpen) {
+                        sf::FloatRect vBoxRect({ (width - 500.f) / 2.f, (height - 320.f) / 2.f }, { 500.f, 320.f });
+                        
+                        sf::FloatRect verifyBtnRect({ vBoxRect.position.x + 50.f, vBoxRect.position.y + 240.f }, { 190.f, 45.f });
+                        sf::FloatRect cancelBtnRect({ vBoxRect.position.x + 260.f, vBoxRect.position.y + 240.f }, { 190.f, 45.f });
+                        
+                        if (verifyBtnRect.contains(uiPos)) {
+                            std::string enteredCode = iapCodeInput.getText();
+                            bool success = false;
+                            
+                            std::string prefix = "GOLD-" + std::to_string(iapVerifyingGold);
+                            if (enteredCode.find(prefix) == 0) {
+                                success = true;
+                            }
+                            
+                            if (!success && std::filesystem::exists("payment_success.json")) {
+                                std::ifstream file("payment_success.json");
+                                if (file.is_open()) {
+                                    std::string line;
+                                    std::string verifiedUser = "";
+                                    int verifiedGold = 0;
+                                    while (std::getline(file, line)) {
+                                        if (line.find("username") != std::string::npos) {
+                                            size_t start = line.find("\"", line.find(":"));
+                                            size_t end = line.find("\"", start + 1);
+                                            if (start != std::string::npos && end != std::string::npos) {
+                                                verifiedUser = line.substr(start + 1, end - start - 1);
+                                            }
+                                        }
+                                        if (line.find("gold") != std::string::npos) {
+                                            std::string goldStr = "";
+                                            for (char c : line) {
+                                                if (std::isdigit(c)) goldStr += c;
+                                            }
+                                            if (!goldStr.empty()) verifiedGold = std::stoi(goldStr);
+                                        }
+                                    }
+                                    file.close();
+                                    if (verifiedUser == username && verifiedGold == iapVerifyingGold) {
+                                        success = true;
+                                    }
+                                }
+                            }
+                            
+                            if (success) {
+                                currency += iapVerifyingGold;
+                                float currentElapsed = timeOffset + dayNightClock.getElapsedTime().asSeconds();
+                                authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed);
+                                latestPlayerMsg = "Payment Verified! +" + std::to_string(iapVerifyingGold) + " Gold synced to account.";
+                                iapVerifyingOpen = false;
+                                iapPageOpen = false;
+                                
+                                if (std::filesystem::exists("payment_success.json")) {
+                                    std::filesystem::remove("payment_success.json");
+                                }
+                                
+                                #ifdef _WIN32
+                                ShellExecuteA(NULL, "open", "taskkill.exe", "/F /IM powershell.exe", NULL, SW_HIDE);
+                                #endif
+                            } else {
+                                latestPlayerMsg = "Verification failed. Code invalid or payment incomplete.";
+                            }
+                        }
+                        else if (cancelBtnRect.contains(uiPos)) {
+                            iapVerifyingOpen = false;
+                            latestPlayerMsg = "Transaction cancelled.";
+                            
+                            #ifdef _WIN32
+                            ShellExecuteA(NULL, "open", "taskkill.exe", "/F /IM powershell.exe", NULL, SW_HIDE);
+                            #endif
+                        }
+                        
                         clickHandled = true;
                         continue;
                     }
@@ -1384,21 +1601,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             int pVal = playerTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (playerTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    pVal += playerTradeSlots[i].count * price;
+                                    pVal += playerTradeSlots[i].count * getItemPrice(playerTradeSlots[i].id);
                                 }
                             }
                             int nVal = npcTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (npcTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    nVal += npcTradeSlots[i].count * price;
+                                    nVal += npcTradeSlots[i].count * getItemPrice(npcTradeSlots[i].id);
                                 }
                             }
                             // NPC increases gold up to what the player offered
@@ -1419,21 +1628,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             int pVal = playerTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (playerTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    pVal += playerTradeSlots[i].count * price;
+                                    pVal += playerTradeSlots[i].count * getItemPrice(playerTradeSlots[i].id);
                                 }
                             }
                             int nVal = npcTradeGold;
                             for (int i = 0; i < 4; i++) {
                                 if (npcTradeSlots[i].tex != nullptr) {
-                                    int price = 0;
-                                    for (auto& item : stockMarket) {
-                                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
-                                    }
-                                    nVal += npcTradeSlots[i].count * price;
+                                    nVal += npcTradeSlots[i].count * getItemPrice(npcTradeSlots[i].id);
                                 }
                             }
                             if (pVal >= nVal) {
@@ -1477,6 +1678,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             sf::FloatRect tradeBound({ wrenchMenuPos.x, wrenchMenuPos.y }, { 150.f, 30.f });
                             sf::FloatRect questBound({ wrenchMenuPos.x, wrenchMenuPos.y + 30.f }, { 150.f, 30.f });
                             sf::FloatRect statsBound({ wrenchMenuPos.x, wrenchMenuPos.y + 60.f }, { 150.f, 30.f });
+                            sf::FloatRect iapBound({ wrenchMenuPos.x, wrenchMenuPos.y + 90.f }, { 150.f, 30.f });
 
                             if (tradeBound.contains(uiPos)) {
                                 tradeMenuOpen = true;
@@ -1494,7 +1696,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                                 // Populate NPC slots randomly with 1-3 items
                                 int itemsCount = 1 + (rand() % 3);
-                                std::vector<int> possibleIds = { ITEM_WOOD, ITEM_STONE, ITEM_SAPLING, ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_ZOMBIE_FLESH };
+                                std::vector<int> possibleIds = { 
+                                    ITEM_WOOD, ITEM_STONE, ITEM_SAPLING, 
+                                    ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_ZOMBIE_FLESH,
+                                    ITEM_WOODEN_SWORD, ITEM_SHIELD, ITEM_FURNACE, ITEM_BED,
+                                    ITEM_WOOD_TILE, ITEM_WOOD_WALL, ITEM_WOOD_DOOR, ITEM_WOOD_ROOF, ITEM_WOOD_STAIRS
+                                };
                                 for (int i = 0; i < itemsCount; i++) {
                                     int randIdx = rand() % possibleIds.size();
                                     int id = possibleIds[randIdx];
@@ -1506,11 +1713,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     else if (id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
                                     else if (id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
                                     else if (id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
+                                    else if (id == ITEM_WOODEN_SWORD) tex = &woodenSwordTex;
+                                    else if (id == ITEM_SHIELD) tex = &shieldTex;
+                                    else if (id == ITEM_FURNACE) tex = &furnaceTex;
+                                    else if (id == ITEM_BED) tex = &bedTex;
+                                    else if (id == ITEM_WOOD_TILE) tex = &woodTileTex;
+                                    else if (id == ITEM_WOOD_WALL) tex = &woodWallTex;
+                                    else if (id == ITEM_WOOD_DOOR) tex = &woodDoorTex;
+                                    else if (id == ITEM_WOOD_ROOF) tex = &woodRoofTex;
+                                    else if (id == ITEM_WOOD_STAIRS) tex = &woodStairsTex;
 
                                     if (tex) {
                                         npcTradeSlots[i].id = id;
                                         npcTradeSlots[i].tex = tex;
-                                        npcTradeSlots[i].count = 1 + (rand() % 8);
+                                        if (id == ITEM_WOODEN_SWORD || id == ITEM_SHIELD || id == ITEM_FURNACE || id == ITEM_BED) {
+                                            npcTradeSlots[i].count = 1; // Only 1 equipment/furniture unit
+                                        } else if (id == ITEM_WOOD_TILE || id == ITEM_WOOD_WALL || id == ITEM_WOOD_DOOR || id == ITEM_WOOD_ROOF || id == ITEM_WOOD_STAIRS) {
+                                            npcTradeSlots[i].count = 2 + (rand() % 4); // 2 to 5 building parts
+                                        } else {
+                                            npcTradeSlots[i].count = 1 + (rand() % 8); // 1 to 8 raw materials
+                                        }
                                     }
                                 }
 
@@ -1537,6 +1759,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             }
                             else if (statsBound.contains(uiPos)) {
                                 stockPageOpen = true;
+                                wrenchMenuOpen = false;
+                                clickHandled = true;
+                            }
+                            else if (iapBound.contains(uiPos)) {
+                                iapPageOpen = true;
                                 wrenchMenuOpen = false;
                                 clickHandled = true;
                             }
@@ -2948,6 +3175,44 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     item.trend = "STABLE";
                 }
             }
+
+            // Simulate a background market transaction by virtual players to keep statistics alive!
+            if (rand() % 100 < 80) { // 80% chance every 60 seconds
+                std::vector<std::string> virtualPlayers = { "MinerBob", "LumberjackJack", "HunterMax", "SwordSmith", "GoldDigger", "FarmerFred" };
+                std::string vPlayer = virtualPlayers[rand() % virtualPlayers.size()];
+                std::string vAction = (rand() % 2 == 0) ? "SELL" : "BUY";
+                
+                // Choose a random item (both raw materials & crafted gear!)
+                std::vector<std::pair<int, std::string>> vItems = {
+                    { ITEM_WOOD, "Wood" },
+                    { ITEM_STONE, "Stone" },
+                    { ITEM_SAPLING, "Sapling" },
+                    { ITEM_CHICKEN_MEAT, "Chicken Meat" },
+                    { ITEM_PIG_MEAT, "Pig Meat" },
+                    { ITEM_ZOMBIE_FLESH, "Zombie Flesh" },
+                    { ITEM_WOODEN_SWORD, "Wooden Sword" },
+                    { ITEM_SHIELD, "Sturdy Shield" },
+                    { ITEM_FURNACE, "Furnace" },
+                    { ITEM_BED, "Bed" }
+                };
+                auto chosenItem = vItems[rand() % vItems.size()];
+                int itemId = chosenItem.first;
+                std::string itemName = chosenItem.second;
+                
+                int qty = 1;
+                if (itemId == ITEM_WOOD || itemId == ITEM_STONE || itemId == ITEM_SAPLING) {
+                    qty = 5 + (rand() % 16); // 5 to 20
+                } else if (itemId == ITEM_CHICKEN_MEAT || itemId == ITEM_PIG_MEAT || itemId == ITEM_ZOMBIE_FLESH) {
+                    qty = 2 + (rand() % 9); // 2 to 10
+                } else {
+                    qty = 1 + (rand() % 3); // 1 to 3
+                }
+                
+                int unitPrice = getItemPrice(itemId);
+                int totalG = qty * unitPrice;
+                
+                authManager.addTradeRecord(vPlayer.c_str(), vAction, itemName, qty, unitPrice, totalG);
+            }
         }
 
         const float totalCycleTime = 900.f;
@@ -3047,8 +3312,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             menuBox.setOutlineThickness(1.f);
 
             if (isTargetNPC) {
-                // ✅ NPC → TRADE, QUEST, MARKET STATS
-                menuBox.setSize({ 150.f, 90.f });
+                // ✅ NPC → TRADE, QUEST, MARKET STATS, IN-APP PURCHASE
+                menuBox.setSize({ 150.f, 120.f });
                 window.draw(menuBox);
 
                 sf::Text tradeTxt(uiFont, "1. Trade", 18);
@@ -3062,6 +3327,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 sf::Text statsTxt(uiFont, "3. Market Stats", 18);
                 statsTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 65.f });
                 window.draw(statsTxt);
+
+                sf::Text iapTxt(uiFont, "4. Buy Gold", 18);
+                iapTxt.setPosition({ wrenchMenuPos.x + 10.f, wrenchMenuPos.y + 95.f });
+                window.draw(iapTxt);
             }
             else {
                 // ✅ PLAYER → ONLY CRAFT
@@ -3304,21 +3573,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             int playerTotalValue = playerTradeGold;
             for (int i = 0; i < 4; i++) {
                 if (playerTradeSlots[i].tex != nullptr) {
-                    int price = 0;
-                    for (auto& item : stockMarket) {
-                        if (item.id == playerTradeSlots[i].id) { price = item.currentPrice; break; }
-                    }
-                    playerTotalValue += playerTradeSlots[i].count * price;
+                    playerTotalValue += playerTradeSlots[i].count * getItemPrice(playerTradeSlots[i].id);
                 }
             }
             int npcTotalValue = npcTradeGold;
             for (int i = 0; i < 4; i++) {
                 if (npcTradeSlots[i].tex != nullptr) {
-                    int price = 0;
-                    for (auto& item : stockMarket) {
-                        if (item.id == npcTradeSlots[i].id) { price = item.currentPrice; break; }
-                    }
-                    npcTotalValue += npcTradeSlots[i].count * price;
+                    npcTotalValue += npcTradeSlots[i].count * getItemPrice(npcTradeSlots[i].id);
                 }
             }
 
@@ -3489,8 +3750,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
 
         if (stockPageOpen) {
-            sf::RectangleShape sBox({800.f, 600.f});
-            sBox.setPosition({ (width - 800.f) / 2.f, (height - 600.f) / 2.f });
+            sf::RectangleShape sBox({900.f, 600.f});
+            sBox.setPosition({ (width - 900.f) / 2.f, (height - 600.f) / 2.f });
             sBox.setFillColor(sf::Color(25, 25, 30, 245));
             sBox.setOutlineThickness(3.f);
             sBox.setOutlineColor(sf::Color(100, 100, 120));
@@ -3505,7 +3766,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             // Close button (X)
             sf::RectangleShape closeBtn({40.f, 40.f});
-            closeBtn.setPosition({ sBox.getPosition().x + 740.f, sBox.getPosition().y + 20.f });
+            closeBtn.setPosition({ sBox.getPosition().x + 840.f, sBox.getPosition().y + 20.f });
             closeBtn.setFillColor(sf::Color(200, 50, 50));
             window.draw(closeBtn);
 
@@ -3523,26 +3784,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             sf::Text hPrice(uiFont, "Price", 16);
             hPrice.setFillColor(sf::Color(180, 180, 180));
-            hPrice.setPosition({ sBox.getPosition().x + 220.f, startY });
+            hPrice.setPosition({ sBox.getPosition().x + 240.f, startY });
             window.draw(hPrice);
 
             sf::Text hTrend(uiFont, "Trend", 16);
             hTrend.setFillColor(sf::Color(180, 180, 180));
-            hTrend.setPosition({ sBox.getPosition().x + 320.f, startY });
+            hTrend.setPosition({ sBox.getPosition().x + 360.f, startY });
             window.draw(hTrend);
 
             sf::Text hHistory(uiFont, "History (Last 10 Cycles)", 16);
             hHistory.setFillColor(sf::Color(180, 180, 180));
-            hHistory.setPosition({ sBox.getPosition().x + 440.f, startY });
+            hHistory.setPosition({ sBox.getPosition().x + 490.f, startY });
             window.draw(hHistory);
 
             sf::Text hPred(uiFont, "Forecast / Signal", 16);
             hPred.setFillColor(sf::Color(180, 180, 180));
-            hPred.setPosition({ sBox.getPosition().x + 630.f, startY });
+            hPred.setPosition({ sBox.getPosition().x + 690.f, startY });
             window.draw(hPred);
 
             // Draw line dividers
-            sf::RectangleShape divider({720.f, 2.f});
+            sf::RectangleShape divider({820.f, 2.f});
             divider.setPosition({ sBox.getPosition().x + 40.f, startY + 25.f });
             divider.setFillColor(sf::Color(80, 80, 80));
             window.draw(divider);
@@ -3553,7 +3814,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 float y = startY + 40.f + idx * rowHeight;
 
                 // Alternate row backgrounds for sleek premium feel
-                sf::RectangleShape rBg({720.f, rowHeight - 8.f});
+                sf::RectangleShape rBg({820.f, rowHeight - 8.f});
                 rBg.setPosition({ sBox.getPosition().x + 40.f, y - 5.f });
                 rBg.setFillColor(sf::Color(45, 45, 55, idx % 2 == 0 ? 100 : 180));
                 window.draw(rBg);
@@ -3582,7 +3843,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                 // Current Price
                 sf::Text priceTxt(uiFont, std::to_string((int)item.currentPrice) + " G", 18);
-                priceTxt.setPosition({ sBox.getPosition().x + 220.f, y + 12.f });
+                priceTxt.setPosition({ sBox.getPosition().x + 240.f, y + 12.f });
                 window.draw(priceTxt);
 
                 // Trend (▲ UP, ▼ DOWN, ─ STABLE)
@@ -3597,12 +3858,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     trendTxt.setString("─ STABLE");
                     trendTxt.setFillColor(sf::Color(150, 150, 150));
                 }
-                trendTxt.setPosition({ sBox.getPosition().x + 320.f, y + 12.f });
+                trendTxt.setPosition({ sBox.getPosition().x + 360.f, y + 12.f });
                 window.draw(trendTxt);
 
                 // Forecast & Signal
                 sf::Text predTxt(uiFont, "Est: " + std::to_string((int)item.predictedPrice) + " G", 16);
-                predTxt.setPosition({ sBox.getPosition().x + 630.f, y + 2.f });
+                predTxt.setPosition({ sBox.getPosition().x + 690.f, y + 2.f });
                 window.draw(predTxt);
 
                 sf::Text sigTxt(uiFont, "", 16);
@@ -3617,7 +3878,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     sigTxt.setString("SIGNAL: HOLD");
                     sigTxt.setFillColor(sf::Color(200, 200, 200));
                 }
-                sigTxt.setPosition({ sBox.getPosition().x + 630.f, y + 24.f });
+                sigTxt.setPosition({ sBox.getPosition().x + 690.f, y + 24.f });
                 window.draw(sigTxt);
 
                 // Draw History Chart Graph!
@@ -3635,7 +3896,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     // Chart dimensions
                     float graphW = 150.f;
                     float graphH = 40.f;
-                    float graphX = sBox.getPosition().x + 440.f;
+                    float graphX = sBox.getPosition().x + 490.f;
                     float graphY = y + 2.f;
 
                     // Background bounding box for the graph
@@ -3676,7 +3937,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
 
             // ✅ RECENT MARKET TRADE TRANSACTION TICKER
-            sf::RectangleShape tickerBg({720.f, 32.f});
+            sf::RectangleShape tickerBg({820.f, 32.f});
             tickerBg.setPosition({ sBox.getPosition().x + 40.f, sBox.getPosition().y + 545.f });
             tickerBg.setFillColor(sf::Color(35, 35, 45, 220));
             tickerBg.setOutlineThickness(1.f);
@@ -3691,7 +3952,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             } else {
                 for (size_t rIdx = 0; rIdx < recentTrades.size(); rIdx++) {
                     auto& r = recentTrades[rIdx];
-                    tickerText += r.username + " " + (r.actionType == "SELL" ? "sold" : "bought") + " " + std::to_string(r.quantity) + "x " + r.itemName + " (per unit: " + std::to_string(r.pricePerUnit) + "G)";
+                    std::string uName = r.username;
+                    if (uName.length() > 10) {
+                        uName = uName.substr(0, 8) + "..";
+                    }
+                    tickerText += "[" + uName + "] " + (r.actionType == "SELL" ? "Sold" : "Bought") + " " + std::to_string(r.quantity) + "x " + r.itemName + " (" + std::to_string(r.totalGold) + "G)";
                     if (rIdx < recentTrades.size() - 1) {
                         tickerText += "  |  ";
                     }
@@ -3702,6 +3967,215 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             tickerTxt.setFillColor(sf::Color(255, 215, 0)); // Sleek gold color
             tickerTxt.setPosition({ tickerBg.getPosition().x + 15.f, tickerBg.getPosition().y + 6.f });
             window.draw(tickerTxt);
+        }
+
+        if (iapPageOpen) {
+            sf::RectangleShape sBox({900.f, 600.f});
+            sf::Vector2f sBoxPos = { (width - 900.f) / 2.f, (height - 600.f) / 2.f };
+            sBox.setPosition(sBoxPos);
+            sBox.setFillColor(sf::Color(15, 20, 30, 248));
+            sBox.setOutlineThickness(3.f);
+            sBox.setOutlineColor(sf::Color(255, 215, 0, 180)); // Golden glowing border
+            window.draw(sBox);
+
+            // Title
+            sf::Text sTitle(uiFont, "IN-APP PURCHASE STORE", 28);
+            sTitle.setStyle(sf::Text::Bold);
+            sTitle.setFillColor(sf::Color(255, 215, 0)); // Gold
+            sTitle.setPosition({ sBoxPos.x + 40.f, sBoxPos.y + 20.f });
+            window.draw(sTitle);
+
+            // Subtitle
+            sf::Text sSub(uiFont, "Get gold coins instantly to upgrade gear, craft items, and build structures!", 15);
+            sSub.setFillColor(sf::Color(180, 180, 200));
+            sSub.setPosition({ sBoxPos.x + 40.f, sBoxPos.y + 55.f });
+            window.draw(sSub);
+
+            // Gold Balance Display
+            sf::RectangleShape balBox({300.f, 40.f});
+            balBox.setPosition({ sBoxPos.x + 40.f, sBoxPos.y + 90.f });
+            balBox.setFillColor(sf::Color(40, 45, 55, 200));
+            balBox.setOutlineThickness(1.f);
+            balBox.setOutlineColor(sf::Color(255, 215, 0, 80));
+            window.draw(balBox);
+
+            sf::Text balTxt(uiFont, "Your Gold Balance: " + std::to_string(currency) + " G", 16);
+            balTxt.setStyle(sf::Text::Bold);
+            balTxt.setFillColor(sf::Color(255, 225, 100));
+            balTxt.setPosition({ balBox.getPosition().x + 15.f, balBox.getPosition().y + 8.f });
+            window.draw(balTxt);
+
+            // Close button (X)
+            sf::RectangleShape closeBtn({40.f, 40.f});
+            closeBtn.setPosition({ sBoxPos.x + 840.f, sBoxPos.y + 20.f });
+            closeBtn.setFillColor(sf::Color(200, 50, 50));
+            window.draw(closeBtn);
+
+            sf::Text closeTxt(uiFont, "X", 22);
+            closeTxt.setStyle(sf::Text::Bold);
+            closeTxt.setPosition({ closeBtn.getPosition().x + 12.f, closeBtn.getPosition().y + 5.f });
+            window.draw(closeTxt);
+
+            // Draw the 4 cards!
+            float cardW = 190.f;
+            float cardH = 360.f;
+            float cardY = sBoxPos.y + 160.f;
+            float cardGap = 20.f;
+            float startX = sBoxPos.x + 45.f;
+
+            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), window.getDefaultView());
+
+            struct CardData { std::string title; std::string desc; int gold; float price; sf::Color color; };
+            std::vector<CardData> cards = {
+                { "Handful of Gold", "Great starter boost!", 100, 0.99f, sf::Color(205, 127, 50) },      // Bronze
+                { "Sack of Gold", "Popular upgrades choice!", 1000, 9.99f, sf::Color(192, 192, 192) },    // Silver
+                { "Chest of Gold", "Ideal for core builders!", 5000, 39.99f, sf::Color(255, 215, 0) },   // Gold
+                { "Vault of Gold", "Tycoon class! Best value!", 10000, 79.99f, sf::Color(0, 242, 254) }  // Cyan neon
+            };
+
+            for (int i = 0; i < 4; i++) {
+                float cX = startX + i * (cardW + cardGap);
+                sf::FloatRect cardRect({ cX, cardY }, { cardW, cardH });
+                bool hovered = cardRect.contains(mousePos);
+
+                // Card container
+                sf::RectangleShape card({ cardW, cardH });
+                card.setPosition({ cX, cardY });
+                card.setFillColor(hovered ? sf::Color(30, 35, 50, 230) : sf::Color(20, 22, 30, 220));
+                card.setOutlineThickness(hovered ? 3.f : 1.f);
+                card.setOutlineColor(hovered ? cards[i].color : sf::Color(255, 255, 255, 30));
+                window.draw(card);
+
+                // Card Title
+                sf::Text cTitle(uiFont, cards[i].title, 16);
+                cTitle.setStyle(sf::Text::Bold);
+                cTitle.setFillColor(cards[i].color);
+                cTitle.setPosition({ cX + 15.f, cardY + 20.f });
+                window.draw(cTitle);
+
+                // Gold Coins Icon / Graphics Placeholder
+                sf::Text cCoins(uiFont, "COINS", 38);
+                cCoins.setString("G");
+                cCoins.setStyle(sf::Text::Bold);
+                cCoins.setFillColor(cards[i].color);
+                cCoins.setPosition({ cX + (cardW - cCoins.getGlobalBounds().size.x) / 2.f, cardY + 60.f });
+                window.draw(cCoins);
+
+                // Gold Value Text
+                sf::Text cGold(uiFont, std::to_string(cards[i].gold) + " GOLD", 20);
+                cGold.setStyle(sf::Text::Bold);
+                cGold.setFillColor(sf::Color::White);
+                cGold.setPosition({ cX + (cardW - cGold.getGlobalBounds().size.x) / 2.f, cardY + 130.f });
+                window.draw(cGold);
+
+                // Subtext / Description
+                sf::Text cDesc(uiFont, cards[i].desc, 12);
+                cDesc.setFillColor(sf::Color(150, 150, 160));
+                cDesc.setPosition({ cX + (cardW - cDesc.getGlobalBounds().size.x) / 2.f, cardY + 175.f });
+                window.draw(cDesc);
+
+                // Divider line inside card
+                sf::RectangleShape cDiv({ cardW - 40.f, 1.f });
+                cDiv.setPosition({ cX + 20.f, cardY + 215.f });
+                cDiv.setFillColor(sf::Color(255, 255, 255, 30));
+                window.draw(cDiv);
+
+                // Price display
+                std::string priceStr = std::to_string(cards[i].price);
+                priceStr = priceStr.substr(0, priceStr.find(".") + 3);
+                sf::Text cPrice(uiFont, "$" + priceStr, 24);
+                cPrice.setStyle(sf::Text::Bold);
+                cPrice.setFillColor(sf::Color(100, 250, 150));
+                cPrice.setPosition({ cX + (cardW - cPrice.getGlobalBounds().size.x) / 2.f, cardY + 230.f });
+                window.draw(cPrice);
+
+                // "BUY NOW" Button
+                sf::FloatRect btnRect({ cX + 15.f, cardY + cardH - 55.f }, { cardW - 30.f, 40.f });
+                bool btnHovered = btnRect.contains(mousePos);
+
+                sf::RectangleShape buyBtn({ cardW - 30.f, 40.f });
+                buyBtn.setPosition({ cX + 15.f, cardY + cardH - 55.f });
+                buyBtn.setFillColor(btnHovered ? sf::Color(40, 180, 120) : sf::Color(30, 130, 90));
+                buyBtn.setOutlineThickness(btnHovered ? 1.f : 0.f);
+                buyBtn.setOutlineColor(sf::Color::White);
+                window.draw(buyBtn);
+
+                sf::Text buyTxt(uiFont, "BUY NOW", 14);
+                buyTxt.setStyle(sf::Text::Bold);
+                buyTxt.setFillColor(sf::Color::White);
+                buyTxt.setPosition({ buyBtn.getPosition().x + (buyBtn.getSize().x - buyTxt.getGlobalBounds().size.x) / 2.f, buyBtn.getPosition().y + 11.f });
+                window.draw(buyTxt);
+            }
+        }
+
+        if (iapVerifyingOpen) {
+            sf::RectangleShape vBox({500.f, 320.f});
+            sf::Vector2f vBoxPos = { (width - 500.f) / 2.f, (height - 320.f) / 2.f };
+            vBox.setPosition(vBoxPos);
+            vBox.setFillColor(sf::Color(20, 25, 35, 250)); // Deep slate background
+            vBox.setOutlineThickness(3.f);
+            vBox.setOutlineColor(sf::Color(0, 242, 254, 180)); // Cyan glowing border
+            window.draw(vBox);
+
+            // Title
+            sf::Text vTitle(uiFont, "SECURE CHECKOUT", 22);
+            vTitle.setStyle(sf::Text::Bold);
+            vTitle.setFillColor(sf::Color(0, 242, 254)); // Cyan
+            vTitle.setPosition({ vBoxPos.x + 30.f, vBoxPos.y + 25.f });
+            window.draw(vTitle);
+
+            // Instruction Label
+            sf::Text vLabel(uiFont, "A secure checkout page has been opened in your browser.\nPlease complete your payment of:", 13);
+            vLabel.setFillColor(sf::Color(200, 200, 210));
+            vLabel.setPosition({ vBoxPos.x + 30.f, vBoxPos.y + 65.f });
+            window.draw(vLabel);
+
+            // Gold package details
+            std::string priceStr = std::to_string(iapVerifyingPrice);
+            priceStr = priceStr.substr(0, priceStr.find(".") + 3);
+            sf::Text vDetails(uiFont, iapVerifyingTier + " (" + std::to_string(iapVerifyingGold) + " Gold) for $" + priceStr + " USD", 15);
+            vDetails.setStyle(sf::Text::Bold);
+            vDetails.setFillColor(sf::Color(255, 215, 0)); // Gold text
+            vDetails.setPosition({ vBoxPos.x + 30.f, vBoxPos.y + 110.f });
+            window.draw(vDetails);
+
+            // Paste Code Instruction
+            sf::Text vCodeLbl(uiFont, "Paste your verification code below to sync your Gold balance:", 12);
+            vCodeLbl.setFillColor(sf::Color(170, 170, 180));
+            vCodeLbl.setPosition({ vBoxPos.x + 30.f, vBoxPos.y + 145.f });
+            window.draw(vCodeLbl);
+
+            // Draw Manual Verification Input field
+            iapCodeInput.draw(window);
+
+            // Buttons verifying and canceling
+            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), window.getDefaultView());
+            
+            sf::FloatRect verifyBtnRect({ vBoxPos.x + 50.f, vBoxPos.y + 240.f }, { 190.f, 45.f });
+            bool verifyHover = verifyBtnRect.contains(mousePos);
+            sf::RectangleShape verifyBtn({ 190.f, 45.f });
+            verifyBtn.setPosition({ vBoxPos.x + 50.f, vBoxPos.y + 240.f });
+            verifyBtn.setFillColor(verifyHover ? sf::Color(0, 200, 254) : sf::Color(0, 150, 200));
+            window.draw(verifyBtn);
+
+            sf::Text verifyTxt(uiFont, "Verify & Sync", 15);
+            verifyTxt.setStyle(sf::Text::Bold);
+            verifyTxt.setFillColor(sf::Color::White);
+            verifyTxt.setPosition({ verifyBtn.getPosition().x + (verifyBtn.getSize().x - verifyTxt.getGlobalBounds().size.x) / 2.f, verifyBtn.getPosition().y + 12.f });
+            window.draw(verifyTxt);
+
+            sf::FloatRect cancelBtnRect({ vBoxPos.x + 260.f, vBoxPos.y + 240.f }, { 190.f, 45.f });
+            bool cancelHover = cancelBtnRect.contains(mousePos);
+            sf::RectangleShape cancelBtn({ 190.f, 45.f });
+            cancelBtn.setPosition({ vBoxPos.x + 260.f, vBoxPos.y + 240.f });
+            cancelBtn.setFillColor(cancelHover ? sf::Color(200, 60, 60) : sf::Color(150, 40, 40));
+            window.draw(cancelBtn);
+
+            sf::Text cancelTxt(uiFont, "Cancel", 15);
+            cancelTxt.setStyle(sf::Text::Bold);
+            cancelTxt.setFillColor(sf::Color::White);
+            cancelTxt.setPosition({ cancelBtn.getPosition().x + (cancelBtn.getSize().x - cancelTxt.getGlobalBounds().size.x) / 2.f, cancelBtn.getPosition().y + 12.f });
+            window.draw(cancelTxt);
         }
 
         // ✅ HUD Market Stats Button
