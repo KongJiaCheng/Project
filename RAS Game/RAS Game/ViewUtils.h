@@ -37,6 +37,14 @@ inline std::string resolvePath(const std::string& path) {
         if (std::filesystem::exists(extraDeep)) {
             return extraDeep;
         }
+        std::string projectDeep = "../../RAS Game/" + stripped;
+        if (std::filesystem::exists(projectDeep)) {
+            return projectDeep;
+        }
+        std::string projectSemiDeep = "../RAS Game/" + stripped;
+        if (std::filesystem::exists(projectSemiDeep)) {
+            return projectSemiDeep;
+        }
     } else {
         std::string addParent = "../" + path;
         if (std::filesystem::exists(addParent)) {
@@ -45,6 +53,14 @@ inline std::string resolvePath(const std::string& path) {
         std::string addTwoParents = "../../" + path;
         if (std::filesystem::exists(addTwoParents)) {
             return addTwoParents;
+        }
+        std::string addTwoParentsAndProject = "../../RAS Game/" + path;
+        if (std::filesystem::exists(addTwoParentsAndProject)) {
+            return addTwoParentsAndProject;
+        }
+        std::string addParentAndProject = "../RAS Game/" + path;
+        if (std::filesystem::exists(addParentAndProject)) {
+            return addParentAndProject;
         }
     }
     return path;
