@@ -22,6 +22,8 @@ void AuthManager::shutdownDB() {
     }
 }
 
+#include "ViewUtils.h"
+
 bool AuthManager::initDB() {
     std::cout << "[DEBUG] initDB() executing..." << std::endl;
     try {
@@ -32,7 +34,7 @@ bool AuthManager::initDB() {
         connection_properties["hostName"] = "tcp://mysql-308a256a-econovadb.h.aivencloud.com:22311";
         connection_properties["userName"] = "avnadmin";
         connection_properties["password"] = std::string("AVNS_YV3eowX") + "Wv3Q2tArX8fd";
-        connection_properties["sslCa"] = "ca.pem";
+        connection_properties["sslCa"] = resolvePath("ca.pem");
         connection_properties["OPT_SSL_MODE"] = sql::SSL_MODE_REQUIRED;
         
         std::cout << "[DEBUG] Connecting to Aiven Database..." << std::endl;

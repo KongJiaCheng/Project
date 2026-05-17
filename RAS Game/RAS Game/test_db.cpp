@@ -4,6 +4,8 @@
 #include <cppconn/prepared_statement.h>
 #include <cppconn/exception.h>
 
+#include "ViewUtils.h"
+
 int main() {
     try {
         sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
@@ -11,7 +13,7 @@ int main() {
         connection_properties["hostName"] = "tcp://mysql-308a256a-econovadb.h.aivencloud.com:22311";
         connection_properties["userName"] = "avnadmin";
         connection_properties["password"] = "AVNS_YV3eowXWv3Q2tArX8fd";
-        connection_properties["sslCa"] = "ca.pem";
+        connection_properties["sslCa"] = resolvePath("ca.pem");
         connection_properties["OPT_SSL_MODE"] = sql::SSL_MODE_REQUIRED;
 
         sql::Connection* con = driver->connect(connection_properties);
