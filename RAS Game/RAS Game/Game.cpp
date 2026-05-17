@@ -1277,11 +1277,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     iapCodeInput.setFocus(true);
                                     
                                     #ifdef _WIN32
-                                    // 1. Launch PowerShell local server in background (hidden)
-                                    ShellExecuteA(NULL, "open", "powershell.exe", "-WindowStyle Hidden -ExecutionPolicy Bypass -File ..\\payment_portal\\local_server.ps1", NULL, SW_HIDE);
+                                    bool useRealStripeGateway = true; // Toggle to false to use local PowerShell sandbox instead!
                                     
-                                    // 2. Open local payment portal with solved absolute path
-                                    std::filesystem::path absPath = std::filesystem::absolute("../payment_portal/index.html");
                                     std::string priceStr = std::to_string(price);
                                     priceStr = priceStr.substr(0, priceStr.find(".") + 3);
                                     
@@ -1291,8 +1288,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                         urlTier.replace(spacePos, 1, "%20");
                                         spacePos = urlTier.find(" ");
                                     }
-                                    std::string url = absPath.string() + "?user=" + username + "&gold=" + std::to_string(gold) + "&price=" + priceStr + "&tier=" + urlTier;
-                                    ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+                                    if (useRealStripeGateway) {
+                                        // Open local Node.js Express server which securely handles Stripe CheckoutSession creation & redirects
+                                        std::string url = "http://localhost:3000/checkout?user=" + username + "&gold=" + std::to_string(gold) + "&price=" + priceStr + "&tier=" + urlTier;
+                                        ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                                    } else {
+                                        // 1. Launch PowerShell local server in background (hidden)
+                                        ShellExecuteA(NULL, "open", "powershell.exe", "-WindowStyle Hidden -ExecutionPolicy Bypass -File ..\\payment_portal\\local_server.ps1", NULL, SW_HIDE);
+                                        
+                                        // 2. Open local payment portal with solved absolute path
+                                        std::filesystem::path absPath = std::filesystem::absolute("../payment_portal/index.html");
+                                        std::string url = absPath.string() + "?user=" + username + "&gold=" + std::to_string(gold) + "&price=" + priceStr + "&tier=" + urlTier;
+                                        ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                                    }
                                     #endif
                                 }
                             }
