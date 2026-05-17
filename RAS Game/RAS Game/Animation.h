@@ -7,6 +7,8 @@
 #include <vector>
 #include <string>
 
+#include <filesystem>
+
 class Animation
 {
 public:
@@ -26,11 +28,36 @@ public:
         {
             std::ostringstream ss;
             ss << folder << "/frame_" << std::setfill('0') << std::setw(3) << i << ".png";
+            std::string path = ss.str();
+
+            if (!std::filesystem::exists(path))
+            {
+                if (path.rfind("../", 0) == 0)
+                {
+                    std::string stripped = path.substr(3);
+                    if (std::filesystem::exists(stripped)) {
+                        path = stripped;
+                    } else if (std::filesystem::exists("../" + stripped)) {
+                        path = "../" + stripped;
+                    } else if (std::filesystem::exists("../../" + stripped)) {
+                        path = "../../" + stripped;
+                    }
+                }
+                else
+                {
+                    std::string addParent = "../" + path;
+                    if (std::filesystem::exists(addParent)) {
+                        path = addParent;
+                    } else if (std::filesystem::exists("../../" + path)) {
+                        path = "../../" + path;
+                    }
+                }
+            }
 
             sf::Texture tex;
-            if (!tex.loadFromFile(ss.str()))
+            if (!tex.loadFromFile(path))
             {
-                std::cerr << "Animation: failed to load " << ss.str() << '\n';
+                std::cerr << "Animation: failed to load " << path << '\n';
                 return false;
             }
             frames.push_back(std::move(tex));

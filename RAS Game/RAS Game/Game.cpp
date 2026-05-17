@@ -46,6 +46,36 @@ bool isInWater(const sf::Vector2f& pos, const std::vector<sf::FloatRect>& waters
     return false;
 }
 
+std::string resolvePath(const std::string& path) {
+    if (std::filesystem::exists(path)) {
+        return path;
+    }
+    if (path.rfind("../", 0) == 0) {
+        std::string stripped = path.substr(3);
+        if (std::filesystem::exists(stripped)) {
+            return stripped;
+        }
+        std::string deep = "../" + stripped;
+        if (std::filesystem::exists(deep)) {
+            return deep;
+        }
+        std::string extraDeep = "../../" + stripped;
+        if (std::filesystem::exists(extraDeep)) {
+            return extraDeep;
+        }
+    } else {
+        std::string addParent = "../" + path;
+        if (std::filesystem::exists(addParent)) {
+            return addParent;
+        }
+        std::string addTwoParents = "../../" + path;
+        if (std::filesystem::exists(addTwoParents)) {
+            return addTwoParents;
+        }
+    }
+    return path;
+}
+
 struct AnimSet {
     Animation south, north, east, west;
     void load(const std::string& basePath, int frames) {
@@ -594,7 +624,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         for (int i = 0; i < 100; i++) { // Increased limit to 100 frames
             std::ostringstream ss;
             ss << "../Story/frame_" << std::setfill('0') << std::setw(3) << i << ".jpg";
-            std::string path = ss.str();
+            std::string path = resolvePath(ss.str());
             
             if (std::filesystem::exists(path)) {
                 sf::Texture tex;
