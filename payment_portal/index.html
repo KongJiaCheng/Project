@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Payment Gateway | RAS Game Store</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-decor">
+        <div class="circle circle-1"></div>
+        <div class="circle circle-2"></div>
+    </div>
+
+    <div class="checkout-container">
+        <!-- Left Column: Cart Summary -->
+        <div class="summary-section">
+            <div class="brand-header">
+                <span class="brand-logo">🪙</span>
+                <span class="brand-name">RAS Game Store</span>
+            </div>
+            
+            <div class="order-box">
+                <h3>Order Summary</h3>
+                <div class="item-details">
+                    <div class="item-row">
+                        <span class="item-title" id="summary-tier">Loading Tier...</span>
+                        <span class="item-price" id="summary-price">$0.00</span>
+                    </div>
+                    <div class="item-subtext" id="summary-desc">Premium currency pack</div>
+                </div>
+                
+                <div class="divider"></div>
+                
+                <div class="gold-amount-badge">
+                    <span class="coin-icon">🪙</span>
+                    <div class="badge-text">
+                        <span class="gold-value" id="summary-gold">0</span>
+                        <span class="gold-lbl">Gold Coins</span>
+                    </div>
+                </div>
+
+                <div class="account-badge">
+                    <span class="avatar-icon">👤</span>
+                    <div>
+                        <div class="acct-title">Account Username</div>
+                        <div class="acct-name" id="summary-username">Guest</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="security-footer">
+                <div class="sec-item">
+                    <span class="sec-icon">🔒</span>
+                    <div>
+                        <h4>256-Bit SSL Encryption</h4>
+                        <p>Your transaction is secure and private.</p>
+                    </div>
+                </div>
+                <div class="sec-item">
+                    <span class="sec-icon">🛡️</span>
+                    <div>
+                        <h4>Anti-Fraud Protection</h4>
+                        <p>Verified by Visa & Mastercard SecureCode.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Checkout Form & Interactive Card -->
+        <div class="payment-section">
+            <div class="section-title">
+                <h2>Credit or Debit Card</h2>
+                <p>Complete your purchase securely below</p>
+            </div>
+
+            <!-- 3D Flippable Interactive Credit Card -->
+            <div class="credit-card-wrapper">
+                <div class="credit-card" id="credit-card">
+                    <!-- Front of the Card -->
+                    <div class="card-front">
+                        <div class="card-chip"></div>
+                        <div class="card-brand" id="card-brand">VISA</div>
+                        <div class="card-number-display" id="card-number-display">•••• •••• •••• ••••</div>
+                        <div class="card-bottom">
+                            <div class="card-holder-display">
+                                <span class="card-label">CARDHOLDER</span>
+                                <span class="card-val" id="card-holder-display-val">YOUR NAME</span>
+                            </div>
+                            <div class="card-expiry-display">
+                                <span class="card-label">EXPIRES</span>
+                                <span class="card-val" id="card-expiry-display-val">MM/YY</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Back of the Card -->
+                    <div class="card-back">
+                        <div class="magnetic-strip"></div>
+                        <div class="signature-area">
+                            <div class="signature-line"></div>
+                            <div class="cvv-display" id="cvv-display">•••</div>
+                        </div>
+                        <div class="card-back-brand">SECURE PORTAL</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Checkout Form -->
+            <form id="payment-form" onsubmit="processPayment(event)">
+                <div class="form-group">
+                    <label for="card-holder">Cardholder Name</label>
+                    <input type="text" id="card-holder" placeholder="e.g. John Doe" required autocomplete="off" oninput="updateCardHolder(this.value)">
+                </div>
+
+                <div class="form-group">
+                    <label for="card-number">Card Number</label>
+                    <div class="input-container">
+                        <input type="text" id="card-number" placeholder="4111 1111 1111 1111" maxlength="19" required autocomplete="off" oninput="formatCardNumber(this)">
+                        <span class="card-type-icon" id="input-card-type-icon">💳</span>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="card-expiry">Expiration Date</label>
+                        <input type="text" id="card-expiry" placeholder="MM/YY" maxlength="5" required autocomplete="off" oninput="formatExpiry(this)" onfocus="flipCard(false)" onblur="flipCard(false)">
+                    </div>
+                    <div class="form-group half">
+                        <label for="card-cvv">CVV / CVC</label>
+                        <input type="text" id="card-cvv" placeholder="123" maxlength="4" required autocomplete="off" oninput="updateCVV(this.value)" onfocus="flipCard(true)" onblur="flipCard(false)">
+                    </div>
+                </div>
+
+                <button type="submit" class="pay-btn" id="pay-button">
+                    <span id="btn-text">Pay $0.00 Securely</span>
+                </button>
+            </form>
+
+            <!-- Loading Overlay -->
+            <div class="loader-overlay" id="loader-overlay">
+                <div class="spinner"></div>
+                <h3 id="loader-status">Authorizing Transaction...</h3>
+                <p>Connecting to secure bank gateway...</p>
+            </div>
+
+            <!-- Success Overlay -->
+            <div class="success-overlay" id="success-overlay">
+                <div class="success-checkmark">
+                    <div class="check-icon">
+                        <span class="icon-line line-tip"></span>
+                        <span class="icon-line line-long"></span>
+                        <div class="icon-circle"></div>
+                        <div class="icon-fix"></div>
+                    </div>
+                </div>
+                <h2>Payment Successful!</h2>
+                <p class="success-subtitle">Your gold has been securely provisioned.</p>
+                
+                <div class="receipt-box">
+                    <div class="receipt-row">
+                        <span>Transaction ID</span>
+                        <strong id="receipt-tx-id">TX-123456789</strong>
+                    </div>
+                    <div class="receipt-row">
+                        <span>Gold Account</span>
+                        <strong id="receipt-username">Guest</strong>
+                    </div>
+                    <div class="receipt-row">
+                        <span>Gold Credited</span>
+                        <strong class="gold-text" id="receipt-gold">+0 Gold</strong>
+                    </div>
+                </div>
+
+                <div class="verification-card">
+                    <div class="ver-label">Secure Verification Code</div>
+                    <div class="ver-code-box">
+                        <code id="verification-code">GOLD-0000-XXXXX</code>
+                        <button type="button" class="copy-btn" onclick="copyVerificationCode()">Copy</button>
+                    </div>
+                    <div class="ver-hint">Copy this code and click "Verify & Sync Gold" in-game to update your balance immediately.</div>
+                </div>
+
+                <button class="close-portal-btn" onclick="window.close()">Return to Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
