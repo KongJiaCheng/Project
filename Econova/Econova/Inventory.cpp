@@ -1,0 +1,247 @@
+#include "Inventory.h"
+#include "ViewUtils.h"
+#include <iostream>
+#include <algorithm> // std::min
+
+Inventory::Inventory()
+{
+    // Load font first
+    if (!font.openFromFile("C:/Windows/Fonts/arial.ttf")) {
+        std::cerr << "Warning: failed to load font\n";
+    }
+
+    // countText will be reused for drawing counts (constructed here)
+    countText = std::make_unique<sf::Text>(font, "", 18);
+    countText->setFillColor(sf::Color::White);
+
+    // initialize slot boxes and positions
+    for (int i = 0; i < SLOT_COUNT; ++i)
+    {
+        slotBox[i].setSize({ boxW, boxH });
+        slotBox[i].setFillColor(sf::Color(50, 50, 50, 200));
+        slotBox[i].setOutlineThickness(2.f);
+        slotBox[i].setOutlineColor(sf::Color::Black);
+
+        slots[i].icon = nullptr;
+        slots[i].count = 0;
+        slots[i].occupied = false;
+        slotEquipped[i] = false;
+        slotDurability[i] = 100;
+        slotMaxDurability[i] = 100;
+    }
+}
+
+void Inventory::setItem(int index, const sf::Texture& texture, int count)
+{
+    if (index < 0 || index >= SLOT_COUNT) return;
+
+    slots[index].id = 0; // Unknown ID for legacy setItem
+    slots[index].icon = std::make_unique<sf::Sprite>(texture);
+
+    // position and optionally scale the icon to fit into slot
+    slots[index].icon->setPosition({
+        slotBox[index].getPosition().x + 8.f,
+        slotBox[index].getPosition().y + 8.f
+        });
+
+    // optional scale to fit inside box (assumes texture size > 0)
+    sf::Vector2u ts = texture.getSize();
+    if (ts.x > 0 && ts.y > 0) {
+        float scaleX = (boxW - 16.f) / static_cast<float>(ts.x);
+        float scaleY = (boxH - 16.f) / static_cast<float>(ts.y);
+        float scale = std::min(scaleX, scaleY);
+        slots[index].icon->setScale({ scale, scale });
+    }
+
+    slots[index].count = count;
+    slots[index].occupied = true;
+}
+
+void Inventory::draw(sf::RenderWindow& window)
+{
+    sf::View old = window.getView();
+    window.setView(GetUIView(&window));
+
+    float xStart = computeX(window);
+    float yStart = computeY(window);
+
+    // Draw slots & icons in 2 rows of 10
+    for (int i = 0; i < SLOT_COUNT; ++i)
+    {
+        int row = i / 10;
+        int col = i % 10;
+        float px = xStart + col * (boxW + 4.f);
+        float py = yStart + row * (boxH + 4.f);
+
+        slotBox[i].setPosition({ px, py });
+        window.draw(slotBox[i]);
+
+        if (slots[i].occupied && slots[i].icon)
+        {
+            slots[i].icon->setPosition({ px + 5.f, py + 5.f });
+            
+            // Re-scale if needed (though setItem/addItem does it, this is safe)
+            sf::Vector2u ts = slots[i].icon->getTexture().getSize();
+            float scaleX = (boxW - 10.f) / static_cast<float>(ts.x);
+            float scaleY = (boxH - 10.f) / static_cast<float>(ts.y);
+            float scale = std::min(scaleX, scaleY);
+            slots[i].icon->setScale({ scale, scale });
+
+            window.draw(*slots[i].icon);
+
+            countText->setString(std::to_string(slots[i].count));
+            countText->setPosition({
+                px + boxW - 25,
+                py + boxH - 25
+                });
+            window.draw(*countText);
+
+            if (slotEquipped[i]) {
+                sf::Text tickText(font, "V", 24);
+                tickText.setFillColor(sf::Color::Green);
+                tickText.setStyle(sf::Text::Bold);
+                tickText.setPosition({ px + 5, py + 2 });
+                window.draw(tickText);
+
+                // Draw durability bar
+                sf::RectangleShape durBg({ boxW - 10, 5 });
+                durBg.setFillColor(sf::Color::Red);
+                durBg.setPosition({ px + 5, py + boxH - 10 });
+
+                sf::RectangleShape durFg({ (boxW - 10) * ((float)slotDurability[i] / (float)slotMaxDurability[i]), 5 });
+                durFg.setFillColor(sf::Color::Green);
+                durFg.setPosition(durBg.getPosition());
+
+                window.draw(durBg);
+                window.draw(durFg);
+            }
+        }
+    }
+
+    window.setView(old);
+}
+
+
+void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& window)
+{
+    sf::Vector2f uiPos = window.mapPixelToCoords(mousePos, GetUIView(&window));
+
+    int slot = getSlotAt(uiPos);
+    if (slot != -1)
+    {
+        selectedSlot = slot;
+
+        // check double click
+        if (slot == lastClickedSlot && doubleClickClock.getElapsedTime().asSeconds() < 0.5f) {
+            if (slots[slot].occupied) {
+                slotEquipped[slot] = !slotEquipped[slot];
+            }
+        }
+        
+        lastClickedSlot = slot;
+        doubleClickClock.restart();
+    }
+}
+
+
+int Inventory::getSlotAt(sf::Vector2f mousePos)
+{
+    // Loop through all slot boxes
+    for (int i = 0; i < SLOT_COUNT; ++i)
+    {
+        if (slotBox[i].getGlobalBounds().contains(mousePos))
+        {
+            return i;   // return slot index
+        }
+    }
+
+    return -1; // no slot clicked
+}
+
+void Inventory::addItem(int id, const sf::Texture& texture, int amount)
+{
+    // 1) Try stacking in a slot with the same ID
+    for (int i = 0; i < SLOT_COUNT; i++)
+    {
+        if (slots[i].occupied && slots[i].id == id)
+        {
+            slots[i].count += amount;
+            return;
+        }
+    }
+
+    // 2) Place in first empty slot
+    for (int i = 0; i < SLOT_COUNT; i++)
+    {
+        if (!slots[i].occupied)
+        {
+            slots[i].id = id;
+            slots[i].icon = std::make_unique<sf::Sprite>(texture);
+            slots[i].icon->setPosition({
+                slotBox[i].getPosition().x + 8,
+                slotBox[i].getPosition().y + 8
+                });
+
+            // Scale to fit
+            sf::Vector2u ts = texture.getSize();
+            if (ts.x > 0 && ts.y > 0)
+            {
+                float scaleX = (boxW - 16.f) / static_cast<float>(ts.x);
+                float scaleY = (boxH - 16.f) / static_cast<float>(ts.y);
+                float scale = std::min(scaleX, scaleY);
+                slots[i].icon->setScale({ scale, scale });
+            }
+
+            slots[i].count = amount;   // show count = 1
+            slots[i].occupied = true;
+            if (id == 4) { // ITEM_WOODEN_SWORD
+                slotDurability[i] = 100;
+                slotMaxDurability[i] = 100;
+            } else if (id == 6) { // ITEM_SHIELD
+                slotDurability[i] = 500;
+                slotMaxDurability[i] = 500;
+            }
+            return;
+        }
+    }
+
+    std::cout << "Inventory full — cannot pick up item\n";
+}
+
+
+// Will be updated every frame to lock to window
+float Inventory::computeX(sf::RenderWindow& window)
+{
+    float totalWidth = 10 * (boxW + 4.f);
+    return (1920.f - totalWidth) / 2.f;
+}
+
+float Inventory::computeY(sf::RenderWindow& window)
+{
+    float totalHeight = 2 * (boxH + 4.f);
+    return 1080.f - (totalHeight + 40.f); // 40px above bottom
+}
+
+// ----------------------------------------------------
+// New Inventory Persistence Helper Functions
+// ----------------------------------------------------
+
+void Inventory::clear()
+{
+    for (int i = 0; i < SLOT_COUNT; ++i)
+    {
+        slots[i].count = 0;
+        slots[i].occupied = false;
+        slots[i].icon.reset();
+    }
+}
+
+void Inventory::clearSlot(int slot)
+{
+    if (slot >= 0 && slot < SLOT_COUNT) {
+        slots[slot].count = 0;
+        slots[slot].occupied = false;
+        slots[slot].icon.reset();
+    }
+}
+
