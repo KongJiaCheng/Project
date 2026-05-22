@@ -23,7 +23,7 @@ try {
                     timestamp = (Get-Date).ToString("o")
                 } | ConvertTo-Json
                 
-                Set-Content -Path "c:\Users\DELL\source\repos\Project\RAS Game\payment_success.json" -Value $payload
+                Set-Content -Path "c:\Users\DELL\source\repos\Project\RASGame\payment_success.json" -Value $payload
                 Write-Output "Received payment notification: $gold Gold for $user ($code). Generated payment_success.json."
             }
         }

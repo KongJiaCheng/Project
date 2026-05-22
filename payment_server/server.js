@@ -47,8 +47,8 @@ app.get('/checkout', async (req, res) => {
         username: user,
         gold: gold
       },
-      success_url: `http://localhost:${port}/success?user=${encodeURIComponent(user)}&gold=${gold}`,
-      cancel_url: `http://localhost:${port}/cancel`,
+      success_url: `${req.protocol}://${req.get('host')}/success?user=${encodeURIComponent(user)}&gold=${gold}`,
+      cancel_url: `${req.protocol}://${req.get('host')}/cancel`,
     });
     
     // Redirect browser directly to Stripe's secure Checkout Page
@@ -92,7 +92,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         // 2. Write the sync receipt local file for C++ game to auto-sync instantly!
         const syncReceipt = { username, gold: goldAmount, verified: true };
         fs.writeFileSync(
-          path.join(__dirname, '../RAS Game/RAS Game/payment_success.json'),
+          path.join(__dirname, '../RASGame/RASGame/payment_success.json'),
           JSON.stringify(syncReceipt, null, 2)
         );
         console.log(`[SUCCESS] Sync receipt written to game folder.`);
