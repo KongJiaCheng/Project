@@ -8,6 +8,26 @@ class Zombie : public Monster
 {
 public:
     static sf::Texture texture;
+    static std::vector<sf::Texture> sharedSouth;
+    static std::vector<sf::Texture> sharedNorth;
+    static std::vector<sf::Texture> sharedEast;
+    static std::vector<sf::Texture> sharedWest;
+    static bool sharedLoaded;
+
+    static void loadSharedTextures() {
+        if (sharedLoaded) return;
+        Animation aS, aN, aE, aW;
+        aS.loadFromFolder("Sprites/Monsters/Zombie/Walk/South", 4);
+        aN.loadFromFolder("Sprites/Monsters/Zombie/Walk/North", 4);
+        aE.loadFromFolder("Sprites/Monsters/Zombie/Walk/East", 4);
+        aW.loadFromFolder("Sprites/Monsters/Zombie/Walk/West", 4);
+        sharedSouth = std::move(aS.frames);
+        sharedNorth = std::move(aN.frames);
+        sharedEast = std::move(aE.frames);
+        sharedWest = std::move(aW.frames);
+        sharedLoaded = true;
+    }
+
     Zombie(sf::Vector2f pos) : Monster(texture, pos, 50)
     {
         maxHealth = 500.f;
@@ -16,13 +36,14 @@ public:
         attackDamage = 15.f;
         attackCooldown = 1.2f;
 
-        loadAnimations(
-            "Sprites/Monsters/Zombie/Walk/South",
-            "Sprites/Monsters/Zombie/Walk/North",
-            "Sprites/Monsters/Zombie/Walk/East",
-            "Sprites/Monsters/Zombie/Walk/West",
-            4
-        );
+        loadSharedTextures();
+        animSouth.sharedFrames = &sharedSouth;
+        animNorth.sharedFrames = &sharedNorth;
+        animEast.sharedFrames = &sharedEast;
+        animWest.sharedFrames = &sharedWest;
+
+        sprite.setTexture(animSouth.getCurrentTexture(), true);
+        sprite.setOrigin({ 32.f, 32.f });
 
         sprite.setPosition(pos);
     }

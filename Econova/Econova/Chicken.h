@@ -7,6 +7,26 @@ class Chicken : public Animal
 {
 public:
     static sf::Texture texture;
+    static std::vector<sf::Texture> sharedSouth;
+    static std::vector<sf::Texture> sharedNorth;
+    static std::vector<sf::Texture> sharedEast;
+    static std::vector<sf::Texture> sharedWest;
+    static bool sharedLoaded;
+
+    static void loadSharedTextures() {
+        if (sharedLoaded) return;
+        Animation aS, aN, aE, aW;
+        aS.loadFromFolder("Sprites/Animals/Chicken/Walk/South", 4);
+        aN.loadFromFolder("Sprites/Animals/Chicken/Walk/North", 4);
+        aE.loadFromFolder("Sprites/Animals/Chicken/Walk/East", 4);
+        aW.loadFromFolder("Sprites/Animals/Chicken/Walk/West", 4);
+        sharedSouth = std::move(aS.frames);
+        sharedNorth = std::move(aN.frames);
+        sharedEast = std::move(aE.frames);
+        sharedWest = std::move(aW.frames);
+        sharedLoaded = true;
+    }
+
     Chicken(sf::Vector2f pos) : Animal(texture, pos, 50)
     {
         maxHealth = 20.f;
@@ -15,13 +35,14 @@ public:
         attackDamage = 4.f;
         attackCooldown = 1.6f;
 
-        loadAnimations(
-            "Sprites/Animals/Chicken/Walk/South",
-            "Sprites/Animals/Chicken/Walk/North",
-            "Sprites/Animals/Chicken/Walk/East",
-            "Sprites/Animals/Chicken/Walk/West",
-            4
-        );
+        loadSharedTextures();
+        animSouth.sharedFrames = &sharedSouth;
+        animNorth.sharedFrames = &sharedNorth;
+        animEast.sharedFrames = &sharedEast;
+        animWest.sharedFrames = &sharedWest;
+
+        sprite.setTexture(animSouth.getCurrentTexture(), true);
+        sprite.setOrigin({ 32.f, 32.f });
 
         sprite.setPosition(pos);
         sprite.setScale({ 1.5f, 1.5f });

@@ -6,6 +6,8 @@
 #include <cppconn/resultset.h>
 #include <vector>
 #include <tuple>
+#include <mutex>
+#include <atomic>
 
 struct PlayerStats {
     float hunger;
@@ -16,6 +18,8 @@ struct PlayerStats {
     float elapsedTime;
     int gender; // -1: none, 1: male, 2: female
     bool isFirstTime;
+    int hungerMultiplier;
+    int thirstMultiplier;
 };
 
 // Character persistence methods
@@ -44,6 +48,7 @@ struct OnlinePlayer {
     std::string username;
     float x, y;
     std::string pullBy;
+    int gender;
 };
 
 struct TradeRecord {
@@ -56,13 +61,29 @@ struct TradeRecord {
     std::string tradeTime;
 };
 
+struct P2PTradeState {
+    int tradeID = -1;
+    std::string initiator;
+    std::string target;
+    std::string status;          // pending/accepted/confirmed/cancelled/completed
+    std::string initiatorItems;  // "itemID:count,itemID:count"
+    std::string targetItems;
+    int initiatorGold = 0;
+    int targetGold = 0;
+    bool initiatorReady = false;
+    bool targetReady = false;
+};
+
 class AuthManager {
 public:
     AuthManager() : driver(nullptr), con(nullptr) {}
     static AuthManager& getInstance();
 
+    void saveMarketPrice(int itemID, float price);
+    float loadMarketPrice(int itemID);
+
     void shutdownDB();
-    void savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp, float elapsedTime);
+    void savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp, float elapsedTime, int hungerMultiplier, int thirstMultiplier);
     PlayerStats loadPlayerStats(const sql::SQLString& username);
     void setFirstTimeFinished(const sql::SQLString& username);
     void saveGender(const sql::SQLString& username, int gender);
@@ -78,7 +99,8 @@ public:
     void clearPull(const sql::SQLString& username);
 
     bool sendChatMessage(const sql::SQLString& username, const sql::SQLString& message, std::string& outError);
-    std::vector<std::pair<std::string, std::string>> fetchChatMessages(int limit = 10);
+    std::vector<std::pair<std::string, std::string>> fetchChatMessages(int limit = 10, int sinceMsgId = 0);
+    int getMaxMessageID();
 
     bool initDB();
     bool registerUser(const sql::SQLString& username, const sql::SQLString& password, const sql::SQLString& email);
@@ -99,8 +121,19 @@ public:
     void addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold);
     std::vector<TradeRecord> getRecentTrades(int limit = 5);
 
+    // --- P2P Trading ---
+    int  createP2PTrade(const std::string& from, const std::string& to);
+    void acceptP2PTrade(int tradeID);
+    void updateP2POffer(int tradeID, const std::string& user, const std::string& itemsCSV, int gold);
+    void setP2PReady(int tradeID, const std::string& user, bool ready);
+    P2PTradeState getP2PTradeState(int tradeID);
+    void cancelP2PTrade(int tradeID);
+    int  getPendingP2PTradeFor(const std::string& username); // returns tradeID or -1
+    void completeP2PTrade(int tradeID);
+
     void saveStructures(const sql::SQLString& username, const std::vector<StoredStructure>& structures);
     std::vector<StoredStructure> loadStructures(const sql::SQLString& username);
+    std::vector<StoredStructure> loadOtherStructures(const sql::SQLString& username);
 
     void saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires);
     std::vector<StoredCampfire> loadCampfires(const sql::SQLString& username);
@@ -108,4 +141,5 @@ public:
 private:
     sql::mysql::MySQL_Driver* driver = nullptr;
     sql::Connection* con = nullptr;
+    std::recursive_mutex dbMutex;
 };
