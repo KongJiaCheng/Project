@@ -124,4 +124,9 @@ public:
     virtual const sf::Texture* getFoodTexture() const = 0;
     virtual int getFoodDropCount() const = 0;
 
+    sf::Vector2f getPosition() const
+    {
+        return sprite.getPosition();
+    }
+
 };

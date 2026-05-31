@@ -134,7 +134,18 @@ void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& wind
         // check double click
         if (slot == lastClickedSlot && doubleClickClock.getElapsedTime().asSeconds() < 0.5f) {
             if (slots[slot].occupied) {
-                slotEquipped[slot] = !slotEquipped[slot];
+                int id = slots[slot].id;
+                if (id == 4 || id == 6) { // ITEM_WOODEN_SWORD or ITEM_SHIELD
+                    bool newEquip = !slotEquipped[slot];
+                    if (newEquip) {
+                        for (int j = 0; j < SLOT_COUNT; j++) {
+                            if (slots[j].occupied && slots[j].id == id) {
+                                slotEquipped[j] = false;
+                            }
+                        }
+                    }
+                    slotEquipped[slot] = newEquip;
+                }
             }
         }
         

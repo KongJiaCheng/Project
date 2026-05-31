@@ -82,12 +82,15 @@ std::vector<Item>& ItemManager::getItems()
 
 void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, int quantity)
 {
+    size_t idx = items.size();
     items.emplace_back(id, quantity, texture, pos);
     if (id == ITEM_SAPLING) {
-        items.back().sprite.setScale({0.2f, 0.2f});
-    } else if (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_ZOMBIE_FLESH) {
-        items.back().sprite.setScale({0.4f, 0.4f});
+        items.back().sprite.setScale({ 0.2f, 0.2f });
     }
+    else if (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_ZOMBIE_FLESH) {
+        items.back().sprite.setScale({ 0.4f, 0.4f });
+    }
+    gridInsert(idx, pos);
 }
 
 void ItemManager::draw(sf::RenderWindow& window)
@@ -112,18 +115,18 @@ void ItemManager::draw(sf::RenderWindow& window)
         }
 
         window.draw(i.sprite);
-        
+
         if (i.id == ITEM_TREE && i.health < i.maxHealth)
         {
             sf::FloatRect bounds = i.sprite.getGlobalBounds();
             sf::RectangleShape hpBg({ 40.f, 6.f });
             hpBg.setFillColor(sf::Color::Red);
             hpBg.setPosition({ bounds.position.x + bounds.size.x / 2.f - 20.f, bounds.position.y - 15.f });
-            
+
             sf::RectangleShape hpFg({ 40.f * (std::max(0.f, i.health) / i.maxHealth), 6.f });
             hpFg.setFillColor(sf::Color::Green);
             hpFg.setPosition(hpBg.getPosition());
-            
+
             window.draw(hpBg);
             window.draw(hpFg);
         }
@@ -150,7 +153,7 @@ void ItemManager::tryPickup(
     for (size_t i = 0; i < items.size(); ++i)
     {
         if (items[i].id == ITEM_TREE) continue;
-        
+
         sf::Vector2f ipos = getSpriteCenterSafe(items[i].sprite);
         float dx = ipos.x - ppos.x;
         float dy = ipos.y - ppos.y;
@@ -182,6 +185,7 @@ void ItemManager::tryPickup(
     }
 
     items.erase(items.begin() + bestIdx);
+    rebuildGrid();   // indices shifted after erase – must rebuild
 }
 
 float ItemManager::getNearestDistance(const sf::Sprite& player) const
@@ -255,18 +259,31 @@ bool ItemManager::isAreaFreeExplicit(
     float newW = w + minDistance * 2.f;
     float newH = h + minDistance * 2.f;
 
-    for (const auto& it : items)
-    {
-        RectF r = getSpriteBoundsExplicit(it.sprite);
+    // Determine which grid cells the query AABB overlaps
+    int cxMin = static_cast<int>(std::floor(newX / GRID_CELL));
+    int cyMin = static_cast<int>(std::floor(newY / GRID_CELL));
+    int cxMax = static_cast<int>(std::floor((newX + newW) / GRID_CELL));
+    int cyMax = static_cast<int>(std::floor((newY + newH) / GRID_CELL));
 
-        bool overlap =
-            newX < r.x + r.w &&
-            newX + newW > r.x &&
-            newY < r.y + r.h &&
-            newY + newH > r.y;
+    for (int cx = cxMin; cx <= cxMax; ++cx) {
+        for (int cy = cyMin; cy <= cyMax; ++cy) {
+            auto it = spatialGrid.find(cellKey(cx, cy));
+            if (it == spatialGrid.end()) continue;
 
-        if (overlap)
-            return false;
+            for (size_t idx : it->second) {
+                if (idx >= items.size()) continue;
+                RectF r = getSpriteBoundsExplicit(items[idx].sprite);
+
+                bool overlap =
+                    newX < r.x + r.w &&
+                    newX + newW > r.x &&
+                    newY < r.y + r.h &&
+                    newY + newH > r.y;
+
+                if (overlap)
+                    return false;
+            }
+        }
     }
 
     return true;
@@ -324,8 +341,11 @@ void ItemManager::spawnRandomItems(const std::vector<SpawnRule>& rules, int mapW
                 attempts++;
             } while (!isAreaFreeExplicit(pos, MIN_DISTANCE, rule.texture) && attempts < MAX_ATTEMPTS);
 
-            if (attempts < MAX_ATTEMPTS)
+            if (attempts < MAX_ATTEMPTS) {
+                size_t idx = items.size();
                 items.emplace_back(rule.itemID, 1, *rule.texture, pos);
+                gridInsert(idx, pos);   // keep spatial grid in sync
+            }
         }
     }
 }

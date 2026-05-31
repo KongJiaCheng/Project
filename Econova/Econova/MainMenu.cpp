@@ -10,6 +10,12 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <atomic>
+#include <future>
+#include <thread>
+#include <cmath>
+#include <cstdint>
+#include <fstream>
 #include <SFML/Graphics.hpp>
 #include "Game.h"
 #include "Settings.h"
@@ -24,6 +30,10 @@ enum class MenuState {
     AuthChoice,
     Register,
     Login,
+    LoggingIn,      // async login in progress � shows progress bar
+    Registering,    // async register in progress shows progress bar
+    LoadingGame,    // loading screen before entering game
+
     ForgotPasswordStep1,
     ForgotPasswordStep2
 };
@@ -71,9 +81,205 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    std::cout << "[DEBUG] main() started. Entering AuthManager." << std::endl;
-    AuthManager::getInstance().initDB();
-    std::cout << "[DEBUG] Returned from initDB() successfully!" << std::endl;
+    std::cout << "[DEBUG] main() started. Pre-constructing AuthManager singleton on main thread." << std::endl;
+    // CRITICAL: touch the singleton here on the main thread BEFORE spawning any
+    // worker threads.  C++11 guarantees the static-local inside getInstance() is
+    // initialized exactly once, but if two threads race to do the first call the
+    // program can deadlock on MSVC's static-init mutex.  Calling it here first
+    // means the object is fully constructed by the time the worker thread calls it.
+    (void)AuthManager::getInstance();
+
+    // --- Async DB init with timeout ---
+    // connect() can block forever without OPT_CONNECT_TIMEOUT.
+    // We run it on a thread and give it 15 seconds before showing an error.
+    std::atomic<bool> dbDone(false);
+    std::atomic<bool> dbSuccess(false);
+    auto launchDBInit = [&]() {
+        dbDone = false;
+        dbSuccess = false;
+        std::thread([&]() {
+            dbSuccess = AuthManager::getInstance().initDB();
+            dbDone = true;
+            }).detach();
+        };
+    launchDBInit();
+
+    // Show loading window while connecting
+    {
+        sf::VideoMode loadDesktop = sf::VideoMode::getDesktopMode();
+        sf::RenderWindow loadWin(sf::VideoMode({ loadDesktop.size.x, loadDesktop.size.y }), "Econova");
+        loadWin.setFramerateLimit(60);
+
+        sf::Font loadFont;
+        bool fontOk = loadFont.openFromFile("C:/Windows/Fonts/arial.ttf");
+
+        // --- Shared UI helpers ---
+        auto makeText = [&](const std::string& str, unsigned int size, sf::Color col = sf::Color::White) {
+            sf::Text t(loadFont, str, size);
+            t.setFillColor(col);
+            t.setOutlineColor(sf::Color::Black);
+            t.setOutlineThickness(2.f);
+            return t;
+            };
+        auto centerX = [&](sf::Text& t, float y, float winW) {
+            t.setPosition({ winW / 2.f - t.getLocalBounds().size.x / 2.f, y });
+            };
+
+        sf::RectangleShape barBg({ 600.f, 24.f });
+        barBg.setFillColor(sf::Color(60, 60, 60));
+        sf::RectangleShape barFg({ 0.f, 24.f });
+        barFg.setFillColor(sf::Color(39, 174, 96));
+
+        // Retry / Offline buttons (shown only on failure)
+        sf::RectangleShape btnRetry({ 260.f, 70.f });
+        btnRetry.setFillColor(sf::Color(39, 174, 96));
+        sf::RectangleShape btnOffline({ 260.f, 70.f });
+        btnOffline.setFillColor(sf::Color(41, 128, 185));
+
+        sf::Clock dotClock, barClock, timeoutClock;
+        int dotCount = 0;
+        bool timedOut = false;
+        bool offlineChosen = false;
+        const float TIMEOUT_SECS = 15.f;
+
+        // Loading tips shown while connecting
+        const std::vector<std::string> tips = {
+            "Tip: Eat food regularly to keep your hunger up!",
+            "Tip: Build structures to protect yourself at night.",
+            "Tip: Trading with other players earns bonus gold.",
+            "Tip: Campfires provide warmth and cook your food.",
+            "Tip: Complete daily quests for extra rewards.",
+        };
+        int tipIndex = 0;
+        sf::Clock tipClock;
+
+        while (loadWin.isOpen()) {
+            float lw = (float)loadWin.getSize().x;
+            float lh = (float)loadWin.getSize().y;
+
+            while (const std::optional ev = loadWin.pollEvent()) {
+                if (ev->is<sf::Event::Closed>()) { loadWin.close(); return 0; }
+
+                if (timedOut) {
+                    if (const auto* mb = ev->getIf<sf::Event::MouseButtonPressed>()) {
+                        sf::Vector2f mp = loadWin.mapPixelToCoords(mb->position);
+                        if (btnRetry.getGlobalBounds().contains(mp)) {
+                            // Retry: relaunch the init thread
+                            timedOut = false;
+                            timeoutClock.restart();
+                            barClock.restart();
+                            launchDBInit();
+                        }
+                        else if (btnOffline.getGlobalBounds().contains(mp)) {
+                            offlineChosen = true;
+                            loadWin.close();
+                        }
+                    }
+                }
+            }
+
+            if (!timedOut && dbDone.load()) {
+                // Connected (or failed fast) � close and continue
+                loadWin.close();
+                break;
+            }
+
+            if (!timedOut && timeoutClock.getElapsedTime().asSeconds() > TIMEOUT_SECS) {
+                timedOut = true;
+                std::cerr << "[WARN] DB connect timed out after " << TIMEOUT_SECS << "s\n";
+            }
+
+            loadWin.clear(sf::Color(20, 20, 20));
+
+            if (!timedOut) {
+                // Animate dots
+                if (dotClock.getElapsedTime().asSeconds() > 0.4f) {
+                    dotCount = (dotCount + 1) % 4;
+                    dotClock.restart();
+                }
+                // Cycle tips every 4 seconds
+                if (tipClock.getElapsedTime().asSeconds() > 4.f) {
+                    tipIndex = (tipIndex + 1) % (int)tips.size();
+                    tipClock.restart();
+                }
+                float prog = std::min(0.85f, timeoutClock.getElapsedTime().asSeconds() / TIMEOUT_SECS);
+                barFg.setSize({ 600.f * prog, 24.f });
+
+                if (fontOk) {
+                    // Title
+                    auto titleTxt = makeText("ECONOVA", 80, sf::Color(39, 174, 96));
+                    centerX(titleTxt, lh / 2.f - 180.f, lw);
+                    loadWin.draw(titleTxt);
+
+                    // Connecting text with animated dots
+                    auto connTxt = makeText("Connecting to server" + std::string(dotCount, '.'), 46);
+                    centerX(connTxt, lh / 2.f - 80.f, lw);
+                    barBg.setPosition({ lw / 2.f - 300.f, lh / 2.f });
+                    barFg.setPosition(barBg.getPosition());
+                    loadWin.draw(connTxt);
+                    loadWin.draw(barBg);
+                    loadWin.draw(barFg);
+
+                    auto subTxt = makeText("This may take a few seconds...", 28, sf::Color(160, 160, 160));
+                    centerX(subTxt, lh / 2.f + 40.f, lw);
+                    loadWin.draw(subTxt);
+
+                    // Cycling tip
+                    auto tipTxt = makeText(tips[tipIndex], 26, sf::Color(200, 200, 120));
+                    centerX(tipTxt, lh / 2.f + 100.f, lw);
+                    loadWin.draw(tipTxt);
+                }
+            }
+            else {
+                // Timed-out / error screen
+                if (fontOk) {
+                    auto errTxt = makeText("Could not connect to server", 52, sf::Color(231, 76, 60));
+                    auto sub1 = makeText("Check your internet connection or try again.", 30, sf::Color(200, 200, 200));
+                    auto sub2 = makeText("You can also play offline (no saving/loading).", 30, sf::Color(200, 200, 200));
+                    centerX(errTxt, lh / 2.f - 120.f, lw);
+                    centerX(sub1, lh / 2.f - 50.f, lw);
+                    centerX(sub2, lh / 2.f - 10.f, lw);
+                    loadWin.draw(errTxt);
+                    loadWin.draw(sub1);
+                    loadWin.draw(sub2);
+
+                    // Retry button
+                    btnRetry.setPosition({ lw / 2.f - 280.f, lh / 2.f + 60.f });
+                    sf::Vector2f mp = loadWin.mapPixelToCoords(sf::Mouse::getPosition(loadWin));
+                    btnRetry.setFillColor(btnRetry.getGlobalBounds().contains(mp)
+                        ? sf::Color(46, 204, 113) : sf::Color(39, 174, 96));
+                    auto retryTxt = makeText("Retry", 34);
+                    retryTxt.setPosition({
+                        btnRetry.getPosition().x + (btnRetry.getSize().x - retryTxt.getLocalBounds().size.x) / 2.f,
+                        btnRetry.getPosition().y + (btnRetry.getSize().y - retryTxt.getLocalBounds().size.y) / 2.f - 8.f
+                        });
+                    loadWin.draw(btnRetry);
+                    loadWin.draw(retryTxt);
+
+                    // Play offline button
+                    btnOffline.setPosition({ lw / 2.f + 20.f, lh / 2.f + 60.f });
+                    btnOffline.setFillColor(btnOffline.getGlobalBounds().contains(mp)
+                        ? sf::Color(52, 152, 219) : sf::Color(41, 128, 185));
+                    auto offTxt = makeText("Play Offline", 34);
+                    offTxt.setPosition({
+                        btnOffline.getPosition().x + (btnOffline.getSize().x - offTxt.getLocalBounds().size.x) / 2.f,
+                        btnOffline.getPosition().y + (btnOffline.getSize().y - offTxt.getLocalBounds().size.y) / 2.f - 8.f
+                        });
+                    loadWin.draw(btnOffline);
+                    loadWin.draw(offTxt);
+                }
+            }
+
+            loadWin.display();
+        }
+
+        if (offlineChosen) {
+            std::cout << "[INFO] User chose offline mode.\n";
+            // dbSuccess stays false � all AuthManager calls will no-op safely
+        }
+    }
+
+    std::cout << "[DEBUG] DB init result: " << (dbSuccess ? "connected" : "offline/failed") << "\n";
 
     sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
     unsigned int windowWidth = desktop.size.x;
@@ -99,10 +305,10 @@ int main(int argc, char** argv) {
         }
     }
     if (!foundDesktop) {
-        resolutions.push_back({windowWidth, windowHeight});
+        resolutions.push_back({ windowWidth, windowHeight });
         std::sort(resolutions.begin(), resolutions.end(), [](const sf::Vector2u& a, const sf::Vector2u& b) {
             return (a.x * a.y) < (b.x * b.y);
-        });
+            });
         for (size_t i = 0; i < resolutions.size(); ++i) {
             if (resolutions[i].x == windowWidth && resolutions[i].y == windowHeight) {
                 globalSettings.resolutionIndex = static_cast<int>(i);
@@ -112,6 +318,7 @@ int main(int argc, char** argv) {
     }
 
     sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode({ windowWidth, windowHeight }), "Econova");
+    window->setFramerateLimit(60);
 
     sf::Font font;
     if (!font.openFromFile("C:/Windows/Fonts/arial.ttf")) {
@@ -127,7 +334,7 @@ int main(int argc, char** argv) {
     bgSprite.setScale({
         1920.f / bgSprite.getLocalBounds().size.x,
         1080.f / bgSprite.getLocalBounds().size.y
-    });
+        });
 
     sf::Texture logoTexture;
     if (!logoTexture.loadFromFile(resolvePath("MainMenu/Logo.jpg"))) {
@@ -148,6 +355,12 @@ int main(int argc, char** argv) {
     std::string errorMessage = "";
     std::string currentEmailForReset = "";
     std::string currentOTP = "";
+
+    // Async OTP state – generateForgotOTP is a DB round-trip; don't call it on the render thread.
+    std::atomic<bool> otpPending(false);
+    std::atomic<bool> otpDone(false);
+    std::string       otpResult;        // written by worker, read after otpDone
+    std::mutex        otpMutex;
 
     // Common Text settings
     sf::Text errorText(font, "", 60);
@@ -252,8 +465,8 @@ int main(int argc, char** argv) {
         text.setPosition({
             btn.getPosition().x + (btn.getSize().x - textBounds.size.x) / 2.f - textBounds.position.x,
             btn.getPosition().y + (btn.getSize().y - textBounds.size.y) / 2.f - textBounds.position.y
-        });
-    };
+            });
+        };
 
     auto updateUIPositions = [&](unsigned int w, unsigned int h) {
         logoSprite.setPosition({ w / 2.f - logoSprite.getGlobalBounds().size.x / 2.f, 60.f });
@@ -279,7 +492,7 @@ int main(int argc, char** argv) {
         // State: AuthChoice
         titleAuthChoice.setPosition({ w / 2.f - 400.f, 260.f });
         titleAuthChoice.setCharacterSize(70);
-        
+
         btnLoginChoice.setSize({ 500.f, 110.f });
         btnLoginChoice.setPosition({ (w - 500.f) / 2.f, 520.f });
         txtLoginChoice.setCharacterSize(50);
@@ -298,7 +511,7 @@ int main(int argc, char** argv) {
         // State: Register
         titleRegister.setPosition({ w / 2.f - 200.f, 100.f });
         titleRegister.setCharacterSize(80);
-        
+
         regUser.setPosition({ w / 2.f - 200.f, 260.f });
         lblRegUser.setPosition({ w / 2.f - 550.f, 260.f });
         lblRegUser.setCharacterSize(45);
@@ -323,7 +536,7 @@ int main(int argc, char** argv) {
         // State: Login
         titleLogin.setPosition({ w / 2.f - 120.f, 150.f });
         titleLogin.setCharacterSize(80);
-        
+
         logUser.setPosition({ w / 2.f - 200.f, 340.f });
         lblLogUser.setPosition({ w / 2.f - 550.f, 340.f });
         lblLogUser.setCharacterSize(45);
@@ -345,7 +558,7 @@ int main(int argc, char** argv) {
         // State: Forgot Password Step 1
         titleForgot1.setPosition({ w / 2.f - 300.f, 200.f });
         titleForgot1.setCharacterSize(80);
-        
+
         fgEmail.setPosition({ w / 2.f - 200.f, 400.f });
         lblFgEmail.setPosition({ w / 2.f - 550.f, 400.f });
         lblFgEmail.setCharacterSize(45);
@@ -358,7 +571,7 @@ int main(int argc, char** argv) {
         // State: Forgot Password Step 2
         titleForgot2.setPosition({ w / 2.f - 400.f, 150.f });
         titleForgot2.setCharacterSize(80);
-        
+
         fgOTP.setPosition({ w / 2.f - 200.f, 320.f });
         lblFgOTP.setPosition({ w / 2.f - 550.f, 320.f });
         lblFgOTP.setCharacterSize(45);
@@ -371,10 +584,98 @@ int main(int argc, char** argv) {
         btnSubmitReset.setPosition({ (w - 360.f) / 2.f, 600.f });
         txtSubmitReset.setCharacterSize(45);
         centerTextInButton(txtSubmitReset, btnSubmitReset);
-    };
+        };
 
     UpdateViewToWindow(window);
     updateUIPositions(1920, 1080);
+
+    // ---- Async login / register state ----
+    struct AsyncAuthResult {
+        std::uint64_t requestId = 0;
+        bool success = false;
+        std::string errorMsg;
+        std::string username;
+        PlayerStats stats{};
+    };
+    std::atomic<bool>   authDone(false);
+    AsyncAuthResult     authResult;
+    std::mutex          authResultMutex;   // guards authResult reads/writes
+    sf::Clock           authClock;
+    sf::Clock           authDotClock;
+    int                 authDotCount = 0;
+    std::atomic<std::uint64_t> authRequestCounter(0);
+    std::uint64_t       activeAuthRequestId = 0;
+    constexpr float     AUTH_TIMEOUT_SECS = 12.0f;
+
+    // ---- Loading game state ----
+    std::string         loadingUsername;
+    bool                loadingIsFirstTime;
+    sf::Clock           loadingClock;
+    sf::Clock           loadingDotClock;
+    sf::Clock           loadingCompleteClock;
+    int                 loadingDotCount = 0;
+    bool                loadingCompleteShown = false;
+    bool                launchGameRequested = false;
+    std::string         launchGameUsername;
+    bool                launchGameIsFirstTime = false;
+
+    auto startLoginAsync = [&](const std::string& u, const std::string& p) {
+        authDone = false;
+        activeAuthRequestId = ++authRequestCounter;
+        {
+            std::lock_guard<std::mutex> lk(authResultMutex);
+            authResult = {};
+        }
+        authClock.restart();
+        authDotClock.restart();
+        authDotCount = 0;
+        std::thread([&, u, p, reqId = activeAuthRequestId]() {
+            AsyncAuthResult r;
+            r.requestId = reqId;
+            r.username = u;
+            if (AuthManager::getInstance().loginUser(
+                sql::SQLString(u.c_str()), sql::SQLString(p.c_str()), r.errorMsg)) {
+                r.stats = AuthManager::getInstance().loadPlayerStats(sql::SQLString(u.c_str()));
+                r.success = true;
+            }
+            {
+                std::lock_guard<std::mutex> lk(authResultMutex);
+                authResult = r;
+            }
+            authDone = true;  // written last – main thread reads authResult only after this
+            }).detach();
+        };
+
+    auto startRegisterAsync = [&](const std::string& u, const std::string& p, const std::string& e) {
+        authDone = false;
+        activeAuthRequestId = ++authRequestCounter;
+        {
+            std::lock_guard<std::mutex> lk(authResultMutex);
+            authResult = {};
+        }
+        authClock.restart();
+        authDotClock.restart();
+        authDotCount = 0;
+        std::thread([&, u, p, e, reqId = activeAuthRequestId]() {
+            AsyncAuthResult r;
+            r.requestId = reqId;
+            r.username = u;
+            if (AuthManager::getInstance().registerUser(
+                sql::SQLString(u.c_str()), sql::SQLString(p.c_str()), sql::SQLString(e.c_str()))) {
+                r.stats = AuthManager::getInstance().loadPlayerStats(sql::SQLString(u.c_str()));
+                r.success = true;
+            }
+            else {
+                r.errorMsg = "Registration failed! Username may already exist.";
+            }
+            {
+                std::lock_guard<std::mutex> lk(authResultMutex);
+                authResult = r;
+            }
+            authDone = true;
+            }).detach();
+        };
+    // ---- end async auth state ----
 
     while (window->isOpen()) {
         while (const std::optional event = window->pollEvent()) {
@@ -386,7 +687,7 @@ int main(int argc, char** argv) {
                     window->close();
                 }
             }
-            
+
             sf::Vector2f mpos = window->mapPixelToCoords(sf::Mouse::getPosition(*window), GetUIView(window));
 
             // Distribute events
@@ -424,7 +725,7 @@ int main(int argc, char** argv) {
                                 bgSprite.setScale({
                                     1920.f / bgSprite.getLocalBounds().size.x,
                                     1080.f / bgSprite.getLocalBounds().size.y
-                                });
+                                    });
                             }
                             UpdateViewToWindow(window);
                             updateUIPositions(1920, 1080);
@@ -464,19 +765,18 @@ int main(int argc, char** argv) {
 
                             if (u.empty() || p.empty() || c.empty() || e.empty()) {
                                 errorMessage = "Fields cannot be blank!";
-                            } else if (p != c) {
+                            }
+                            else if (p != c) {
                                 errorMessage = "Passwords do not match!";
-                            } else if (!isValidPassword(p)) {
+                            }
+                            else if (!isValidPassword(p)) {
                                 errorMessage = "Password needs 1 number, 1 letter, 1 symbol!";
-                            } else {
-                                if (AuthManager::getInstance().registerUser(sql::SQLString(u.c_str()), sql::SQLString(p.c_str()), sql::SQLString(e.c_str()))) {
-                                    // Success
-                                    PlayerStats stats = AuthManager::getInstance().loadPlayerStats(sql::SQLString(u.c_str()));
-                                    gameLoop(*window, width, height, u, stats.isFirstTime);
-                                    state = MenuState::MainMenu; // When game finishes, go back to main
-                                } else {
-                                    errorMessage = "Registration failed! Username may exist.";
-                                }
+                            }
+                            else {
+                                // Kick off async � don't block the render thread
+                                startRegisterAsync(u, p, e);
+                                state = MenuState::Registering;
+                                errorMessage = "";
                             }
                         }
                     }
@@ -489,15 +789,12 @@ int main(int argc, char** argv) {
                             std::string p = logPass.getText();
                             if (u.empty() || p.empty()) {
                                 errorMessage = "Fields cannot be blank!";
-                            } else {
-                                std::string banErr;
-                                if (AuthManager::getInstance().loginUser(sql::SQLString(u.c_str()), sql::SQLString(p.c_str()), banErr)) {
-                                    PlayerStats stats = AuthManager::getInstance().loadPlayerStats(sql::SQLString(u.c_str()));
-                                    gameLoop(*window, width, height, u, stats.isFirstTime);
-                                    state = MenuState::MainMenu;
-                                } else {
-                                    errorMessage = banErr.empty() ? "Invalid Credentials!" : banErr;
-                                }
+                            }
+                            else {
+                                // Kick off async � don't block the render thread
+                                startLoginAsync(u, p);
+                                state = MenuState::LoggingIn;
+                                errorMessage = "";
                             }
                         }
                         else if (btnForgot.getGlobalBounds().contains(mpos)) {
@@ -515,20 +812,23 @@ int main(int argc, char** argv) {
                             std::string e = fgEmail.getText();
                             if (e.empty()) {
                                 errorMessage = "Email cannot be blank!";
-                            } else {
-                                sql::SQLString otpSQL = AuthManager::getInstance().generateForgotOTP(sql::SQLString(e.c_str()));
-                                std::string otp(otpSQL.c_str());
-                                if (!otp.empty()) {
-                                    currentEmailForReset = e;
-                                    currentOTP = otp;
-                                    state = MenuState::ForgotPasswordStep2;
-                                    errorMessage = "";
-                                    fgOTP.clear();
-                                    fgNewPass.clear();
-                                    std::cout << "OTP has been generated for " << e << "!\n";
-                                } else {
-                                    errorMessage = "Email not found!";
-                                }
+                            }
+                            else if (!otpPending.load()) {
+                                // Launch async – do NOT call generateForgotOTP on the render thread
+                                currentEmailForReset = e;
+                                otpDone = false;
+                                otpPending = true;
+                                errorMessage = "Sending OTP...";
+                                std::thread([&, e]() {
+                                    sql::SQLString otpSQL = AuthManager::getInstance().generateForgotOTP(sql::SQLString(e.c_str()));
+                                    std::string otp(otpSQL.c_str());
+                                    {
+                                        std::lock_guard<std::mutex> lk(otpMutex);
+                                        otpResult = otp;
+                                    }
+                                    otpDone = true;
+                                    otpPending = false;
+                                    }).detach();
                             }
                         }
                     }
@@ -543,15 +843,18 @@ int main(int argc, char** argv) {
 
                             if (o.empty() || np.empty()) {
                                 errorMessage = "Fields cannot be blank!";
-                            } else if (!isValidPassword(np)) {
+                            }
+                            else if (!isValidPassword(np)) {
                                 errorMessage = "Password needs 1 number, 1 letter, 1 symbol!";
-                            } else {
+                            }
+                            else {
                                 if (AuthManager::getInstance().resetPassword(sql::SQLString(currentEmailForReset.c_str()), sql::SQLString(o.c_str()), sql::SQLString(np.c_str()))) {
                                     state = MenuState::Login;
                                     errorMessage = "Password Reset Success! Please login.";
                                     logUser.clear();
                                     logPass.clear();
-                                } else {
+                                }
+                                else {
                                     errorMessage = "Invalid OTP!";
                                 }
                             }
@@ -562,7 +865,43 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Execute game launch outside menu rendering branch to avoid re-entrant render transition stalls.
+        if (launchGameRequested) {
+            {
+                std::ofstream f("mainmenu_transition_trace.log", std::ios::app);
+                if (f.is_open()) f << "before_gameLoop\n";
+            }
+            gameLoop(*window, width, height, launchGameUsername, launchGameIsFirstTime);
+            {
+                std::ofstream f("mainmenu_transition_trace.log", std::ios::app);
+                if (f.is_open()) f << "after_gameLoop\n";
+            }
+            launchGameRequested = false;
+            state = MenuState::MainMenu;
+            continue;
+        }
+
         sf::Vector2f currentMpos = window->mapPixelToCoords(sf::Mouse::getPosition(*window), GetUIView(window));
+
+        // ---- Poll async OTP result ----
+        if (otpDone.load()) {
+            otpDone = false;
+            std::string otp;
+            {
+                std::lock_guard<std::mutex> lk(otpMutex);
+                otp = otpResult;
+            }
+            if (!otp.empty()) {
+                currentOTP = otp;
+                state = MenuState::ForgotPasswordStep2;
+                errorMessage = "";
+                fgOTP.clear();
+                fgNewPass.clear();
+            }
+            else {
+                errorMessage = "Email not found!";
+            }
+        }
 
         // Handle button hover styling
         auto handleHover = [&](sf::RectangleShape& btn, sf::Color normalColor, sf::Color hoverColor) {
@@ -570,14 +909,15 @@ int main(int argc, char** argv) {
                 btn.setFillColor(hoverColor);
                 btn.setOutlineThickness(4.f);
                 btn.setOutlineColor(sf::Color::White);
-            } else {
+            }
+            else {
                 btn.setFillColor(normalColor);
                 btn.setOutlineThickness(0.f);
             }
-        };
+            };
 
         window->setView(GetUIView(window));
-        window->clear(sf::Color(30,30,30));
+        window->clear(sf::Color(30, 30, 30));
         window->draw(bgSprite);
         errorText.setString(errorMessage);
 
@@ -648,12 +988,190 @@ int main(int argc, char** argv) {
             window->draw(btnBack); window->draw(txtBack);
             window->draw(errorText);
         }
+        else if (state == MenuState::LoggingIn || state == MenuState::Registering) {
+            bool isReg = (state == MenuState::Registering);
+
+            // ---- Poll async result ----
+            if (authDone.load()) {
+                AsyncAuthResult localResult;
+                {
+                    std::lock_guard<std::mutex> lk(authResultMutex);
+                    localResult = authResult;
+                }
+                authDone = false;
+
+                // Ignore stale completion from an older timed-out request.
+                if (localResult.requestId != activeAuthRequestId) {
+                    // Keep waiting for the active request only.
+                }
+                else if (localResult.success) {
+                    state = MenuState::LoadingGame;
+                    loadingClock.restart();
+                    loadingDotClock.restart();
+                    loadingDotCount = 0;
+                    loadingCompleteShown = false;
+                    loadingUsername = localResult.username;
+                    loadingIsFirstTime = localResult.stats.isFirstTime;
+                }
+                else {
+                    errorMessage = localResult.errorMsg.empty()
+                        ? (isReg ? "Registration failed! Username may exist." : "Invalid Credentials!")
+                        : localResult.errorMsg;
+                    state = isReg ? MenuState::Register : MenuState::Login;
+                }
+            }
+            else if (authClock.getElapsedTime().asSeconds() > AUTH_TIMEOUT_SECS) {
+                errorMessage = (isReg ? "Registration request timed out. Please try again."
+                    : "Login request timed out. Please try again.");
+                state = isReg ? MenuState::Register : MenuState::Login;
+            }
+
+            // ---- Draw progress bar screen ----
+            float elapsed = authClock.getElapsedTime().asSeconds();
+            // Bar bounces between 0-100% with a smooth ping-pong animation
+            float ping = std::fmod(elapsed * 0.4f, 2.f);
+            float prog = (ping < 1.f) ? ping : (2.f - ping);
+
+            float winW = static_cast<float>(width);
+            float winH = static_cast<float>(height);
+            float barW = winW * 0.45f;
+            float barH = 22.f;
+            float barX = winW / 2.f - barW / 2.f;
+            float barY = winH / 2.f + 30.f;
+
+            // Background bar
+            sf::RectangleShape authBarBg({ barW, barH });
+            authBarBg.setFillColor(sf::Color(60, 60, 60));
+            authBarBg.setPosition({ barX, barY });
+            window->draw(authBarBg);
+
+            // Animated fill
+            sf::RectangleShape authBarFg({ barW * prog, barH });
+            authBarFg.setFillColor(sf::Color(52, 152, 219));
+            authBarFg.setPosition({ barX, barY });
+            window->draw(authBarFg);
+
+            // Shimmer highlight on top of fill
+            if (barW * prog > 10.f) {
+                sf::RectangleShape shimmer({ barW * prog, barH / 3.f });
+                shimmer.setFillColor(sf::Color(255, 255, 255, 40));
+                shimmer.setPosition({ barX, barY });
+                window->draw(shimmer);
+            }
+
+            // Animated dots
+            if (authDotClock.getElapsedTime().asSeconds() > 0.4f) {
+                authDotCount = (authDotCount + 1) % 4;
+                authDotClock.restart();
+            }
+            std::string labelStr = (isReg ? "Creating account" : "Logging in")
+                + std::string(authDotCount, '.');
+            sf::Text authLabel(font, labelStr, 48);
+            authLabel.setFillColor(sf::Color::White);
+            authLabel.setOutlineColor(sf::Color::Black);
+            authLabel.setOutlineThickness(2.f);
+            authLabel.setPosition({
+                winW / 2.f - authLabel.getLocalBounds().size.x / 2.f,
+                winH / 2.f - 50.f
+                });
+            window->draw(authLabel);
+
+            sf::Text subLabel(font, "Please wait...", 28);
+            subLabel.setFillColor(sf::Color(180, 180, 180));
+            subLabel.setPosition({
+                winW / 2.f - subLabel.getLocalBounds().size.x / 2.f,
+                barY + barH + 14.f
+                });
+            window->draw(subLabel);
+        }
+        else if (state == MenuState::LoadingGame) {
+            // ---- Draw loading game screen ----
+            float elapsed = loadingClock.getElapsedTime().asSeconds();
+            const float LOAD_DURATION = 2.4f;
+            const float COMPLETE_HOLD_SECS = 0.8f;
+            const std::string stageMessages[] = {
+                "Preparing player profile...",
+                "Preparing inventory...",
+                "Preparing world objects...",
+                "Finalizing..."
+            };
+            int stageIdx = std::min(3, std::max(0, static_cast<int>((elapsed / LOAD_DURATION) * 4.0f)));
+
+            if (!loadingCompleteShown && elapsed >= LOAD_DURATION) {
+                loadingCompleteShown = true;
+                loadingCompleteClock.restart();
+            }
+
+            if (loadingCompleteShown && loadingCompleteClock.getElapsedTime().asSeconds() > COMPLETE_HOLD_SECS) {
+                // Queue transition and execute at top of next tick.
+                launchGameRequested = true;
+                launchGameUsername = loadingUsername;
+                launchGameIsFirstTime = loadingIsFirstTime;
+                state = MenuState::MainMenu;
+            }
+
+            float winW = static_cast<float>(width);
+            float winH = static_cast<float>(height);
+
+            // Animated dots
+            if (loadingDotClock.getElapsedTime().asSeconds() > 0.4f) {
+                loadingDotCount = (loadingDotCount + 1) % 4;
+                loadingDotClock.restart();
+            }
+            std::string labelStr = loadingCompleteShown
+                ? "Loading complete!"
+                : ("Loading game" + std::string(loadingDotCount, '.'));
+            sf::Text loadLabel(font, labelStr, 48);
+            loadLabel.setFillColor(sf::Color::White);
+            loadLabel.setOutlineColor(sf::Color::Black);
+            loadLabel.setOutlineThickness(2.f);
+            loadLabel.setPosition({
+                winW / 2.f - loadLabel.getLocalBounds().size.x / 2.f,
+                winH / 2.f - 50.f
+                });
+            window->draw(loadLabel);
+
+            sf::Text subLabel(
+                font,
+                loadingCompleteShown
+                ? "Starting your world now..."
+                : stageMessages[stageIdx],
+                28
+            );
+            subLabel.setFillColor(sf::Color(180, 180, 180));
+            subLabel.setPosition({
+                winW / 2.f - subLabel.getLocalBounds().size.x / 2.f,
+                winH / 2.f + 20.f
+                });
+            window->draw(subLabel);
+
+            float progress = loadingCompleteShown
+                ? 1.0f
+                : std::min(1.0f, elapsed / LOAD_DURATION);
+            float barW = winW * 0.4f;
+            float barH = 18.f;
+            float barX = winW / 2.f - barW / 2.f;
+            float barY = winH / 2.f + 70.f;
+
+            sf::RectangleShape barBg({ barW, barH });
+            barBg.setFillColor(sf::Color(60, 60, 60));
+            barBg.setPosition({ barX, barY });
+            window->draw(barBg);
+
+            sf::RectangleShape barFg({ barW * progress, barH });
+            barFg.setFillColor(loadingCompleteShown ? sf::Color(46, 204, 113) : sf::Color(52, 152, 219));
+            barFg.setPosition({ barX, barY });
+            window->draw(barFg);
+        }
 
         window->display();
     }
     delete window;
-    
+
     AuthManager::getInstance().shutdownDB();
     return 0;
 }
+
+
+
 

@@ -1,7 +1,9 @@
 #pragma once
 #include <SFML/Graphics.hpp>
 #include <vector>
+#include <unordered_map>
 #include <limits>
+#include <cmath>
 
 #include "Item.h"
 #include "Inventory.h"
@@ -27,6 +29,29 @@ private:
 
     std::vector<Item> items;
 
+    // ---- Spatial grid for fast isAreaFreeExplicit ----
+    // Cell size should be >= the largest minDistance you ever pass (120-150 px).
+    static constexpr float GRID_CELL = 200.f;
+    // Key = (cellX << 20) | cellY  (fits maps up to ~200k units wide)
+    std::unordered_map<uint64_t, std::vector<size_t>> spatialGrid;
+
+    uint64_t cellKey(int cx, int cy) const {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32)
+            | static_cast<uint64_t>(static_cast<uint32_t>(cy));
+    }
+    void gridInsert(size_t idx, sf::Vector2f pos) {
+        int cx = static_cast<int>(std::floor(pos.x / GRID_CELL));
+        int cy = static_cast<int>(std::floor(pos.y / GRID_CELL));
+        spatialGrid[cellKey(cx, cy)].push_back(idx);
+    }
+    // Rebuild the whole grid (called after bulk operations)
+    void rebuildGrid() {
+        spatialGrid.clear();
+        for (size_t i = 0; i < items.size(); ++i)
+            gridInsert(i, items[i].sprite.getPosition());
+    }
+    // ---- end spatial grid ----
+
     sf::Vector2f getSpriteCenterSafe(const sf::Sprite& s) const;
     float getSpriteRadius(const sf::Sprite& s) const;
 
@@ -42,6 +67,7 @@ public:
     const std::vector<Item>& getItems() const;
 
     void addItem(int id, const sf::Texture& texture, sf::Vector2f pos, int quantity);
+    void rebuildSpatialGrid() { rebuildGrid(); }
     void draw(sf::RenderWindow& window);
 
     void spawnRandomItems(

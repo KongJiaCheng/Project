@@ -15,6 +15,7 @@ class Animation
 {
 public:
     std::vector<sf::Texture> frames;
+    const std::vector<sf::Texture>* sharedFrames = nullptr;
     float frameTime = 0.12f;
     float timer = 0.f;
     int current = 0;
@@ -22,6 +23,7 @@ public:
 
     bool loadFromFolder(const std::string& folder, int frameCount, float fTime = 0.12f)
     {
+        sharedFrames = nullptr;
         frames.clear();
         frameTime = fTime;
         frames.reserve(frameCount);
@@ -49,23 +51,25 @@ public:
 
     void update(float dt)
     {
-        if (!playing || frames.empty()) return;
+        size_t count = sharedFrames ? sharedFrames->size() : frames.size();
+        if (!playing || count == 0) return;
 
         timer += dt;
         if (timer >= frameTime)
         {
             timer -= frameTime;
-            current = (current + 1) % static_cast<int>(frames.size());
+            current = (current + 1) % static_cast<int>(count);
         }
     }
 
     const sf::Texture& getCurrentTexture() const
     {
-        if (frames.empty()) {
+        const std::vector<sf::Texture>& targetFrames = sharedFrames ? *sharedFrames : frames;
+        if (targetFrames.empty()) {
             static sf::Texture emptyTex;
             return emptyTex;
         }
-        return frames.at(std::max(0, std::min(current, (int)frames.size() - 1)));
+        return targetFrames.at(std::max(0, std::min(current, (int)targetFrames.size() - 1)));
     }
 
     void stopAtFirst()
