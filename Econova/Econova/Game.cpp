@@ -4953,11 +4953,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             float damage = swordEquipped ? 50.f : 25.f;
             bool hitSomething = false;
 
+            float attackRadius = swordEquipped ? 150.f : 30.f;
             sf::FloatRect attackBox = sprite.getGlobalBounds();
-            attackBox.position.x -= 150.f;
-            attackBox.position.y -= 150.f;
-            attackBox.size.x += 300.f;
-            attackBox.size.y += 300.f;
+            attackBox.position.x -= attackRadius;
+            attackBox.position.y -= attackRadius;
+            attackBox.size.x += attackRadius * 2.f;
+            attackBox.size.y += attackRadius * 2.f;
 
             for (auto& a : animals)
             {
