@@ -1729,7 +1729,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         
                         if (structure.id == ITEM_WOOD_WALL) {
                             sf::FloatRect b = structure.sprite->getGlobalBounds();
-                            b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                            b.position.x += b.size.x * 0.25f; b.size.x *= 0.5f;
                             b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
                             if (b.contains(pos)) return true;
                         }
@@ -2565,7 +2565,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else {
                         // Check Door Interaction Button
                         PlacedStructure* nearestDoor = nullptr;
-                        float minDist = 150.f;
+                        float minDist = 300.f;
                         for (auto& s : structures) {
                             if (s.id == ITEM_WOOD_DOOR) {
                                 sf::Vector2f dPos = s.sprite->getPosition();
@@ -3883,6 +3883,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
                             placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
                             placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                            // Stairs snap one grid row higher so they sit on top of a wood tile
+                            if (placementItemID == ITEM_WOOD_STAIRS) {
+                                placementPos.y -= 100.f;
+                            }
                         }
                         clickHandled = true;
                     }
@@ -4620,7 +4624,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             for (auto& stair : allStairs) {
                 for (auto& tp : allTilePos) {
                     float dx = tp.x - stair.pos.x, dy = tp.y - stair.pos.y;
-                    if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST && dy <= 0.f) {
+                    // Stair is placed on a tile: tile is at or below stair (dy >= 0 in screen coords)
+                    // or adjacent at same level. Accept any tile within distance (no dy restriction).
+                    if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
                         auto k = posKey(tp);
                         if (tileLevelMap[k] < 1) {
                             tileLevelMap[k] = 1;
@@ -4701,7 +4707,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (s.id == ITEM_WOOD_WALL) {
                     if (targetElevated) continue; // Ignore wall collision when on upper floor or stairs
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                    // Narrow width so player hugs wall edge instead of being pushed far away
+                    b.position.x += b.size.x * 0.25f; b.size.x *= 0.5f;
                     b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
                     if (b.contains(targetPos)) return true;
                 }
@@ -4715,7 +4722,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
                     if (targetElevated) continue; // Ignore door on lower floor
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                    b.position.x += b.size.x * 0.25f; b.size.x *= 0.5f;
                     b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
                     if (b.contains(targetPos)) return true;
                 }
@@ -5114,6 +5121,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
                     placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
                     placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                    // Stairs snap one grid row higher so they sit on top of a wood tile
+                    if (placementItemID == ITEM_WOOD_STAIRS) {
+                        placementPos.y -= 100.f;
+                    }
                 }
             }
 
@@ -5466,7 +5477,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         // Door Interaction UI
         PlacedStructure* nearestDoor = nullptr;
-        float minDist = 150.f;
+        float minDist = 300.f;
         for (auto& s : structures) {
             if (s.id == ITEM_WOOD_DOOR) {
                 sf::Vector2f dPos = s.sprite->getPosition();
