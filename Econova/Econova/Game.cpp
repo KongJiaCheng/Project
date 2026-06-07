@@ -1684,8 +1684,25 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         sf::Vector2f sc = structure.sprite->getPosition();
                         float sdx = sc.x - pos.x, sdy = sc.y - pos.y;
                         if (sdx * sdx + sdy * sdy > BLOCK_CULL_SQ) continue;
-                        if (structure.sprite->getGlobalBounds().contains(pos))
-                            return true;
+                        
+                        if (structure.id == ITEM_WOOD_WALL) {
+                            sf::FloatRect b = structure.sprite->getGlobalBounds();
+                            b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                            b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            if (b.contains(pos)) return true;
+                        }
+                        else if (structure.id == ITEM_FURNACE || structure.id == ITEM_BED) {
+                            sf::FloatRect b = structure.sprite->getGlobalBounds();
+                            b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
+                            b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                            if (b.contains(pos)) return true;
+                        }
+                        else if (structure.id == ITEM_WOOD_DOOR && !structure.isOpen) {
+                            sf::FloatRect b = structure.sprite->getGlobalBounds();
+                            b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                            b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            if (b.contains(pos)) return true;
+                        }
                     }
                 }
 
@@ -3743,6 +3760,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             if (placementFromInventorySlot != -1) {
                                 inventory.consumeItem(placementFromInventorySlot);
                             }
+                            // Remove conflicting/duplicate structures at the placement position
+                            for (auto it = structures.begin(); it != structures.end(); ) {
+                                if (it->sprite.has_value() && it->sprite->getPosition() == placementPos) {
+                                    bool shouldRemove = false;
+                                    if (placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_WALL) {
+                                        if (it->id == ITEM_WOOD_WALL || it->id == ITEM_WOOD_DOOR) {
+                                            shouldRemove = true;
+                                        }
+                                    } else if (it->id == placementItemID) {
+                                        shouldRemove = true;
+                                    }
+                                    if (shouldRemove) {
+                                        it = structures.erase(it);
+                                    } else {
+                                        ++it;
+                                    }
+                                } else {
+                                    ++it;
+                                }
+                            }
                             if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex, placementRotation, false);
                             else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex, placementRotation, false);
                             else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex, placementRotation, false);
@@ -4501,10 +4538,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         // --- COLLISION CHECK LAMBDA ---
         auto isBlocked = [&](sf::Vector2f targetPos) {
+            // Check if the target position (player feet at targetPos) is on stairs
+            bool targetOnStairs = false;
+            sf::Vector2f targetFeet = targetPos + sf::Vector2f(0.f, 250.f);
+            for (auto& s : structures) {
+                if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
+                    sf::FloatRect sb = s.sprite->getGlobalBounds();
+                    sb.position.x -= 30.f; sb.size.x += 60.f;
+                    sb.position.y -= 30.f; sb.size.y += 60.f;
+                    if (sb.contains(targetFeet)) {
+                        targetOnStairs = true;
+                        break;
+                    }
+                }
+            }
+
             // 1. Structures (Walls, Furnace, Bed, Door)
             for (auto& s : structures) {
                 if (!s.sprite.has_value()) continue;
                 if (s.id == ITEM_WOOD_WALL) {
+                    if (targetOnStairs) continue; // Ignore wall collision when climbing/walking stairs
                     sf::FloatRect b = s.sprite->getGlobalBounds();
                     // Wood walls block the entire width and height to prevent walking through or behind
                     b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
@@ -4518,6 +4571,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     if (b.contains(targetPos)) return true;
                 }
                 if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
+                    if (targetOnStairs) continue; // Ignore door collision when climbing/walking stairs
                     sf::FloatRect b = s.sprite->getGlobalBounds();
                     // Closed doors block fully like a wall
                     b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
@@ -4968,15 +5022,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 // Expand bounds slightly for better detection
                 sb.position.x -= 30.f; sb.size.x += 60.f;
                 sb.position.y -= 30.f; sb.size.y += 60.f;
-                if (sb.contains(pPos)) {
+                sf::Vector2f pFeet = { pPos.x, pPos.y + 250.f };
+                if (sb.contains(pFeet)) {
                     float progress = 0.f;
                     if (s.rotation == 90.f) {
                         // Horizontal stairs: climb based on X
-                        progress = (pPos.x - sb.position.x) / sb.size.x;
+                        progress = (pFeet.x - sb.position.x) / sb.size.x;
                     }
                     else {
                         // Vertical stairs: climb based on Y
-                        progress = 1.0f - (pPos.y - sb.position.y) / sb.size.y;
+                        progress = 1.0f - (pFeet.y - sb.position.y) / sb.size.y;
                     }
                     if (progress < 0.f) progress = 0.f;
                     if (progress > 1.f) progress = 1.f;
@@ -5009,7 +5064,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
 
         // 2. PREPARE ELEVATED DRAWABLES (for depth sorting)
-        struct Drawable { float y; std::function<void()> draw; };
+        struct Drawable { float y; int priority; std::function<void()> draw; };
         std::vector<Drawable> depthDrawables;
 
         for (auto& s : structures) {
@@ -5017,7 +5072,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 float dx = s.sprite->getPosition().x - sprite.getPosition().x;
                 float dy = s.sprite->getPosition().y - sprite.getPosition().y;
                 if (dx * dx + dy * dy < 3000000.f) {
-                    depthDrawables.push_back({ s.sprite->getPosition().y, [&s, &window]() {
+                    int priority = (s.id == ITEM_WOOD_ROOF) ? 2 : 1;
+                    depthDrawables.push_back({ s.sprite->getPosition().y, priority, [&s, &window]() {
                         if (s.sprite.has_value()) {
                             sf::Transform trans;
                             trans.translate(s.sprite->getPosition());
@@ -5084,14 +5140,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
         sf::Vector2f originalPlayerPos = sprite.getPosition();
         sprite.move({ 0.f, stairOffset });
-        depthDrawables.push_back({ originalPlayerPos.y, [&sprite, &window]() { window.draw(sprite); } });
+        depthDrawables.push_back({ originalPlayerPos.y, 1, [&sprite, &window]() { window.draw(sprite); } });
 
         for (auto& a : animals) {
             if (a->health > 0) {
                 float dx = a->sprite.getPosition().x - sprite.getPosition().x;
                 float dy = a->sprite.getPosition().y - sprite.getPosition().y;
                 if (dx * dx + dy * dy < 3000000.f) {
-                    depthDrawables.push_back({ a->sprite.getPosition().y, [&a, &window]() { window.draw(a->sprite); } });
+                    depthDrawables.push_back({ a->sprite.getPosition().y, 1, [&a, &window]() { window.draw(a->sprite); } });
                 }
             }
         }
@@ -5100,12 +5156,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 float dx = m->sprite.getPosition().x - sprite.getPosition().x;
                 float dy = m->sprite.getPosition().y - sprite.getPosition().y;
                 if (dx * dx + dy * dy < 3000000.f) {
-                    depthDrawables.push_back({ m->sprite.getPosition().y, [&m, &window]() { window.draw(m->sprite); } });
+                    depthDrawables.push_back({ m->sprite.getPosition().y, 1, [&m, &window]() { window.draw(m->sprite); } });
                 }
             }
         }
         std::sort(depthDrawables.begin(), depthDrawables.end(), [](const Drawable& a, const Drawable& b) {
-            return a.y < b.y;
+            if (std::abs(a.y - b.y) > 0.001f) {
+                return a.y < b.y;
+            }
+            return a.priority < b.priority;
             });
 
         for (auto& d : depthDrawables) d.draw();
