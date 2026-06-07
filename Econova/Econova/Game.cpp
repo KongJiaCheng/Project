@@ -1729,8 +1729,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         
                         if (structure.id == ITEM_WOOD_WALL) {
                             sf::FloatRect b = structure.sprite->getGlobalBounds();
-                            b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                            b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                            if (structure.rotation == 90.f) {
+                                b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                                b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            } else {
+                                b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                                b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                            }
                             if (b.contains(pos)) return true;
                         }
                         else if (structure.id == ITEM_FURNACE || structure.id == ITEM_BED) {
@@ -1741,8 +1746,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         }
                         else if (structure.id == ITEM_WOOD_DOOR && !structure.isOpen) {
                             sf::FloatRect b = structure.sprite->getGlobalBounds();
-                            b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                            b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                            if (structure.rotation == 90.f) {
+                                b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                                b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            } else {
+                                b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                                b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                            }
                             if (b.contains(pos)) return true;
                         }
                     }
@@ -4727,8 +4737,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (s.id == ITEM_WOOD_WALL) {
                     if (targetElevated) continue; // Ignore wall collision when on upper floor or stairs
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                    b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                    if (s.rotation == 90.f) {
+                        b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                        b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                    } else {
+                        b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                        b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                    }
                     if (b.contains(targetPos)) return true;
                 }
                 else if (s.id == ITEM_FURNACE || s.id == ITEM_BED) {
@@ -4741,8 +4756,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
                     if (targetElevated) continue; // Ignore door on lower floor
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                    b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                    if (s.rotation == 90.f) {
+                        b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                        b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                    } else {
+                        b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                        b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                    }
                     if (b.contains(targetPos)) return true;
                 }
             }
