@@ -618,6 +618,46 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
         };
 
+    auto adjustMarketItem = [&](int itemId, float percentChange) {
+        for (auto& item : stockMarket) {
+            if (item.id == itemId) {
+                // Save current price to history before updating
+                if (item.history.size() >= 10) {
+                    item.history.erase(item.history.begin());
+                }
+                item.history.push_back(item.currentPrice);
+
+                // Apply price change
+                item.currentPrice *= (1.f + percentChange);
+
+                // Clamp to volatility-adjusted min/max bounds
+                float minP = item.basePrice * (item.volatility > 1.2f ? 0.2f : 0.5f);
+                float maxP = item.basePrice * (item.volatility > 1.2f ? 4.0f : 1.8f);
+                if (item.currentPrice < minP) item.currentPrice = minP;
+                if (item.currentPrice > maxP) item.currentPrice = maxP;
+                item.currentPrice = std::round(item.currentPrice);
+                if (item.currentPrice < 1.f) item.currentPrice = 1.f;
+
+                // Save updated price to DB
+                authManager.saveMarketPrice(item.id, item.currentPrice);
+
+                // Recalculate predicted price and trend
+                if (!item.history.empty()) {
+                    float lastPrice = item.history.back();
+                    float diff = item.currentPrice - lastPrice;
+                    item.predictedPrice = std::round(item.currentPrice + diff * 0.5f);
+                    if (item.predictedPrice < 1.f) item.predictedPrice = 1.f;
+
+                    float trendThreshold = item.volatility > 1.2f ? 0.04f : 0.02f;
+                    if (item.predictedPrice > item.currentPrice * (1.f + trendThreshold)) item.trend = "UP";
+                    else if (item.predictedPrice < item.currentPrice * (1.f - trendThreshold)) item.trend = "DOWN";
+                    else item.trend = "STABLE";
+                }
+                break;
+            }
+        }
+    };
+
 
 
     // Prepopulate history for beautiful stock charts on start
@@ -1805,15 +1845,28 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         const sf::Texture* tex = getItemTexture(d.id);
                         if (tex) inventory.addItem(d.id, *tex, d.count);
                         // Update market: buying pressure raises price
-                        for (auto& mkt : stockMarket) {
-                            if (mkt.id == d.id) {
-                                mkt.currentPrice *= (1.f + 0.004f * d.count);
-                                if (mkt.currentPrice > mkt.basePrice * 2.5f) mkt.currentPrice = mkt.basePrice * 2.5f;
-                                authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                            }
-                        }
+                        adjustMarketItem(d.id, 0.004f * d.count);
+
+                        // Log BUY record for received item
+                        std::string name = getItemName(d.id);
+                        int uPrice = getItemPrice(d.id);
+                        int totalVal = d.count * uPrice;
+                        authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, uPrice, totalVal);
                     }
                     currency += partnerGold;
+
+                    // Log SELL records for items we gave to partner before we clear our slots
+                    for (int i = 0; i < 4; i++) {
+                        if (myP2PSlots[i].tex) {
+                            int item_id = myP2PSlots[i].id;
+                            int item_qty = myP2PSlots[i].count;
+                            std::string name = getItemName(item_id);
+                            int uPrice = getItemPrice(item_id);
+                            int totalVal = item_qty * uPrice;
+                            authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, uPrice, totalVal);
+                        }
+                    }
+
                     // Remove what I offered
                     for (int i = 0; i < 4; i++) myP2PSlots[i] = {};
                     currency -= myP2PGold;
@@ -1852,13 +1905,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     // Market: selling pressure lowers price for offered items
                     for (int i = 0; i < 4; i++) {
                         if (myP2PSlots[i].tex) {
-                            for (auto& mkt : stockMarket) {
-                                if (mkt.id == myP2PSlots[i].id) {
-                                    mkt.currentPrice *= (1.f - 0.003f * myP2PSlots[i].count);
-                                    if (mkt.currentPrice < mkt.basePrice * 0.4f) mkt.currentPrice = mkt.basePrice * 0.4f;
-                                    authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                                }
-                            }
+                            adjustMarketItem(myP2PSlots[i].id, -0.003f * myP2PSlots[i].count);
                         }
                     }
                     p2pOfferDirty = false;
@@ -3376,13 +3423,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     currency += npcTradeGold;
                                     for (int i = 0; i < 4; i++) {
                                         if (playerTradeSlots[i].tex) {
-                                            for (auto& mkt : stockMarket) {
-                                                if (mkt.id == playerTradeSlots[i].id) {
-                                                    mkt.currentPrice *= (1.0f - 0.005f * playerTradeSlots[i].count);
-                                                    if (mkt.currentPrice < mkt.basePrice * 0.4f) mkt.currentPrice = mkt.basePrice * 0.4f;
-                                                    authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                                                }
-                                            }
+                                            int item_id = playerTradeSlots[i].id;
+                                            int item_qty = playerTradeSlots[i].count;
+                                            std::string name = getItemName(item_id);
+                                            int uPrice = getItemPrice(item_id);
+                                            int totalVal = item_qty * uPrice;
+
+                                            // Directly affect market stats (supply decreases price)
+                                            float percentChange = -0.005f * item_qty;
+                                            adjustMarketItem(item_id, percentChange);
+
+                                            // Log trade history record
+                                            authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, uPrice, totalVal);
+
                                             playerTradeSlots[i] = {};
                                         }
                                     }
@@ -3421,14 +3474,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     for (int i = 0; i < 4; i++) {
                                         if (npcTradeSlots[i].originalSlot == 1 && npcTradeSlots[i].tex) {
                                             inventory.addItem(npcTradeSlots[i].id, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
-                                            // Raise market price since demand increased
-                                            for (auto& mkt : stockMarket) {
-                                                if (mkt.id == npcTradeSlots[i].id) {
-                                                    mkt.currentPrice *= (1.0f + 0.005f * npcTradeSlots[i].count);
-                                                    if (mkt.currentPrice > mkt.basePrice * 2.5f) mkt.currentPrice = mkt.basePrice * 2.5f;
-                                                    authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                                                }
-                                            }
+                                            
+                                            int item_id = npcTradeSlots[i].id;
+                                            int item_qty = npcTradeSlots[i].count;
+                                            std::string name = getItemName(item_id);
+                                            int uPrice = getItemPrice(item_id);
+                                            int totalVal = item_qty * uPrice;
+
+                                            // Directly affect market stats (demand increases price)
+                                            float percentChange = 0.005f * item_qty;
+                                            adjustMarketItem(item_id, percentChange);
+
+                                            // Log trade history record
+                                            authManager.addTradeRecord(username.c_str(), "BUY", name, item_qty, uPrice, totalVal);
+
                                             npcTradeSlots[i] = {};
                                         }
                                     }
