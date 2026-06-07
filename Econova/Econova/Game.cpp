@@ -24,6 +24,8 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <algorithm>
+#include <queue>
+#include <map>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -4536,18 +4538,99 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
         }
 
+        // --- MULTI-FLOOR: Compute elevated tile levels (BFS from stairs) ---
+        const float TILE_CONNECT_DIST = 260.f;
+        struct TileFloor { sf::Vector2f pos; int floorLevel; };
+        std::vector<TileFloor> elevatedTileFloors;
+        {
+            struct StairInfo { sf::Vector2f pos; };
+            std::vector<StairInfo> allStairs;
+            std::vector<sf::Vector2f> allTilePos;
+            for (auto& s : structures) {
+                if (!s.sprite.has_value()) continue;
+                if (s.id == ITEM_WOOD_STAIRS) allStairs.push_back({ s.sprite->getPosition() });
+                if (s.id == ITEM_WOOD_TILE)   allTilePos.push_back(s.sprite->getPosition());
+            }
+            auto posKey = [](sf::Vector2f p) -> std::pair<int,int> {
+                return { (int)std::round(p.x / 200.f), (int)std::round(p.y / 100.f) };
+            };
+            std::map<std::pair<int,int>, int> tileLevelMap;
+            for (auto& tp : allTilePos) tileLevelMap[posKey(tp)] = 0;
+
+            std::queue<std::pair<sf::Vector2f, int>> bfsQueue;
+            for (auto& stair : allStairs) {
+                for (auto& tp : allTilePos) {
+                    float dx = tp.x - stair.pos.x, dy = tp.y - stair.pos.y;
+                    if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST && dy <= 0.f) {
+                        auto k = posKey(tp);
+                        if (tileLevelMap[k] < 1) {
+                            tileLevelMap[k] = 1;
+                            bfsQueue.push({ tp, 1 });
+                        }
+                    }
+                }
+            }
+            while (!bfsQueue.empty()) {
+                auto [curPos, curLevel] = bfsQueue.front(); bfsQueue.pop();
+                for (auto& tp : allTilePos) {
+                    float dx = tp.x - curPos.x, dy = tp.y - curPos.y;
+                    float dist = std::sqrt(dx*dx + dy*dy);
+                    if (dist < TILE_CONNECT_DIST && dist > 1.f) {
+                        auto k = posKey(tp);
+                        if (tileLevelMap[k] < curLevel) {
+                            tileLevelMap[k] = curLevel;
+                            bfsQueue.push({ tp, curLevel });
+                        }
+                    }
+                }
+                for (auto& stair : allStairs) {
+                    float dx = stair.pos.x - curPos.x, dy = stair.pos.y - curPos.y;
+                    if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
+                        for (auto& tp2 : allTilePos) {
+                            float dx2 = tp2.x - stair.pos.x, dy2 = tp2.y - stair.pos.y;
+                            if (std::sqrt(dx2*dx2 + dy2*dy2) < TILE_CONNECT_DIST && dy2 <= 0.f) {
+                                auto k2 = posKey(tp2);
+                                int nextLevel = curLevel + 1;
+                                if (tileLevelMap[k2] < nextLevel) {
+                                    tileLevelMap[k2] = nextLevel;
+                                    bfsQueue.push({ tp2, nextLevel });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (auto& [key, level] : tileLevelMap) {
+                if (level > 0) {
+                    for (auto& tp : allTilePos) {
+                        if (posKey(tp) == key) {
+                            elevatedTileFloors.push_back({ tp, level });
+                        }
+                    }
+                }
+            }
+        }
+
         // --- COLLISION CHECK LAMBDA ---
         auto isBlocked = [&](sf::Vector2f targetPos) {
-            // Check if the target position (player feet at targetPos) is on stairs
-            bool targetOnStairs = false;
             sf::Vector2f targetFeet = targetPos + sf::Vector2f(0.f, 250.f);
+
+            // Check if on stairs OR on any elevated floor tile (any floor level)
+            bool targetElevated = false;
             for (auto& s : structures) {
                 if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
                     sf::FloatRect sb = s.sprite->getGlobalBounds();
                     sb.position.x -= 30.f; sb.size.x += 60.f;
                     sb.position.y -= 30.f; sb.size.y += 60.f;
-                    if (sb.contains(targetFeet)) {
-                        targetOnStairs = true;
+                    if (sb.contains(targetFeet)) { targetElevated = true; break; }
+                }
+            }
+            if (!targetElevated) {
+                for (auto& etf : elevatedTileFloors) {
+                    float dx = targetFeet.x - etf.pos.x;
+                    float dy = targetFeet.y - etf.pos.y;
+                    if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
+                        targetElevated = true;
                         break;
                     }
                 }
@@ -4557,23 +4640,22 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             for (auto& s : structures) {
                 if (!s.sprite.has_value()) continue;
                 if (s.id == ITEM_WOOD_WALL) {
-                    if (targetOnStairs) continue; // Ignore wall collision when climbing/walking stairs
+                    if (targetElevated) continue; // Ignore wall collision when on upper floor or stairs
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    // Wood walls block the entire width and height to prevent walking through or behind
                     b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
                     b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
                     if (b.contains(targetPos)) return true;
                 }
                 else if (s.id == ITEM_FURNACE || s.id == ITEM_BED) {
+                    if (targetElevated) continue; // Skip furniture on lower floor
                     sf::FloatRect b = s.sprite->getGlobalBounds();
                     b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
                     b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
                     if (b.contains(targetPos)) return true;
                 }
                 if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
-                    if (targetOnStairs) continue; // Ignore door collision when climbing/walking stairs
+                    if (targetElevated) continue; // Ignore door on lower floor
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    // Closed doors block fully like a wall
                     b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
                     b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
                     if (b.contains(targetPos)) return true;
@@ -5002,55 +5084,116 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             window.draw(preview, pTrans);
         }
 
-        // --- HOUSE TRANSPARENCY & STAIRS LOGIC ---
+        // --- HOUSE TRANSPARENCY & STAIRS / MULTI-FLOOR LOGIC ---
         bool isUnderRoof = false;
         float stairOffset = 0.f;
         sf::Vector2f pPos = sprite.getPosition();
+        sf::Vector2f pFeetGlobal = { pPos.x, pPos.y + 250.f };
+        // elevatedTileFloors and TILE_CONNECT_DIST already computed above before isBlocked
+
+        // --- Compute player floor level and stair offset ---
+        int playerFloorLevel = 0;
+        bool playerOnStairs = false;
+
+        // Check if player feet are on any elevated tile (already fully on upper floor)
+        for (auto& etf : elevatedTileFloors) {
+            float dx = pFeetGlobal.x - etf.pos.x;
+            float dy = pFeetGlobal.y - etf.pos.y;
+            if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
+                if (etf.floorLevel > playerFloorLevel) {
+                    playerFloorLevel = etf.floorLevel;
+                }
+            }
+        }
+
+        // Check if player is on stairs — gives fractional climb offset on top of floor offset
+        for (auto& s : structures) {
+            if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
+                sf::FloatRect sb = s.sprite->getGlobalBounds();
+                sb.position.x -= 30.f; sb.size.x += 60.f;
+                sb.position.y -= 30.f; sb.size.y += 60.f;
+                if (sb.contains(pFeetGlobal)) {
+                    playerOnStairs = true;
+                    float progress = 0.f;
+                    if (s.rotation == 90.f) {
+                        progress = (pFeetGlobal.x - sb.position.x) / sb.size.x;
+                    } else {
+                        progress = 1.0f - (pFeetGlobal.y - sb.position.y) / sb.size.y;
+                    }
+                    if (progress < 0.f) progress = 0.f;
+                    if (progress > 1.f) progress = 1.f;
+                    // Stair climb interpolates toward next floor level
+                    float baseOffset = -(float)playerFloorLevel * 180.f;
+                    stairOffset = baseOffset + progress * -180.f;
+                }
+            }
+        }
+
+        // If fully on an elevated tile (not on stairs), use fixed floor offset
+        if (!playerOnStairs && playerFloorLevel > 0) {
+            stairOffset = -(float)playerFloorLevel * 180.f;
+        }
+
+        // --- isUnderRoof / isUnderElevatedTile check ---
+        // Player is "under" a higher floor if there is an elevated tile of a higher floor
+        // directly above (overlapping X, lower Y) the player
+        bool isUnderElevatedFloor = false;
+        for (auto& etf : elevatedTileFloors) {
+            if (etf.floorLevel > playerFloorLevel) {
+                float dx = pPos.x - etf.pos.x;
+                float dy = pPos.y - etf.pos.y;
+                // Check horizontal proximity (within tile footprint ~200x100)
+                if (std::abs(dx) < 200.f && std::abs(dy) < 150.f) {
+                    isUnderElevatedFloor = true;
+                    break;
+                }
+            }
+        }
 
         for (auto& s : structures) {
             if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL) {
                 sf::FloatRect rb = s.sprite->getGlobalBounds();
-                // Expand bounds for easier transparency detection
                 rb.position.x -= 60.f; rb.size.x += 120.f;
                 rb.position.y -= 60.f; rb.size.y += 120.f;
                 if (rb.contains(pPos)) {
                     isUnderRoof = true;
                 }
             }
-            if (s.id == ITEM_WOOD_STAIRS) {
-                sf::FloatRect sb = s.sprite->getGlobalBounds();
-                // Expand bounds slightly for better detection
-                sb.position.x -= 30.f; sb.size.x += 60.f;
-                sb.position.y -= 30.f; sb.size.y += 60.f;
-                sf::Vector2f pFeet = { pPos.x, pPos.y + 250.f };
-                if (sb.contains(pFeet)) {
-                    float progress = 0.f;
-                    if (s.rotation == 90.f) {
-                        // Horizontal stairs: climb based on X
-                        progress = (pFeet.x - sb.position.x) / sb.size.x;
-                    }
-                    else {
-                        // Vertical stairs: climb based on Y
-                        progress = 1.0f - (pFeet.y - sb.position.y) / sb.size.y;
-                    }
-                    if (progress < 0.f) progress = 0.f;
-                    if (progress > 1.f) progress = 1.f;
-                    stairOffset = progress * -180.f; // Elevate player up to 180 units
-                }
-            }
         }
 
-        // Apply transparency to buildings if player is inside
+        // Apply transparency to buildings if player is inside or under elevated floor
         for (auto& s : structures) {
             if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
-                if (isUnderRoof) s.sprite->setColor(sf::Color(255, 255, 255, 128));
+                if (isUnderRoof || isUnderElevatedFloor) s.sprite->setColor(sf::Color(255, 255, 255, 128));
                 else s.sprite->setColor(sf::Color::White);
             }
         }
 
-        // 1. DRAW FLOORS (Tiles) FIRST
+        // Build set of elevated tile positions for fast lookup
+        auto tileIsElevated = [&](sf::Vector2f tp) -> bool {
+            for (auto& etf : elevatedTileFloors) {
+                float dx = tp.x - etf.pos.x;
+                float dy = tp.y - etf.pos.y;
+                if (dx*dx + dy*dy < 1.f) return true;
+            }
+            return false;
+        };
+
+        // Apply semi-transparency to elevated tiles when player is below them
         for (auto& s : structures) {
             if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
+                if (isUnderElevatedFloor && tileIsElevated(s.sprite->getPosition())) {
+                    s.sprite->setColor(sf::Color(255, 255, 255, 128));
+                } else {
+                    s.sprite->setColor(sf::Color::White);
+                }
+            }
+        }
+
+        // 1. DRAW GROUND-FLOOR TILES FIRST (non-elevated)
+        for (auto& s : structures) {
+            if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
+                if (tileIsElevated(s.sprite->getPosition())) continue; // skip, drawn in depth pass
                 float dx = s.sprite->getPosition().x - sprite.getPosition().x;
                 float dy = s.sprite->getPosition().y - sprite.getPosition().y;
                 if (dx * dx + dy * dy < 3000000.f) {
@@ -5068,12 +5211,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         std::vector<Drawable> depthDrawables;
 
         for (auto& s : structures) {
-            if (s.id != ITEM_WOOD_TILE && s.sprite.has_value()) {
-                float dx = s.sprite->getPosition().x - sprite.getPosition().x;
-                float dy = s.sprite->getPosition().y - sprite.getPosition().y;
-                if (dx * dx + dy * dy < 3000000.f) {
-                    int priority = (s.id == ITEM_WOOD_ROOF) ? 2 : 1;
-                    depthDrawables.push_back({ s.sprite->getPosition().y, priority, [&s, &window]() {
+            if (!s.sprite.has_value()) continue;
+            float dx = s.sprite->getPosition().x - sprite.getPosition().x;
+            float dy = s.sprite->getPosition().y - sprite.getPosition().y;
+            if (dx * dx + dy * dy >= 3000000.f) continue;
+
+            if (s.id == ITEM_WOOD_TILE) {
+                if (tileIsElevated(s.sprite->getPosition())) {
+                    // Elevated tiles: draw with roof-level priority
+                    depthDrawables.push_back({ s.sprite->getPosition().y, 2, [&s, &window]() {
                         if (s.sprite.has_value()) {
                             sf::Transform trans;
                             trans.translate(s.sprite->getPosition());
@@ -5083,6 +5229,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         }
                     } });
                 }
+                // ground tiles already drawn above, skip
+            } else {
+                int priority = (s.id == ITEM_WOOD_ROOF) ? 2 : 1;
+                depthDrawables.push_back({ s.sprite->getPosition().y, priority, [&s, &window]() {
+                    if (s.sprite.has_value()) {
+                        sf::Transform trans;
+                        trans.translate(s.sprite->getPosition());
+                        trans.combine(sf::Transform(1.f, 0.f, 0.f, s.shearY, 1.f, 0.f, 0.f, 0.f, 1.f));
+                        trans.translate(-s.sprite->getPosition());
+                        window.draw(*s.sprite, trans);
+                    }
+                } });
             }
         }
 
