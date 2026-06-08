@@ -551,7 +551,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         { ITEM_SAPLING, "Sapling", 12.f, 12.f, {12.f}, 12.f, "STABLE", 0.6f },
         { ITEM_CHICKEN_MEAT, "Chicken Meat", 15.f, 15.f, {15.f}, 15.f, "STABLE", 1.8f },
         { ITEM_PIG_MEAT, "Pig Meat", 25.f, 25.f, {25.f}, 25.f, "STABLE", 0.5f },
-        { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE", 2.5f }
+        { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE", 2.5f },
+        { ITEM_WOODEN_SWORD, "Wooden Sword", 55.f, 55.f, {55.f}, 55.f, "STABLE", 0.5f },
+        { ITEM_SHIELD, "Sturdy Shield", 115.f, 115.f, {115.f}, 115.f, "STABLE", 0.4f },
+        { ITEM_FURNACE, "Furnace", 84.f, 84.f, {84.f}, 84.f, "STABLE", 0.3f },
+        { ITEM_WOOD_TILE, "Wood Tile", 5.f, 5.f, {5.f}, 5.f, "STABLE", 0.5f },
+        { ITEM_WOOD_WALL, "Wood Wall", 5.f, 5.f, {5.f}, 5.f, "STABLE", 0.5f },
+        { ITEM_WOOD_DOOR, "Wood Door", 30.f, 30.f, {30.f}, 30.f, "STABLE", 0.5f },
+        { ITEM_WOOD_ROOF, "Wood Roof", 30.f, 30.f, {30.f}, 30.f, "STABLE", 0.5f },
+        { ITEM_WOOD_STAIRS, "Wood Stairs", 48.f, 48.f, {48.f}, 48.f, "STABLE", 0.5f },
+        { ITEM_BED, "Bed", 80.f, 80.f, {80.f}, 80.f, "STABLE", 0.6f }
     };
 
     auto getItemPrice = [&](int id) -> int {
@@ -6041,7 +6050,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 { ITEM_WOODEN_SWORD, "Wooden Sword" },
                 { ITEM_SHIELD, "Sturdy Shield" },
                 { ITEM_FURNACE, "Furnace" },
-                { ITEM_BED, "Bed" }
+                { ITEM_BED, "Bed" },
+                { ITEM_WOOD_TILE, "Wood Tile" },
+                { ITEM_WOOD_WALL, "Wood Wall" },
+                { ITEM_WOOD_DOOR, "Wood Door" },
+                { ITEM_WOOD_ROOF, "Wood Roof" },
+                { ITEM_WOOD_STAIRS, "Wood Stairs" }
             };
             auto chosenItem = vItems[rand() % vItems.size()];
             int itemId = chosenItem.first;
@@ -7010,7 +7024,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         std::vector<DisplayItem> allItems;
 
-        // Raw stock market items
+        // Raw and crafted stock market items
         for (auto& sm : stockMarket) {
             DisplayItem di;
             di.name = sm.name;
@@ -7018,7 +7032,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             di.predictedPrice = (int)sm.predictedPrice;
             di.trend = sm.trend;
             di.history = sm.history;
-            di.isCrafted = false;
+            di.isCrafted = (sm.id == ITEM_WOODEN_SWORD || sm.id == ITEM_SHIELD || sm.id == ITEM_FURNACE ||
+                            sm.id == ITEM_WOOD_TILE || sm.id == ITEM_WOOD_WALL || sm.id == ITEM_WOOD_DOOR ||
+                            sm.id == ITEM_WOOD_ROOF || sm.id == ITEM_WOOD_STAIRS || sm.id == ITEM_BED);
             di.volatility = sm.volatility;
             if (sm.id == ITEM_WOOD)               di.tex = &woodTex;
             else if (sm.id == ITEM_STONE)          di.tex = &stoneTex;
@@ -7026,60 +7042,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             else if (sm.id == ITEM_CHICKEN_MEAT)   di.tex = ChickenMeat::getTexture();
             else if (sm.id == ITEM_PIG_MEAT)       di.tex = PigMeat::getTexture();
             else if (sm.id == ITEM_ZOMBIE_FLESH)   di.tex = ZombieFlesh::getTexture();
+            else if (sm.id == ITEM_WOODEN_SWORD)   di.tex = &woodenSwordTex;
+            else if (sm.id == ITEM_SHIELD)         di.tex = &shieldTex;
+            else if (sm.id == ITEM_FURNACE)        di.tex = &furnaceTex;
+            else if (sm.id == ITEM_WOOD_TILE)      di.tex = &woodTileTex;
+            else if (sm.id == ITEM_WOOD_WALL)      di.tex = &woodWallTex;
+            else if (sm.id == ITEM_WOOD_DOOR)      di.tex = &woodDoorTex;
+            else if (sm.id == ITEM_WOOD_ROOF)      di.tex = &woodRoofTex;
+            else if (sm.id == ITEM_WOOD_STAIRS)    di.tex = &woodStairsTex;
+            else if (sm.id == ITEM_BED)            di.tex = &bedTex;
             allItems.push_back(di);
-        }
-
-        // Gather ingredient trends for crafted price forecasting
-        std::string woodTrend = "STABLE", stoneTrend = "STABLE", fleshTrend = "STABLE";
-        for (auto& sm : stockMarket) {
-            if (sm.id == ITEM_WOOD)         woodTrend = sm.trend;
-            if (sm.id == ITEM_STONE)        stoneTrend = sm.trend;
-            if (sm.id == ITEM_ZOMBIE_FLESH) fleshTrend = sm.trend;
-        }
-
-        // Helper: compute crafted item trend from its dominant ingredient
-        // and estimate predicted price with a +-3% nudge
-        auto addCrafted = [&](int id, const std::string& n,
-            const sf::Texture* tex,
-            const std::string& dominantTrend) {
-                DisplayItem di;
-                di.name = n;
-                di.tex = tex;
-                di.currentPrice = getItemPrice(id);
-                di.isCrafted = true;
-
-                // Derive trend & predicted price from dominant ingredient
-                if (dominantTrend == "UP") {
-                    di.trend = "UP";
-                    di.predictedPrice = (int)(di.currentPrice * 1.03f);
-                }
-                else if (dominantTrend == "DOWN") {
-                    di.trend = "DOWN";
-                    di.predictedPrice = (int)(di.currentPrice * 0.97f);
-                }
-                else {
-                    di.trend = "STABLE";
-                    di.predictedPrice = di.currentPrice;
-                }
-                allItems.push_back(di);
-            };
-
-        // Wood-heavy items follow wood trend
-        addCrafted(ITEM_WOODEN_SWORD, "Wooden Sword", &woodenSwordTex, woodTrend);
-        addCrafted(ITEM_SHIELD, "Sturdy Shield", &shieldTex, woodTrend);
-        addCrafted(ITEM_WOOD_TILE, "Wood Tile", &woodTileTex, woodTrend);
-        addCrafted(ITEM_WOOD_WALL, "Wood Wall", &woodWallTex, woodTrend);
-        addCrafted(ITEM_WOOD_DOOR, "Wood Door", &woodDoorTex, woodTrend);
-        addCrafted(ITEM_WOOD_ROOF, "Wood Roof", &woodRoofTex, woodTrend);
-        addCrafted(ITEM_WOOD_STAIRS, "Wood Stairs", &woodStairsTex, woodTrend);
-        // Stone-heavy item follows stone trend
-        addCrafted(ITEM_FURNACE, "Furnace", &furnaceTex, stoneTrend);
-        // Bed follows the worse of wood/flesh trends
-        {
-            std::string bedTrend = woodTrend;
-            if (fleshTrend == "DOWN" || (fleshTrend == "UP" && bedTrend != "DOWN"))
-                bedTrend = fleshTrend;
-            addCrafted(ITEM_BED, "Bed", &bedTex, bedTrend);
         }
 
         // ── Apply search filter ───────────────────────────────────────────
@@ -7225,8 +7197,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             trendTxt.setPosition({ bx + 330.f, y + 18.f });
             window.draw(trendTxt);
 
-            // Mini history chart (raw items only)
-            if (!item->isCrafted && !item->history.empty()) {
+            // Mini history chart
+            if (!item->history.empty()) {
                 float minH = item->history[0], maxH = item->history[0];
                 for (float hp : item->history) {
                     if (hp < minH) minH = hp;
@@ -7276,13 +7248,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     dot.setFillColor(sf::Color::White);
                     window.draw(dot);
                 }
-            }
-            else if (item->isCrafted) {
-                // Simple "price derived" label for crafted items
-                sf::Text derivedTxt(uiFont, "Ingredient-\nbased", 12);
-                derivedTxt.setFillColor(sf::Color(100, 100, 140));
-                derivedTxt.setPosition({ bx + 460.f, y + 16.f });
-                window.draw(derivedTxt);
             }
 
             // Forecast & signal
