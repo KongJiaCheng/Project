@@ -936,6 +936,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     float chatBoxY = 20.f;
     TextInput chatInput(font, { chatBoxX + 10.f, chatBoxY + chatBoxHeight - 50.f }, { chatBoxWidth - 20.f, 40.f });
     TextInput iapCodeInput(font, { (width - 400.f) / 2.f, (height - 40.f) / 2.f + 40.f }, { 400.f, 40.f });
+    bool quantityPromptOpen = false;
+    int quantityPromptMax = 0;
+    int quantityPromptTargetSlot = -1;
+    int quantityPromptSourceSlot = -1;
+    bool quantityPromptIsP2P = false;
+    TextInput quantityInput(font, { (width - 200.f) / 2.f, (height - 40.f) / 2.f + 10.f }, { 200.f, 40.f });
     bool isChatting = false;
     bool chatActive = false;
     std::vector<std::pair<std::string, std::string>> chatMessages;
@@ -2268,6 +2274,113 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         while (std::optional<sf::Event> event = window.pollEvent())
         {
+            if (quantityPromptOpen) {
+                quantityInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
+                if (auto* keyEvent = event->getIf<sf::Event::KeyPressed>()) {
+                    if (keyEvent->code == sf::Keyboard::Key::Enter) {
+                        int amt = 1;
+                        try {
+                            std::string text = quantityInput.getText();
+                            if (!text.empty()) amt = std::stoi(text);
+                        } catch (...) {
+                            amt = 1;
+                        }
+                        if (amt < 1) amt = 1;
+                        if (amt > quantityPromptMax) amt = quantityPromptMax;
+
+                        if (quantityPromptIsP2P) {
+                            myP2PSlots[quantityPromptTargetSlot].id = inventory.getItemID(quantityPromptSourceSlot);
+                            myP2PSlots[quantityPromptTargetSlot].tex = inventory.getItemTexture(quantityPromptSourceSlot);
+                            myP2PSlots[quantityPromptTargetSlot].count = amt;
+                            myP2PSlots[quantityPromptTargetSlot].originalSlot = quantityPromptSourceSlot;
+                            for (int c = 0; c < amt; c++) inventory.consumeItem(quantityPromptSourceSlot);
+                            p2pOfferDirty = true; p2pMyReady = false;
+                        } else {
+                            playerTradeSlots[quantityPromptTargetSlot].id = inventory.getItemID(quantityPromptSourceSlot);
+                            playerTradeSlots[quantityPromptTargetSlot].tex = inventory.getItemTexture(quantityPromptSourceSlot);
+                            playerTradeSlots[quantityPromptTargetSlot].count = amt;
+                            playerTradeSlots[quantityPromptTargetSlot].originalSlot = quantityPromptSourceSlot;
+                            for (int c = 0; c < amt; c++) inventory.consumeItem(quantityPromptSourceSlot);
+                            isSellingToNPC = true;
+
+                            npcTradeGold = 0;
+                            for (int j = 0; j < 4; j++) {
+                                if (playerTradeSlots[j].tex != nullptr) {
+                                    float demandMul = 0.75f;
+                                    for (auto& mkt : stockMarket) {
+                                        if (mkt.id == playerTradeSlots[j].id) {
+                                            demandMul = (mkt.trend == "UP") ? 0.90f : (mkt.trend == "DOWN") ? 0.60f : 0.75f;
+                                            break;
+                                        }
+                                    }
+                                    npcTradeGold += (int)(getItemPrice(playerTradeSlots[j].id) * demandMul) * playerTradeSlots[j].count;
+                                }
+                            }
+                            npcGoldInput = std::to_string(npcTradeGold);
+                            bargainAccepted = false;
+                        }
+                        quantityPromptOpen = false;
+                    } else if (keyEvent->code == sf::Keyboard::Key::Escape) {
+                        quantityPromptOpen = false;
+                    }
+                }
+                if (auto* mouseButtonEvent = event->getIf<sf::Event::MouseButtonPressed>()) {
+                    if (mouseButtonEvent->button == sf::Mouse::Button::Left) {
+                        sf::Vector2f uiPos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
+                        sf::Vector2f qBoxPos = { ((float)width - 400.f) / 2.f, ((float)height - 220.f) / 2.f };
+                        sf::FloatRect confirmBtnRect({ qBoxPos.x + 30.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+                        sf::FloatRect cancelBtnRect({ qBoxPos.x + 210.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+
+                        if (confirmBtnRect.contains(uiPos)) {
+                            int amt = 1;
+                            try {
+                                std::string text = quantityInput.getText();
+                                if (!text.empty()) amt = std::stoi(text);
+                            } catch (...) {
+                                amt = 1;
+                            }
+                            if (amt < 1) amt = 1;
+                            if (amt > quantityPromptMax) amt = quantityPromptMax;
+
+                            if (quantityPromptIsP2P) {
+                                myP2PSlots[quantityPromptTargetSlot].id = inventory.getItemID(quantityPromptSourceSlot);
+                                myP2PSlots[quantityPromptTargetSlot].tex = inventory.getItemTexture(quantityPromptSourceSlot);
+                                myP2PSlots[quantityPromptTargetSlot].count = amt;
+                                myP2PSlots[quantityPromptTargetSlot].originalSlot = quantityPromptSourceSlot;
+                                for (int c = 0; c < amt; c++) inventory.consumeItem(quantityPromptSourceSlot);
+                                p2pOfferDirty = true; p2pMyReady = false;
+                            } else {
+                                playerTradeSlots[quantityPromptTargetSlot].id = inventory.getItemID(quantityPromptSourceSlot);
+                                playerTradeSlots[quantityPromptTargetSlot].tex = inventory.getItemTexture(quantityPromptSourceSlot);
+                                playerTradeSlots[quantityPromptTargetSlot].count = amt;
+                                playerTradeSlots[quantityPromptTargetSlot].originalSlot = quantityPromptSourceSlot;
+                                for (int c = 0; c < amt; c++) inventory.consumeItem(quantityPromptSourceSlot);
+                                isSellingToNPC = true;
+
+                                npcTradeGold = 0;
+                                for (int j = 0; j < 4; j++) {
+                                    if (playerTradeSlots[j].tex != nullptr) {
+                                        float demandMul = 0.75f;
+                                        for (auto& mkt : stockMarket) {
+                                            if (mkt.id == playerTradeSlots[j].id) {
+                                                demandMul = (mkt.trend == "UP") ? 0.90f : (mkt.trend == "DOWN") ? 0.60f : 0.75f;
+                                                break;
+                                            }
+                                        }
+                                        npcTradeGold += (int)(getItemPrice(playerTradeSlots[j].id) * demandMul) * playerTradeSlots[j].count;
+                                    }
+                                }
+                                npcGoldInput = std::to_string(npcTradeGold);
+                                bargainAccepted = false;
+                            }
+                            quantityPromptOpen = false;
+                        } else if (cancelBtnRect.contains(uiPos)) {
+                            quantityPromptOpen = false;
+                        }
+                    }
+                }
+                continue;
+            }
             bool clickHandled = false;
             if (isChatting) {
                 chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
@@ -3069,15 +3182,27 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                         bool free = true;
                                         for (int j = 0; j < 4; j++) if (myP2PSlots[j].originalSlot == sel) { free = false; break; }
                                         if (free) {
-                                            myP2PSlots[i].id = inventory.getItemID(sel);
-                                            myP2PSlots[i].tex = inventory.getItemTexture(sel);
-                                            myP2PSlots[i].count = inventory.getItemCount(sel);
-                                            myP2PSlots[i].originalSlot = sel;
-                                            inventory.clearSlot(sel);
+                                            int totalQty = inventory.getItemCount(sel);
+                                            if (totalQty > 1) {
+                                                quantityPromptOpen = true;
+                                                quantityPromptMax = totalQty;
+                                                quantityPromptTargetSlot = i;
+                                                quantityPromptSourceSlot = sel;
+                                                quantityPromptIsP2P = true;
+                                                quantityInput.clear();
+                                                quantityInput.setFocus(true);
+                                            } else {
+                                                myP2PSlots[i].id = inventory.getItemID(sel);
+                                                myP2PSlots[i].tex = inventory.getItemTexture(sel);
+                                                myP2PSlots[i].count = 1;
+                                                myP2PSlots[i].originalSlot = sel;
+                                                inventory.clearSlot(sel);
+                                                p2pOfferDirty = true;
+                                                p2pMyReady = false;
+                                            }
                                         }
                                     }
                                 }
-                                p2pOfferDirty = true; p2pMyReady = false;
                                 clickHandled = true; break;
                             }
                         }
@@ -3331,12 +3456,23 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                             if (playerTradeSlots[j].originalSlot == selSlot) { slotFree = false; break; }
                                         }
                                         if (slotFree) {
-                                            playerTradeSlots[i].id = inventory.getItemID(selSlot);
-                                            playerTradeSlots[i].tex = inventory.getItemTexture(selSlot);
-                                            playerTradeSlots[i].count = inventory.getItemCount(selSlot);
-                                            playerTradeSlots[i].originalSlot = selSlot;
-                                            inventory.clearSlot(selSlot);
-                                            isSellingToNPC = true;
+                                            int totalQty = inventory.getItemCount(selSlot);
+                                            if (totalQty > 1) {
+                                                quantityPromptOpen = true;
+                                                quantityPromptMax = totalQty;
+                                                quantityPromptTargetSlot = i;
+                                                quantityPromptSourceSlot = selSlot;
+                                                quantityPromptIsP2P = false;
+                                                quantityInput.clear();
+                                                quantityInput.setFocus(true);
+                                            } else {
+                                                playerTradeSlots[i].id = inventory.getItemID(selSlot);
+                                                playerTradeSlots[i].tex = inventory.getItemTexture(selSlot);
+                                                playerTradeSlots[i].count = 1;
+                                                playerTradeSlots[i].originalSlot = selSlot;
+                                                inventory.clearSlot(selSlot);
+                                                isSellingToNPC = true;
+                                            }
                                         }
                                     }
                                 }
@@ -7589,6 +7725,58 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         cancelTxt.setStyle(sf::Text::Bold);
         cancelTxt.setFillColor(sf::Color::White);
         cancelTxt.setPosition({ cancelBtn.getPosition().x + (cancelBtn.getSize().x - cancelTxt.getGlobalBounds().size.x) / 2.f, cancelBtn.getPosition().y + 12.f });
+        window.draw(cancelTxt);
+    }
+
+    if (quantityPromptOpen) {
+        sf::RectangleShape qBox({ 400.f, 220.f });
+        sf::Vector2f qBoxPos = { ((float)width - 400.f) / 2.f, ((float)height - 220.f) / 2.f };
+        qBox.setPosition(qBoxPos);
+        qBox.setFillColor(sf::Color(20, 25, 35, 250));
+        qBox.setOutlineThickness(3.f);
+        qBox.setOutlineColor(sf::Color(0, 242, 254, 180));
+        window.draw(qBox);
+
+        sf::Text qTitle(uiFont, "ENTER AMOUNT", 20);
+        qTitle.setStyle(sf::Text::Bold);
+        qTitle.setFillColor(sf::Color(0, 242, 254));
+        qTitle.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 25.f });
+        window.draw(qTitle);
+
+        sf::Text qLabel(uiFont, "Enter quantity to put in trade (Max: " + std::to_string(quantityPromptMax) + "):", 12);
+        qLabel.setFillColor(sf::Color(200, 200, 210));
+        qLabel.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 65.f });
+        window.draw(qLabel);
+
+        quantityInput.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 95.f });
+        quantityInput.draw(window);
+
+        sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
+
+        sf::FloatRect confirmBtnRect({ qBoxPos.x + 30.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+        bool confirmHover = confirmBtnRect.contains(mousePos);
+        sf::RectangleShape confirmBtn({ 160.f, 40.f });
+        confirmBtn.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 150.f });
+        confirmBtn.setFillColor(confirmHover ? sf::Color(0, 200, 254) : sf::Color(0, 150, 200));
+        window.draw(confirmBtn);
+
+        sf::Text confirmTxt(uiFont, "Confirm", 15);
+        confirmTxt.setStyle(sf::Text::Bold);
+        confirmTxt.setFillColor(sf::Color::White);
+        confirmTxt.setPosition({ confirmBtn.getPosition().x + (confirmBtn.getSize().x - confirmTxt.getGlobalBounds().size.x) / 2.f, confirmBtn.getPosition().y + 10.f });
+        window.draw(confirmTxt);
+
+        sf::FloatRect cancelBtnRect({ qBoxPos.x + 210.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+        bool cancelHover = cancelBtnRect.contains(mousePos);
+        sf::RectangleShape cancelBtn({ 160.f, 40.f });
+        cancelBtn.setPosition({ qBoxPos.x + 210.f, qBoxPos.y + 150.f });
+        cancelBtn.setFillColor(cancelHover ? sf::Color(200, 60, 60) : sf::Color(150, 40, 40));
+        window.draw(cancelBtn);
+
+        sf::Text cancelTxt(uiFont, "Cancel", 15);
+        cancelTxt.setStyle(sf::Text::Bold);
+        cancelTxt.setFillColor(sf::Color::White);
+        cancelTxt.setPosition({ cancelBtn.getPosition().x + (cancelBtn.getSize().x - cancelTxt.getGlobalBounds().size.x) / 2.f, cancelBtn.getPosition().y + 10.f });
         window.draw(cancelTxt);
     }
 
