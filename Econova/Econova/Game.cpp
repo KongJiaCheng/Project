@@ -7395,14 +7395,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             tickerText += "No transactions recorded yet.";
         }
         else {
+            bool firstEntry = true;
             for (size_t ri = 0; ri < cachedRecentTrades.size(); ri++) {
                 auto& r = cachedRecentTrades[ri];
+                // Skip entries with unknown or empty item names
+                if (r.itemName.empty() || r.itemName == "Unknown Item" || r.itemName == "Unknown") continue;
                 std::string uName = r.username.length() > 10 ? r.username.substr(0, 8) + ".." : r.username;
+                if (!firstEntry) tickerText += "   |   ";
                 tickerText += "[" + uName + "] " + (r.actionType == "SELL" ? "Sold" : "Bought")
                     + " " + std::to_string(r.quantity) + "x " + r.itemName
                     + " (" + std::to_string(r.totalGold) + "G)";
-                if (ri + 1 < cachedRecentTrades.size()) tickerText += "   |   ";
+                firstEntry = false;
             }
+            if (firstEntry) tickerText += "No transactions recorded yet.";
         }
         sf::Text tickerTxt(uiFont, tickerText, 13);
         tickerTxt.setFillColor(sf::Color(255, 215, 0));
