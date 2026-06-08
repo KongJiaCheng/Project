@@ -2066,27 +2066,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         if (distanceMoved >= SAVE_DISTANCE &&
             saveCooldownClock.getElapsedTime().asSeconds() > 10.f)
         {
-            std::vector<std::pair<int, int>> items(8, { 0, 0 });
-
-            for (int i = 0; i < 8; i++)
-            {
-                if (inventory.hasItem(i))
-                {
-                    const sf::Texture* tex = inventory.getItemTexture(i);
-                    int count = inventory.getItemCount(i);
-
-                    int itemId = 0;
-
-                    if (tex == ChickenMeat::getTexture()) itemId = 1;
-                    else if (tex == PigMeat::getTexture()) itemId = 2;
-                    else if (tex == ZombieFlesh::getTexture()) itemId = 3;
-                    else if (tex == &woodenSwordTex) itemId = 4;
-                    else if (tex == &shieldTex) itemId = 6;
-
-                    items[i] = { itemId, count };
+            std::vector<std::pair<int, int>> items(20, { 0, 0 });
+            for (int i = 0; i < 20; i++) {
+                if (inventory.hasItem(i)) {
+                    items[i] = { inventory.getItemID(i), inventory.getItemCount(i) };
                 }
             }
-
             authManager.saveInventory(username.c_str(), items);
 
             float currentElapsed = elapsedGameTime;
@@ -2739,26 +2724,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             if (event->is<sf::Event::Closed>())
             {
                 std::vector<std::pair<int, int>> items(20, { 0, 0 });
-                for (int i = 0; i < 20; i++)
-                {
-                    if (inventory.hasItem(i))
-                    {
-                        const sf::Texture* tex = inventory.getItemTexture(i);
-                        int count = inventory.getItemCount(i);
-                        int itemId = 0;
-                        if (tex == ChickenMeat::getTexture()) itemId = 1;
-                        else if (tex == PigMeat::getTexture()) itemId = 2;
-                        else if (tex == ZombieFlesh::getTexture()) itemId = 3;
-                        else if (tex == &woodenSwordTex) itemId = 4;
-                        else if (tex == &shieldTex) itemId = 6;
-                        else if (tex == &furnaceTex) itemId = 7;
-                        else if (tex == &woodTileTex) itemId = 8;
-                        else if (tex == &woodWallTex) itemId = 9;
-                        else if (tex == &woodDoorTex) itemId = 10;
-                        else if (tex == &woodRoofTex) itemId = 11;
-                        else if (tex == &woodStairsTex) itemId = 12;
-                        else if (tex == &bedTex) itemId = 13;
-                        items[i] = { itemId, count };
+                for (int i = 0; i < 20; i++) {
+                    if (inventory.hasItem(i)) {
+                        items[i] = { inventory.getItemID(i), inventory.getItemCount(i) };
                     }
                 }
                 authManager.saveInventory(username.c_str(), items);
@@ -2803,32 +2771,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         continue;
                     }
                     std::vector<std::pair<int, int>> items(20, { 0, 0 });
-
-                    for (int i = 0; i < 20; i++)
-                    {
-                        if (inventory.hasItem(i))
-                        {
-                            const sf::Texture* tex = inventory.getItemTexture(i);
-                            int count = inventory.getItemCount(i);
-
-                            int itemId = 0;
-                            if (tex == ChickenMeat::getTexture()) itemId = 1;
-                            else if (tex == PigMeat::getTexture()) itemId = 2;
-                            else if (tex == ZombieFlesh::getTexture()) itemId = 3;
-                            else if (tex == &woodenSwordTex) itemId = 4;
-                            else if (tex == &shieldTex) itemId = 6;
-                            else if (tex == &furnaceTex) itemId = 7;
-                            else if (tex == &woodTileTex) itemId = 8;
-                            else if (tex == &woodWallTex) itemId = 9;
-                            else if (tex == &woodDoorTex) itemId = 10;
-                            else if (tex == &woodRoofTex) itemId = 11;
-                            else if (tex == &woodStairsTex) itemId = 12;
-                            else if (tex == &bedTex) itemId = 13;
-
-                            items[i] = { itemId, count };
+                    for (int i = 0; i < 20; i++) {
+                        if (inventory.hasItem(i)) {
+                            items[i] = { inventory.getItemID(i), inventory.getItemCount(i) };
                         }
                     }
-
                     std::cout << "Saving inventory...\n";
                     authManager.saveInventory(username.c_str(), items);
 
@@ -3379,25 +3326,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             }
 
                             // ✅ SAVE ONCE
-                            std::vector<std::pair<int, int>> items(20, { 0,0 });
+                            std::vector<std::pair<int, int>> items(20, { 0, 0 });
                             for (int i = 0; i < 20; i++) {
                                 if (inventory.hasItem(i)) {
-                                    const sf::Texture* tex = inventory.getItemTexture(i);
-                                    int count = inventory.getItemCount(i);
-                                    int itemId = 0;
-                                    if (tex == ChickenMeat::getTexture()) itemId = 1;
-                                    else if (tex == PigMeat::getTexture()) itemId = 2;
-                                    else if (tex == ZombieFlesh::getTexture()) itemId = 3;
-                                    else if (tex == &woodenSwordTex) itemId = 4;
-                                    else if (tex == &shieldTex) itemId = 6;
-                                    else if (tex == &furnaceTex) itemId = 7;
-                                    else if (tex == &woodTileTex) itemId = 8;
-                                    else if (tex == &woodWallTex) itemId = 9;
-                                    else if (tex == &woodDoorTex) itemId = 10;
-                                    else if (tex == &woodRoofTex) itemId = 11;
-                                    else if (tex == &woodStairsTex) itemId = 12;
-                                    else if (tex == &bedTex) itemId = 13;
-                                    items[i] = { itemId, count };
+                                    items[i] = { inventory.getItemID(i), inventory.getItemCount(i) };
                                 }
                             }
                             authManager.saveInventory(username.c_str(), items);
@@ -4411,7 +4343,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         else {
             {
                 std::lock_guard<std::mutex> lk(loadState->dataMutex);
-                loadState->data.inventory.assign(8, { 0, 0 });
+                loadState->data.inventory.assign(20, { 0, 0 });
             }
             loadState->done = true;
         }
@@ -4457,7 +4389,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             else {
                 std::cerr << "[WARN] Proceeding with fallback local data after load timeout.\n";
                 loaded = LoadedGameData{};
-                loaded.inventory.assign(8, { 0, 0 });
+                loaded.inventory.assign(20, { 0, 0 });
             }
             auto& loadedItems = loaded.inventory;
 
@@ -4526,23 +4458,36 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 campfires.push_back(pc);
             }
 
-            for (int i = 0; i < 8 && i < static_cast<int>(loadedItems.size()); i++)
+            for (int i = 0; i < 20 && i < static_cast<int>(loadedItems.size()); i++)
             {
                 int itemId = loadedItems[i].first;
                 int count = loadedItems[i].second;
-
                 if (count > 0)
                 {
-                    if (itemId == 1)
-                        inventory.setItem(i, *ChickenMeat::getTexture(), count);
-                    else if (itemId == 2)
-                        inventory.setItem(i, *PigMeat::getTexture(), count);
-                    else if (itemId == 3)
-                        inventory.setItem(i, *ZombieFlesh::getTexture(), count);
-                    else if (itemId == 4)
-                        inventory.setItem(i, woodenSwordTex, count);
-                    else if (itemId == 6)
-                        inventory.setItem(i, shieldTex, count);
+                    const sf::Texture* tex =
+                        (itemId == ITEM_TREE) ? &treeTex :
+                        (itemId == ITEM_STONE) ? &stoneTex :
+                        (itemId == ITEM_WOOD) ? &woodTex :
+                        (itemId == ITEM_WOODEN_SWORD) ? &woodenSwordTex :
+                        (itemId == ITEM_SAPLING) ? &saplingTex :
+                        (itemId == ITEM_SHIELD) ? &shieldTex :
+                        (itemId == ITEM_FURNACE) ? &furnaceTex :
+                        (itemId == ITEM_WOOD_TILE) ? &woodTileTex :
+                        (itemId == ITEM_WOOD_WALL) ? &woodWallTex :
+                        (itemId == ITEM_WOOD_DOOR) ? &woodDoorTex :
+                        (itemId == ITEM_WOOD_ROOF) ? &woodRoofTex :
+                        (itemId == ITEM_WOOD_STAIRS) ? &woodStairsTex :
+                        (itemId == ITEM_BED) ? &bedTex :
+                        (itemId == ITEM_WRENCH) ? &wrenchItemTex :
+                        (itemId == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() :
+                        (itemId == ITEM_PIG_MEAT) ? PigMeat::getTexture() :
+                        (itemId == ITEM_ZOMBIE_FLESH) ? ZombieFlesh::getTexture() :
+                        (itemId == ITEM_COOKED_CHICKEN) ? &cookedChickenTex :
+                        (itemId == ITEM_COOKED_PIG) ? &cookedPigTex : nullptr;
+
+                    if (tex) {
+                        inventory.setItem(i, itemId, *tex, count);
+                    }
                 }
             }
         } // end LoadedGameData block

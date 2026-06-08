@@ -8,7 +8,7 @@ public:
     Inventory();
     void draw(sf::RenderWindow& window);
     void handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& window);
-    void setItem(int index, const sf::Texture& texture, int count);
+    void setItem(int index, int id, const sf::Texture& texture, int count);
     int getSlotAt(sf::Vector2f mousePos);
 
     void addItem(int id, const sf::Texture& texture, int count);

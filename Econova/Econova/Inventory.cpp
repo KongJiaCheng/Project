@@ -31,11 +31,11 @@ Inventory::Inventory()
     }
 }
 
-void Inventory::setItem(int index, const sf::Texture& texture, int count)
+void Inventory::setItem(int index, int id, const sf::Texture& texture, int count)
 {
     if (index < 0 || index >= SLOT_COUNT) return;
 
-    slots[index].id = 0; // Unknown ID for legacy setItem
+    slots[index].id = id;
     slots[index].icon = std::make_unique<sf::Sprite>(texture);
 
     // position and optionally scale the icon to fit into slot
