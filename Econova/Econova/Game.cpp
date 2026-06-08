@@ -551,7 +551,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         { ITEM_SAPLING, "Sapling", 12.f, 12.f, {12.f}, 12.f, "STABLE", 0.6f },
         { ITEM_CHICKEN_MEAT, "Chicken Meat", 15.f, 15.f, {15.f}, 15.f, "STABLE", 1.8f },
         { ITEM_PIG_MEAT, "Pig Meat", 25.f, 25.f, {25.f}, 25.f, "STABLE", 0.5f },
-        { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE", 2.5f }
+        { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE", 2.5f },
+        { ITEM_WOODEN_SWORD, "Wooden Sword", 55.f, 55.f, {55.f}, 55.f, "STABLE", 0.5f },
+        { ITEM_SHIELD, "Sturdy Shield", 115.f, 115.f, {115.f}, 115.f, "STABLE", 0.4f },
+        { ITEM_FURNACE, "Furnace", 84.f, 84.f, {84.f}, 84.f, "STABLE", 0.3f },
+        { ITEM_WOOD_TILE, "Wood Tile", 5.f, 5.f, {5.f}, 5.f, "STABLE", 0.5f },
+        { ITEM_WOOD_WALL, "Wood Wall", 5.f, 5.f, {5.f}, 5.f, "STABLE", 0.5f },
+        { ITEM_WOOD_DOOR, "Wood Door", 30.f, 30.f, {30.f}, 30.f, "STABLE", 0.5f },
+        { ITEM_WOOD_ROOF, "Wood Roof", 30.f, 30.f, {30.f}, 30.f, "STABLE", 0.5f },
+        { ITEM_WOOD_STAIRS, "Wood Stairs", 48.f, 48.f, {48.f}, 48.f, "STABLE", 0.5f },
+        { ITEM_BED, "Bed", 80.f, 80.f, {80.f}, 80.f, "STABLE", 0.6f }
     };
 
     auto getItemPrice = [&](int id) -> int {
@@ -617,6 +626,46 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         default: return "Unknown Item";
         }
         };
+
+    auto adjustMarketItem = [&](int itemId, float percentChange) {
+        for (auto& item : stockMarket) {
+            if (item.id == itemId) {
+                // Save current price to history before updating
+                if (item.history.size() >= 10) {
+                    item.history.erase(item.history.begin());
+                }
+                item.history.push_back(item.currentPrice);
+
+                // Apply price change
+                item.currentPrice *= (1.f + percentChange);
+
+                // Clamp to volatility-adjusted min/max bounds
+                float minP = item.basePrice * (item.volatility > 1.2f ? 0.2f : 0.5f);
+                float maxP = item.basePrice * (item.volatility > 1.2f ? 4.0f : 1.8f);
+                if (item.currentPrice < minP) item.currentPrice = minP;
+                if (item.currentPrice > maxP) item.currentPrice = maxP;
+                item.currentPrice = std::round(item.currentPrice);
+                if (item.currentPrice < 1.f) item.currentPrice = 1.f;
+
+                // Save updated price to DB
+                authManager.saveMarketPrice(item.id, item.currentPrice);
+
+                // Recalculate predicted price and trend
+                if (!item.history.empty()) {
+                    float lastPrice = item.history.back();
+                    float diff = item.currentPrice - lastPrice;
+                    item.predictedPrice = std::round(item.currentPrice + diff * 0.5f);
+                    if (item.predictedPrice < 1.f) item.predictedPrice = 1.f;
+
+                    float trendThreshold = item.volatility > 1.2f ? 0.04f : 0.02f;
+                    if (item.predictedPrice > item.currentPrice * (1.f + trendThreshold)) item.trend = "UP";
+                    else if (item.predictedPrice < item.currentPrice * (1.f - trendThreshold)) item.trend = "DOWN";
+                    else item.trend = "STABLE";
+                }
+                break;
+            }
+        }
+    };
 
 
 
@@ -1689,8 +1738,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         
                         if (structure.id == ITEM_WOOD_WALL) {
                             sf::FloatRect b = structure.sprite->getGlobalBounds();
-                            b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                            b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            if (structure.rotation == 90.f) {
+                                b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                                b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            } else {
+                                b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                                b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                            }
                             if (b.contains(pos)) return true;
                         }
                         else if (structure.id == ITEM_FURNACE || structure.id == ITEM_BED) {
@@ -1701,8 +1755,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         }
                         else if (structure.id == ITEM_WOOD_DOOR && !structure.isOpen) {
                             sf::FloatRect b = structure.sprite->getGlobalBounds();
-                            b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                            b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            if (structure.rotation == 90.f) {
+                                b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                                b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                            } else {
+                                b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                                b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                            }
                             if (b.contains(pos)) return true;
                         }
                     }
@@ -1805,15 +1864,28 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         const sf::Texture* tex = getItemTexture(d.id);
                         if (tex) inventory.addItem(d.id, *tex, d.count);
                         // Update market: buying pressure raises price
-                        for (auto& mkt : stockMarket) {
-                            if (mkt.id == d.id) {
-                                mkt.currentPrice *= (1.f + 0.004f * d.count);
-                                if (mkt.currentPrice > mkt.basePrice * 2.5f) mkt.currentPrice = mkt.basePrice * 2.5f;
-                                authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                            }
-                        }
+                        adjustMarketItem(d.id, 0.004f * d.count);
+
+                        // Log BUY record for received item
+                        std::string name = getItemName(d.id);
+                        int uPrice = getItemPrice(d.id);
+                        int totalVal = d.count * uPrice;
+                        authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, uPrice, totalVal);
                     }
                     currency += partnerGold;
+
+                    // Log SELL records for items we gave to partner before we clear our slots
+                    for (int i = 0; i < 4; i++) {
+                        if (myP2PSlots[i].tex) {
+                            int item_id = myP2PSlots[i].id;
+                            int item_qty = myP2PSlots[i].count;
+                            std::string name = getItemName(item_id);
+                            int uPrice = getItemPrice(item_id);
+                            int totalVal = item_qty * uPrice;
+                            authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, uPrice, totalVal);
+                        }
+                    }
+
                     // Remove what I offered
                     for (int i = 0; i < 4; i++) myP2PSlots[i] = {};
                     currency -= myP2PGold;
@@ -1852,13 +1924,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     // Market: selling pressure lowers price for offered items
                     for (int i = 0; i < 4; i++) {
                         if (myP2PSlots[i].tex) {
-                            for (auto& mkt : stockMarket) {
-                                if (mkt.id == myP2PSlots[i].id) {
-                                    mkt.currentPrice *= (1.f - 0.003f * myP2PSlots[i].count);
-                                    if (mkt.currentPrice < mkt.basePrice * 0.4f) mkt.currentPrice = mkt.basePrice * 0.4f;
-                                    authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                                }
-                            }
+                            adjustMarketItem(myP2PSlots[i].id, -0.003f * myP2PSlots[i].count);
                         }
                     }
                     p2pOfferDirty = false;
@@ -2518,7 +2584,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else {
                         // Check Door Interaction Button
                         PlacedStructure* nearestDoor = nullptr;
-                        float minDist = 150.f;
+                        float minDist = 300.f;
                         for (auto& s : structures) {
                             if (s.id == ITEM_WOOD_DOOR) {
                                 sf::Vector2f dPos = s.sprite->getPosition();
@@ -3376,13 +3442,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     currency += npcTradeGold;
                                     for (int i = 0; i < 4; i++) {
                                         if (playerTradeSlots[i].tex) {
-                                            for (auto& mkt : stockMarket) {
-                                                if (mkt.id == playerTradeSlots[i].id) {
-                                                    mkt.currentPrice *= (1.0f - 0.005f * playerTradeSlots[i].count);
-                                                    if (mkt.currentPrice < mkt.basePrice * 0.4f) mkt.currentPrice = mkt.basePrice * 0.4f;
-                                                    authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                                                }
-                                            }
+                                            int item_id = playerTradeSlots[i].id;
+                                            int item_qty = playerTradeSlots[i].count;
+                                            std::string name = getItemName(item_id);
+                                            int uPrice = getItemPrice(item_id);
+                                            int totalVal = item_qty * uPrice;
+
+                                            // Directly affect market stats (supply decreases price)
+                                            float percentChange = -0.005f * item_qty;
+                                            adjustMarketItem(item_id, percentChange);
+
+                                            // Log trade history record
+                                            authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, uPrice, totalVal);
+
                                             playerTradeSlots[i] = {};
                                         }
                                     }
@@ -3421,14 +3493,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     for (int i = 0; i < 4; i++) {
                                         if (npcTradeSlots[i].originalSlot == 1 && npcTradeSlots[i].tex) {
                                             inventory.addItem(npcTradeSlots[i].id, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
-                                            // Raise market price since demand increased
-                                            for (auto& mkt : stockMarket) {
-                                                if (mkt.id == npcTradeSlots[i].id) {
-                                                    mkt.currentPrice *= (1.0f + 0.005f * npcTradeSlots[i].count);
-                                                    if (mkt.currentPrice > mkt.basePrice * 2.5f) mkt.currentPrice = mkt.basePrice * 2.5f;
-                                                    authManager.saveMarketPrice(mkt.id, mkt.currentPrice);
-                                                }
-                                            }
+                                            
+                                            int item_id = npcTradeSlots[i].id;
+                                            int item_qty = npcTradeSlots[i].count;
+                                            std::string name = getItemName(item_id);
+                                            int uPrice = getItemPrice(item_id);
+                                            int totalVal = item_qty * uPrice;
+
+                                            // Directly affect market stats (demand increases price)
+                                            float percentChange = 0.005f * item_qty;
+                                            adjustMarketItem(item_id, percentChange);
+
+                                            // Log trade history record
+                                            authManager.addTradeRecord(username.c_str(), "BUY", name, item_qty, uPrice, totalVal);
+
                                             npcTradeSlots[i] = {};
                                         }
                                     }
@@ -3824,6 +3902,30 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
                             placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
                             placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                            // Stairs snap one grid row higher so they sit on top of a wood tile
+                            if (placementItemID == ITEM_WOOD_STAIRS) {
+                                placementPos.y -= 100.f;
+                            }
+                            if (placementItemID == ITEM_WOOD_DOOR) {
+                                float bestDist = 150.f;
+                                PlacedStructure* nearestWall = nullptr;
+                                for (auto& s : structures) {
+                                    if (s.id == ITEM_WOOD_WALL && s.sprite.has_value()) {
+                                        sf::Vector2f wallPos = s.sprite->getPosition();
+                                        float dx = worldPos.x - wallPos.x;
+                                        float dy = worldPos.y - wallPos.y;
+                                        float dist = std::sqrt(dx * dx + dy * dy);
+                                        if (dist < bestDist) {
+                                            bestDist = dist;
+                                            nearestWall = &s;
+                                        }
+                                    }
+                                }
+                                if (nearestWall) {
+                                    placementPos = nearestWall->sprite->getPosition();
+                                    placementRotation = nearestWall->rotation;
+                                }
+                            }
                         }
                         clickHandled = true;
                     }
@@ -4561,7 +4663,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             for (auto& stair : allStairs) {
                 for (auto& tp : allTilePos) {
                     float dx = tp.x - stair.pos.x, dy = tp.y - stair.pos.y;
-                    if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST && dy <= 0.f) {
+                    // Stair is placed on a tile: tile is at or below stair (dy >= 0 in screen coords)
+                    // or adjacent at same level. Accept any tile within distance (no dy restriction).
+                    if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
                         auto k = posKey(tp);
                         if (tileLevelMap[k] < 1) {
                             tileLevelMap[k] = 1;
@@ -4642,8 +4746,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (s.id == ITEM_WOOD_WALL) {
                     if (targetElevated) continue; // Ignore wall collision when on upper floor or stairs
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                    b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                    if (s.rotation == 90.f) {
+                        b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                        b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                    } else {
+                        b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                        b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                    }
                     if (b.contains(targetPos)) return true;
                 }
                 else if (s.id == ITEM_FURNACE || s.id == ITEM_BED) {
@@ -4656,8 +4765,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (s.id == ITEM_WOOD_DOOR && !s.isOpen) {
                     if (targetElevated) continue; // Ignore door on lower floor
                     sf::FloatRect b = s.sprite->getGlobalBounds();
-                    b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
-                    b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                    if (s.rotation == 90.f) {
+                        b.position.x += b.size.x * 0.0f; b.size.x *= 0.2f;
+                        b.position.y += b.size.y * 0.05f; b.size.y *= 0.9f;
+                    } else {
+                        b.position.x += b.size.x * 0.05f; b.size.x *= 0.9f;
+                        b.position.y += b.size.y * 0.8f; b.size.y *= 0.2f;
+                    }
                     if (b.contains(targetPos)) return true;
                 }
             }
@@ -4848,11 +4962,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             float damage = swordEquipped ? 50.f : 25.f;
             bool hitSomething = false;
 
+            float attackRadius = swordEquipped ? 150.f : 30.f;
             sf::FloatRect attackBox = sprite.getGlobalBounds();
-            attackBox.position.x -= 150.f;
-            attackBox.position.y -= 150.f;
-            attackBox.size.x += 300.f;
-            attackBox.size.y += 300.f;
+            attackBox.position.x -= attackRadius;
+            attackBox.position.y -= attackRadius;
+            attackBox.size.x += attackRadius * 2.f;
+            attackBox.size.y += attackRadius * 2.f;
 
             for (auto& a : animals)
             {
@@ -5055,6 +5170,30 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (placementItemID != ITEM_NONE || placementItemID >= ITEM_FURNACE) {
                     placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
                     placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                    // Stairs snap one grid row higher so they sit on top of a wood tile
+                    if (placementItemID == ITEM_WOOD_STAIRS) {
+                        placementPos.y -= 100.f;
+                    }
+                    if (placementItemID == ITEM_WOOD_DOOR) {
+                        float bestDist = 150.f;
+                        PlacedStructure* nearestWall = nullptr;
+                        for (auto& s : structures) {
+                            if (s.id == ITEM_WOOD_WALL && s.sprite.has_value()) {
+                                sf::Vector2f wallPos = s.sprite->getPosition();
+                                float dx = worldPos.x - wallPos.x;
+                                float dy = worldPos.y - wallPos.y;
+                                float dist = std::sqrt(dx * dx + dy * dy);
+                                if (dist < bestDist) {
+                                    bestDist = dist;
+                                    nearestWall = &s;
+                                }
+                            }
+                        }
+                        if (nearestWall) {
+                            placementPos = nearestWall->sprite->getPosition();
+                            placementRotation = nearestWall->rotation;
+                        }
+                    }
                 }
             }
 
@@ -5407,7 +5546,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         // Door Interaction UI
         PlacedStructure* nearestDoor = nullptr;
-        float minDist = 150.f;
+        float minDist = 300.f;
         for (auto& s : structures) {
             if (s.id == ITEM_WOOD_DOOR) {
                 sf::Vector2f dPos = s.sprite->getPosition();
@@ -5911,7 +6050,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 { ITEM_WOODEN_SWORD, "Wooden Sword" },
                 { ITEM_SHIELD, "Sturdy Shield" },
                 { ITEM_FURNACE, "Furnace" },
-                { ITEM_BED, "Bed" }
+                { ITEM_BED, "Bed" },
+                { ITEM_WOOD_TILE, "Wood Tile" },
+                { ITEM_WOOD_WALL, "Wood Wall" },
+                { ITEM_WOOD_DOOR, "Wood Door" },
+                { ITEM_WOOD_ROOF, "Wood Roof" },
+                { ITEM_WOOD_STAIRS, "Wood Stairs" }
             };
             auto chosenItem = vItems[rand() % vItems.size()];
             int itemId = chosenItem.first;
@@ -6880,7 +7024,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         std::vector<DisplayItem> allItems;
 
-        // Raw stock market items
+        // Raw and crafted stock market items
         for (auto& sm : stockMarket) {
             DisplayItem di;
             di.name = sm.name;
@@ -6888,7 +7032,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             di.predictedPrice = (int)sm.predictedPrice;
             di.trend = sm.trend;
             di.history = sm.history;
-            di.isCrafted = false;
+            di.isCrafted = (sm.id == ITEM_WOODEN_SWORD || sm.id == ITEM_SHIELD || sm.id == ITEM_FURNACE ||
+                            sm.id == ITEM_WOOD_TILE || sm.id == ITEM_WOOD_WALL || sm.id == ITEM_WOOD_DOOR ||
+                            sm.id == ITEM_WOOD_ROOF || sm.id == ITEM_WOOD_STAIRS || sm.id == ITEM_BED);
             di.volatility = sm.volatility;
             if (sm.id == ITEM_WOOD)               di.tex = &woodTex;
             else if (sm.id == ITEM_STONE)          di.tex = &stoneTex;
@@ -6896,60 +7042,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             else if (sm.id == ITEM_CHICKEN_MEAT)   di.tex = ChickenMeat::getTexture();
             else if (sm.id == ITEM_PIG_MEAT)       di.tex = PigMeat::getTexture();
             else if (sm.id == ITEM_ZOMBIE_FLESH)   di.tex = ZombieFlesh::getTexture();
+            else if (sm.id == ITEM_WOODEN_SWORD)   di.tex = &woodenSwordTex;
+            else if (sm.id == ITEM_SHIELD)         di.tex = &shieldTex;
+            else if (sm.id == ITEM_FURNACE)        di.tex = &furnaceTex;
+            else if (sm.id == ITEM_WOOD_TILE)      di.tex = &woodTileTex;
+            else if (sm.id == ITEM_WOOD_WALL)      di.tex = &woodWallTex;
+            else if (sm.id == ITEM_WOOD_DOOR)      di.tex = &woodDoorTex;
+            else if (sm.id == ITEM_WOOD_ROOF)      di.tex = &woodRoofTex;
+            else if (sm.id == ITEM_WOOD_STAIRS)    di.tex = &woodStairsTex;
+            else if (sm.id == ITEM_BED)            di.tex = &bedTex;
             allItems.push_back(di);
-        }
-
-        // Gather ingredient trends for crafted price forecasting
-        std::string woodTrend = "STABLE", stoneTrend = "STABLE", fleshTrend = "STABLE";
-        for (auto& sm : stockMarket) {
-            if (sm.id == ITEM_WOOD)         woodTrend = sm.trend;
-            if (sm.id == ITEM_STONE)        stoneTrend = sm.trend;
-            if (sm.id == ITEM_ZOMBIE_FLESH) fleshTrend = sm.trend;
-        }
-
-        // Helper: compute crafted item trend from its dominant ingredient
-        // and estimate predicted price with a +-3% nudge
-        auto addCrafted = [&](int id, const std::string& n,
-            const sf::Texture* tex,
-            const std::string& dominantTrend) {
-                DisplayItem di;
-                di.name = n;
-                di.tex = tex;
-                di.currentPrice = getItemPrice(id);
-                di.isCrafted = true;
-
-                // Derive trend & predicted price from dominant ingredient
-                if (dominantTrend == "UP") {
-                    di.trend = "UP";
-                    di.predictedPrice = (int)(di.currentPrice * 1.03f);
-                }
-                else if (dominantTrend == "DOWN") {
-                    di.trend = "DOWN";
-                    di.predictedPrice = (int)(di.currentPrice * 0.97f);
-                }
-                else {
-                    di.trend = "STABLE";
-                    di.predictedPrice = di.currentPrice;
-                }
-                allItems.push_back(di);
-            };
-
-        // Wood-heavy items follow wood trend
-        addCrafted(ITEM_WOODEN_SWORD, "Wooden Sword", &woodenSwordTex, woodTrend);
-        addCrafted(ITEM_SHIELD, "Sturdy Shield", &shieldTex, woodTrend);
-        addCrafted(ITEM_WOOD_TILE, "Wood Tile", &woodTileTex, woodTrend);
-        addCrafted(ITEM_WOOD_WALL, "Wood Wall", &woodWallTex, woodTrend);
-        addCrafted(ITEM_WOOD_DOOR, "Wood Door", &woodDoorTex, woodTrend);
-        addCrafted(ITEM_WOOD_ROOF, "Wood Roof", &woodRoofTex, woodTrend);
-        addCrafted(ITEM_WOOD_STAIRS, "Wood Stairs", &woodStairsTex, woodTrend);
-        // Stone-heavy item follows stone trend
-        addCrafted(ITEM_FURNACE, "Furnace", &furnaceTex, stoneTrend);
-        // Bed follows the worse of wood/flesh trends
-        {
-            std::string bedTrend = woodTrend;
-            if (fleshTrend == "DOWN" || (fleshTrend == "UP" && bedTrend != "DOWN"))
-                bedTrend = fleshTrend;
-            addCrafted(ITEM_BED, "Bed", &bedTex, bedTrend);
         }
 
         // ── Apply search filter ───────────────────────────────────────────
@@ -7095,8 +7197,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             trendTxt.setPosition({ bx + 330.f, y + 18.f });
             window.draw(trendTxt);
 
-            // Mini history chart (raw items only)
-            if (!item->isCrafted && !item->history.empty()) {
+            // Mini history chart
+            if (!item->history.empty()) {
                 float minH = item->history[0], maxH = item->history[0];
                 for (float hp : item->history) {
                     if (hp < minH) minH = hp;
@@ -7146,13 +7248,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     dot.setFillColor(sf::Color::White);
                     window.draw(dot);
                 }
-            }
-            else if (item->isCrafted) {
-                // Simple "price derived" label for crafted items
-                sf::Text derivedTxt(uiFont, "Ingredient-\nbased", 12);
-                derivedTxt.setFillColor(sf::Color(100, 100, 140));
-                derivedTxt.setPosition({ bx + 460.f, y + 16.f });
-                window.draw(derivedTxt);
             }
 
             // Forecast & signal
@@ -7265,14 +7360,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             tickerText += "No transactions recorded yet.";
         }
         else {
+            bool firstEntry = true;
             for (size_t ri = 0; ri < cachedRecentTrades.size(); ri++) {
                 auto& r = cachedRecentTrades[ri];
+                // Skip entries with unknown or empty item names
+                if (r.itemName.empty() || r.itemName == "Unknown Item" || r.itemName == "Unknown") continue;
                 std::string uName = r.username.length() > 10 ? r.username.substr(0, 8) + ".." : r.username;
+                if (!firstEntry) tickerText += "   |   ";
                 tickerText += "[" + uName + "] " + (r.actionType == "SELL" ? "Sold" : "Bought")
                     + " " + std::to_string(r.quantity) + "x " + r.itemName
                     + " (" + std::to_string(r.totalGold) + "G)";
-                if (ri + 1 < cachedRecentTrades.size()) tickerText += "   |   ";
+                firstEntry = false;
             }
+            if (firstEntry) tickerText += "No transactions recorded yet.";
         }
         sf::Text tickerTxt(uiFont, tickerText, 13);
         tickerTxt.setFillColor(sf::Color(255, 215, 0));
