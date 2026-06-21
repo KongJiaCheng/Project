@@ -8361,7 +8361,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             window.draw(foodSlot);
 
             if (fire.inputCount > 0) {
-                const sf::Texture* rTex = (fire.inputItem == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() : PigMeat::getTexture();
+                const sf::Texture* rTex = (fire.inputItem == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() :
+                                          (fire.inputItem == ITEM_PIG_MEAT) ? PigMeat::getTexture() :
+                                          (fire.inputItem == ITEM_SHEEP_MEAT) ? SheepMeat::getTexture() : nullptr;
                 if (rTex) {
                     sf::Sprite fs(*rTex);
                     sf::Vector2u ts = rTex->getSize();

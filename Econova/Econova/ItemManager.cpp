@@ -89,8 +89,14 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
     if (id == ITEM_SAPLING) {
         items.back().sprite.setScale({ 0.2f, 0.2f });
     }
-    else if (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_ZOMBIE_FLESH) {
+    else if (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_ZOMBIE_FLESH || id == ITEM_COOKED_CHICKEN || id == ITEM_COOKED_PIG) {
         items.back().sprite.setScale({ 0.4f, 0.4f });
+    }
+    else if (id == ITEM_SHEEP_MEAT || id == ITEM_COOKED_SHEEP) {
+        items.back().sprite.setScale({ 0.32f, 0.32f });
+    }
+    else if (id == ITEM_WOOL) {
+        items.back().sprite.setScale({ 0.25f, 0.25f });
     }
     gridInsert(idx, pos);
 }
