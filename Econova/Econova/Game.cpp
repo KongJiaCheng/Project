@@ -582,6 +582,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         { ITEM_SHEEP_MEAT, "Sheep Meat", 20.f, 20.f, {20.f}, 20.f, "STABLE", 0.5f },
         { ITEM_WOOL, "Wool", 15.f, 15.f, {15.f}, 15.f, "STABLE", 0.5f },
         { ITEM_ZOMBIE_FLESH, "Zombie Flesh", 10.f, 10.f, {10.f}, 10.f, "STABLE", 2.5f },
+        { ITEM_COOKED_CHICKEN, "Cooked Chicken", 30.f, 30.f, {30.f}, 30.f, "STABLE", 0.5f },
+        { ITEM_COOKED_PIG, "Cooked Pig", 50.f, 50.f, {50.f}, 50.f, "STABLE", 0.5f },
+        { ITEM_COOKED_SHEEP, "Cooked Sheep", 40.f, 40.f, {40.f}, 40.f, "STABLE", 0.5f },
         { ITEM_WOODEN_SWORD, "Wooden Sword", 55.f, 55.f, {55.f}, 55.f, "STABLE", 0.5f },
         { ITEM_SHIELD, "Sturdy Shield", 115.f, 115.f, {115.f}, 115.f, "STABLE", 0.4f },
         { ITEM_FURNACE, "Furnace", 84.f, 84.f, {84.f}, 84.f, "STABLE", 0.3f },
@@ -921,6 +924,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         if (id == ITEM_PIG_MEAT) return PigMeat::getTexture();
         if (id == ITEM_SHEEP_MEAT) return SheepMeat::getTexture();
         if (id == ITEM_COOKED_SHEEP) return &cookedSheepTex;
+        if (id == ITEM_COOKED_CHICKEN) return &cookedChickenTex;
+        if (id == ITEM_COOKED_PIG) return &cookedPigTex;
         if (id == ITEM_WOOL) return &woolTex;
         if (id == ITEM_ZOMBIE_FLESH) return ZombieFlesh::getTexture();
         if (id == ITEM_WOODEN_SWORD) return &woodenSwordTex;
@@ -3864,7 +3869,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             int itemsCount = 1 + (rand() % 3);
                             std::vector<int> possibleIds = {
                                 ITEM_WOOD, ITEM_STONE, ITEM_SAPLING,
-                                ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_ZOMBIE_FLESH,
+                                ITEM_CHICKEN_MEAT, ITEM_PIG_MEAT, ITEM_SHEEP_MEAT, ITEM_WOOL, ITEM_ZOMBIE_FLESH,
+                                ITEM_COOKED_CHICKEN, ITEM_COOKED_PIG, ITEM_COOKED_SHEEP,
                                 ITEM_WOODEN_SWORD, ITEM_SHIELD, ITEM_FURNACE, ITEM_BED,
                                 ITEM_WOOD_TILE, ITEM_WOOD_WALL, ITEM_WOOD_DOOR, ITEM_WOOD_ROOF, ITEM_WOOD_STAIRS
                             };
@@ -3878,6 +3884,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 else if (id == ITEM_SAPLING) tex = &saplingTex;
                                 else if (id == ITEM_CHICKEN_MEAT) tex = ChickenMeat::getTexture();
                                 else if (id == ITEM_PIG_MEAT) tex = PigMeat::getTexture();
+                                else if (id == ITEM_SHEEP_MEAT) tex = SheepMeat::getTexture();
+                                else if (id == ITEM_COOKED_CHICKEN) tex = &cookedChickenTex;
+                                else if (id == ITEM_COOKED_PIG) tex = &cookedPigTex;
+                                else if (id == ITEM_COOKED_SHEEP) tex = &cookedSheepTex;
+                                else if (id == ITEM_WOOL) tex = &woolTex;
                                 else if (id == ITEM_ZOMBIE_FLESH) tex = ZombieFlesh::getTexture();
                                 else if (id == ITEM_WOODEN_SWORD) tex = &woodenSwordTex;
                                 else if (id == ITEM_SHIELD) tex = &shieldTex;
@@ -6424,6 +6435,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 { ITEM_SHEEP_MEAT, "Sheep Meat" },
                 { ITEM_WOOL, "Wool" },
                 { ITEM_ZOMBIE_FLESH, "Zombie Flesh" },
+                { ITEM_COOKED_CHICKEN, "Cooked Chicken" },
+                { ITEM_COOKED_PIG, "Cooked Pig" },
+                { ITEM_COOKED_SHEEP, "Cooked Sheep" },
                 { ITEM_WOODEN_SWORD, "Wooden Sword" },
                 { ITEM_SHIELD, "Sturdy Shield" },
                 { ITEM_FURNACE, "Furnace" },
@@ -6442,7 +6456,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             if (itemId == ITEM_WOOD || itemId == ITEM_STONE || itemId == ITEM_SAPLING) {
                 qty = 5 + (rand() % 16); // 5 to 20
             }
-            else if (itemId == ITEM_CHICKEN_MEAT || itemId == ITEM_PIG_MEAT || itemId == ITEM_SHEEP_MEAT || itemId == ITEM_WOOL || itemId == ITEM_ZOMBIE_FLESH) {
+            else if (itemId == ITEM_CHICKEN_MEAT || itemId == ITEM_PIG_MEAT || itemId == ITEM_SHEEP_MEAT || itemId == ITEM_WOOL || itemId == ITEM_ZOMBIE_FLESH ||
+                     itemId == ITEM_COOKED_CHICKEN || itemId == ITEM_COOKED_PIG || itemId == ITEM_COOKED_SHEEP) {
                 qty = 2 + (rand() % 9); // 2 to 10
             }
             else {
@@ -7421,6 +7436,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             else if (sm.id == ITEM_CHICKEN_MEAT)   di.tex = ChickenMeat::getTexture();
             else if (sm.id == ITEM_PIG_MEAT)       di.tex = PigMeat::getTexture();
             else if (sm.id == ITEM_SHEEP_MEAT)     di.tex = SheepMeat::getTexture();
+            else if (sm.id == ITEM_COOKED_CHICKEN) di.tex = &cookedChickenTex;
+            else if (sm.id == ITEM_COOKED_PIG)     di.tex = &cookedPigTex;
+            else if (sm.id == ITEM_COOKED_SHEEP)   di.tex = &cookedSheepTex;
             else if (sm.id == ITEM_WOOL)           di.tex = &woolTex;
             else if (sm.id == ITEM_ZOMBIE_FLESH)   di.tex = ZombieFlesh::getTexture();
             else if (sm.id == ITEM_WOODEN_SWORD)   di.tex = &woodenSwordTex;
