@@ -2,6 +2,7 @@
 #include "ChickenMeat.h"
 #include "PigMeat.h"
 #include "ZombieFlesh.h"
+#include "Food.h"
 #include "ViewUtils.h"
 
 #include <cmath>
@@ -296,6 +297,10 @@ bool ItemManager::isFood(int itemID) const
 {
     return itemID == ITEM_CHICKEN_MEAT ||
         itemID == ITEM_PIG_MEAT ||
+        itemID == ITEM_SHEEP_MEAT ||
+        itemID == ITEM_COOKED_SHEEP ||
+        itemID == ITEM_COOKED_CHICKEN ||
+        itemID == ITEM_COOKED_PIG ||
         itemID == ITEM_ZOMBIE_FLESH;
 }
 
@@ -307,6 +312,10 @@ Food ItemManager::getFoodData(int itemID) const
         return ChickenMeat();
     case ITEM_PIG_MEAT:
         return PigMeat();
+    case ITEM_SHEEP_MEAT:
+        return SheepMeat();
+    case ITEM_COOKED_SHEEP:
+        return CookedSheepMeat();
     case ITEM_ZOMBIE_FLESH:
         return ZombieFlesh();
     default:

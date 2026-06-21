@@ -1,6 +1,8 @@
 #pragma once
 #include <SFML/Graphics.hpp>
 #include "Animation.h"
+#include "ItemID.h"
+#include "Food.h"
 #include <cmath>
 #include <functional>
 
@@ -129,4 +131,65 @@ public:
         return sprite.getPosition();
     }
 
+};
+
+class Sheep : public Animal
+{
+public:
+    inline static sf::Texture texture;
+    inline static std::vector<sf::Texture> sharedSouth;
+    inline static std::vector<sf::Texture> sharedNorth;
+    inline static std::vector<sf::Texture> sharedEast;
+    inline static std::vector<sf::Texture> sharedWest;
+    inline static bool sharedLoaded = false;
+
+    static void loadSharedTextures() {
+        if (sharedLoaded) return;
+        Animation aS, aN, aE, aW;
+        aS.loadFromFolder("Sprites/Animals/Sheep/Walk/South", 6);
+        aN.loadFromFolder("Sprites/Animals/Sheep/Walk/North", 6);
+        aE.loadFromFolder("Sprites/Animals/Sheep/Walk/East", 6);
+        aW.loadFromFolder("Sprites/Animals/Sheep/Walk/West", 6);
+        sharedSouth = std::move(aS.frames);
+        sharedNorth = std::move(aN.frames);
+        sharedEast = std::move(aE.frames);
+        sharedWest = std::move(aW.frames);
+        sharedLoaded = true;
+    }
+
+    Sheep(sf::Vector2f pos) : Animal(texture, pos, 40)
+    {
+        maxHealth = 40.f;
+        health = maxHealth;
+        speed = 35.f;
+        attackDamage = 6.f;
+        attackCooldown = 1.4f;
+
+        loadSharedTextures();
+        animSouth.sharedFrames = &sharedSouth;
+        animNorth.sharedFrames = &sharedNorth;
+        animEast.sharedFrames = &sharedEast;
+        animWest.sharedFrames = &sharedWest;
+
+        sprite.setTexture(animSouth.getCurrentTexture(), true);
+        sprite.setOrigin({ 32.f, 32.f });
+
+        sprite.setPosition(pos);
+        sprite.setScale({ 1.5f, 1.5f });
+    }
+
+    int getFoodItemID() const override
+    {
+        return ITEM_SHEEP_MEAT;
+    }
+
+    const sf::Texture* getFoodTexture() const override
+    {
+        return SheepMeat::getTexture();
+    }
+
+    int getFoodDropCount() const override
+    {
+        return 1 + rand() % 2;
+    }
 };

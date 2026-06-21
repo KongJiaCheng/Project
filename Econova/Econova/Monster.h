@@ -106,7 +106,12 @@ public:
 
         applyCurrentTexture();
 
-        attackTimer += dt;
+        // Only charge attack timer when within attack range (60px).
+        // Reset when out of range to prevent phantom instant-attacks on first contact.
+        if (len <= 60.f)
+            attackTimer += dt;
+        else
+            attackTimer = 0.f;
     }
 
     void applyCurrentTexture()

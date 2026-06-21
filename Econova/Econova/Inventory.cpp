@@ -74,6 +74,13 @@ void Inventory::draw(sf::RenderWindow& window)
         float py = yStart + row * (boxH + 4.f);
 
         slotBox[i].setPosition({ px, py });
+        if (i == selectedSlot) {
+            slotBox[i].setOutlineColor(sf::Color::Yellow);
+            slotBox[i].setOutlineThickness(3.f);
+        } else {
+            slotBox[i].setOutlineColor(sf::Color::Black);
+            slotBox[i].setOutlineThickness(2.f);
+        }
         window.draw(slotBox[i]);
 
         if (slots[i].occupied && slots[i].icon)
@@ -135,7 +142,7 @@ void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& wind
         if (slot == lastClickedSlot && doubleClickClock.getElapsedTime().asSeconds() < 0.5f) {
             if (slots[slot].occupied) {
                 int id = slots[slot].id;
-                if (id == 4 || id == 6) { // ITEM_WOODEN_SWORD or ITEM_SHIELD
+                if (id == 4 || id == 6 || id == 14) { // ITEM_WOODEN_SWORD, ITEM_SHIELD, or ITEM_WRENCH (14)
                     bool newEquip = !slotEquipped[slot];
                     if (newEquip) {
                         for (int j = 0; j < SLOT_COUNT; j++) {

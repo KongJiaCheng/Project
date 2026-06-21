@@ -401,7 +401,10 @@ bool AuthManager::saveInventory(const sql::SQLString& username, const std::vecto
                     (item_id == 101) ? "PigMeat" :
                     (item_id == 102) ? "ZombieFlesh" :
                     (item_id == 103) ? "CookedChicken" :
-                    (item_id == 104) ? "CookedPig" : "Unknown";
+                    (item_id == 104) ? "CookedPig" :
+                    (item_id == 105) ? "SheepMeat" :
+                    (item_id == 106) ? "CookedSheep" :
+                    (item_id == 107) ? "Wool" : "Unknown";
 
                 insStmt->setString(1, username);
                 insStmt->setString(2, itemName);
@@ -762,7 +765,10 @@ std::vector<std::pair<int, int>> AuthManager::loadInventory(const sql::SQLString
                 (itemName == "PigMeat") ? 101 :
                 (itemName == "ZombieFlesh") ? 102 :
                 (itemName == "CookedChicken") ? 103 :
-                (itemName == "CookedPig") ? 104 : 0;
+                (itemName == "CookedPig") ? 104 :
+                (itemName == "SheepMeat") ? 105 :
+                (itemName == "CookedSheep") ? 106 :
+                (itemName == "Wool") ? 107 : 0;
 
             if (item_id != 0) {
                 inventoryData[slot] = { item_id, count };
