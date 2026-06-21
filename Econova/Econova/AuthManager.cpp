@@ -371,27 +371,40 @@ bool AuthManager::saveInventory(const sql::SQLString& username, const std::vecto
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return false;
     try {
-        // Clear old inventory for this user
         std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM Inventory WHERE Username = ?"));
         if (!delStmt) return false;
         delStmt->setString(1, username);
         delStmt->executeUpdate();
 
-        // Insert new slots
         std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO Inventory (Username, ItemName, Quantity) VALUES (?, ?, ?)"));
         if (!insStmt) return false;
         for (int slot = 0; slot < (int)inventoryData.size(); ++slot) {
             int item_id = inventoryData[slot].first;
             int count = inventoryData[slot].second;
-
             if (item_id != 0 && count > 0) {
-                std::string itemName = "";
-                if (item_id == 1) itemName = "ChickenMeat";
-                else if (item_id == 2) itemName = "PigMeat";
-                else if (item_id == 3) itemName = "ZombieFlesh";
-                else if (item_id == 4) itemName = "WoodenSword";
-                else if (item_id == 6) itemName = "Shield";
-                else itemName = "Unknown";
+                std::string itemName =
+                    (item_id == 1) ? "Tree" :
+                    (item_id == 2) ? "Stone" :
+                    (item_id == 3) ? "Wood" :
+                    (item_id == 4) ? "WoodenSword" :
+                    (item_id == 5) ? "Sapling" :
+                    (item_id == 6) ? "Shield" :
+                    (item_id == 7) ? "Furnace" :
+                    (item_id == 8) ? "WoodTile" :
+                    (item_id == 9) ? "WoodWall" :
+                    (item_id == 10) ? "WoodDoor" :
+                    (item_id == 11) ? "WoodRoof" :
+                    (item_id == 12) ? "WoodStairs" :
+                    (item_id == 13) ? "Bed" :
+                    (item_id == 14) ? "Wrench" :
+                    (item_id == 100) ? "ChickenMeat" :
+                    (item_id == 101) ? "PigMeat" :
+                    (item_id == 102) ? "ZombieFlesh" :
+                    (item_id == 103) ? "CookedChicken" :
+                    (item_id == 104) ? "CookedPig" :
+                    (item_id == 105) ? "SheepMeat" :
+                    (item_id == 106) ? "CookedSheep" :
+                    (item_id == 107) ? "Wool" : "Unknown";
 
                 insStmt->setString(1, username);
                 insStmt->setString(2, itemName);
@@ -719,7 +732,7 @@ int AuthManager::getMaxMessageID()
 
 std::vector<std::pair<int, int>> AuthManager::loadInventory(const sql::SQLString& username) {
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
-    std::vector<std::pair<int, int>> inventoryData(8, { 0, 0 }); // Default 8 empty slots based on Game.cpp
+    std::vector<std::pair<int, int>> inventoryData(20, { 0, 0 }); // Default 20 empty slots
     if (!con) return inventoryData;
 
     try {
@@ -729,16 +742,33 @@ std::vector<std::pair<int, int>> AuthManager::loadInventory(const sql::SQLString
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
 
         int slot = 0;
-        while (res && res->next() && slot < 8) {
+        while (res && res->next() && slot < 20) {
             std::string itemName = std::string(res->getString("ItemName"));
             int count = res->getInt("Quantity");
 
-            int item_id = 0;
-            if (itemName == "ChickenMeat") item_id = 1;
-            else if (itemName == "PigMeat") item_id = 2;
-            else if (itemName == "ZombieFlesh") item_id = 3;
-            else if (itemName == "WoodenSword") item_id = 4;
-            else if (itemName == "Shield") item_id = 6;
+            int item_id =
+                (itemName == "Tree") ? 1 :
+                (itemName == "Stone") ? 2 :
+                (itemName == "Wood") ? 3 :
+                (itemName == "WoodenSword") ? 4 :
+                (itemName == "Sapling") ? 5 :
+                (itemName == "Shield") ? 6 :
+                (itemName == "Furnace") ? 7 :
+                (itemName == "WoodTile") ? 8 :
+                (itemName == "WoodWall") ? 9 :
+                (itemName == "WoodDoor") ? 10 :
+                (itemName == "WoodRoof") ? 11 :
+                (itemName == "WoodStairs") ? 12 :
+                (itemName == "Bed") ? 13 :
+                (itemName == "Wrench") ? 14 :
+                (itemName == "ChickenMeat") ? 100 :
+                (itemName == "PigMeat") ? 101 :
+                (itemName == "ZombieFlesh") ? 102 :
+                (itemName == "CookedChicken") ? 103 :
+                (itemName == "CookedPig") ? 104 :
+                (itemName == "SheepMeat") ? 105 :
+                (itemName == "CookedSheep") ? 106 :
+                (itemName == "Wool") ? 107 : 0;
 
             if (item_id != 0) {
                 inventoryData[slot] = { item_id, count };

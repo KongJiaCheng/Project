@@ -114,6 +114,11 @@ public:
 
         applyCurrentTexture();
 
-        attackTimer += dt;
+        // Only charge attack timer when within attack range (60px).
+        // Reset to 0 when out of range so zombies don't phantom-attack on first contact.
+        if (len <= 60.f)
+            attackTimer += dt;
+        else
+            attackTimer = 0.f;
     }
 };
