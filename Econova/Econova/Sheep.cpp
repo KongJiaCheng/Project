@@ -36,10 +36,10 @@ Sheep::Sheep(sf::Vector2f pos) : Animal(texture, pos, 40)
     animWest.sharedFrames = &sharedWest;
 
     sprite.setTexture(animSouth.getCurrentTexture(), true);
-    sprite.setOrigin({ 32.f, 32.f });
+    sprite.setOrigin({ 154.f, 222.f });
 
     sprite.setPosition(pos);
-    sprite.setScale({ 1.5f, 1.5f });
+    sprite.setScale({ 0.5f, 0.5f });
 }
 
 const sf::Texture* Sheep::getFoodTexture() const
