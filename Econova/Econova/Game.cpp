@@ -2246,6 +2246,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                         activeFire->fuel += amt * 4;
                                     } else if (itemID == ITEM_SAPLING) {
                                         activeFire->fuel += amt;
+                                        saplingPlacementMode = false;
                                     }
                                 } else if (quantityPromptCampfireSlot == 2) { // Raw Food
                                     activeFire->inputItem = itemID;
@@ -2324,6 +2325,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                             activeFire->fuel += amt * 4;
                                         } else if (itemID == ITEM_SAPLING) {
                                             activeFire->fuel += amt;
+                                            saplingPlacementMode = false;
                                         }
                                     } else if (quantityPromptCampfireSlot == 2) { // Raw Food
                                         activeFire->inputItem = itemID;
@@ -2762,6 +2764,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                                         fire.fuel += 4;
                                                     } else {
                                                         fire.fuel += 1;
+                                                        if (itemID == ITEM_SAPLING) {
+                                                            saplingPlacementMode = false;
+                                                        }
                                                     }
                                                     inventory.consumeItem(selSlot);
                                                 }
@@ -7991,58 +7996,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         window.draw(cancelTxt);
     }
 
-    if (quantityPromptOpen) {
-        sf::RectangleShape qBox({ 400.f, 220.f });
-        sf::Vector2f qBoxPos = { ((float)width - 400.f) / 2.f, ((float)height - 220.f) / 2.f };
-        qBox.setPosition(qBoxPos);
-        qBox.setFillColor(sf::Color(20, 25, 35, 250));
-        qBox.setOutlineThickness(3.f);
-        qBox.setOutlineColor(sf::Color(0, 242, 254, 180));
-        window.draw(qBox);
-
-        sf::Text qTitle(uiFont, "ENTER AMOUNT", 20);
-        qTitle.setStyle(sf::Text::Bold);
-        qTitle.setFillColor(sf::Color(0, 242, 254));
-        qTitle.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 25.f });
-        window.draw(qTitle);
-
-        sf::Text qLabel(uiFont, "Enter quantity to put in trade (Max: " + std::to_string(quantityPromptMax) + "):", 12);
-        qLabel.setFillColor(sf::Color(200, 200, 210));
-        qLabel.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 65.f });
-        window.draw(qLabel);
-
-        quantityInput.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 95.f });
-        quantityInput.draw(window);
-
-        sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
-
-        sf::FloatRect confirmBtnRect({ qBoxPos.x + 30.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
-        bool confirmHover = confirmBtnRect.contains(mousePos);
-        sf::RectangleShape confirmBtn({ 160.f, 40.f });
-        confirmBtn.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 150.f });
-        confirmBtn.setFillColor(confirmHover ? sf::Color(0, 200, 254) : sf::Color(0, 150, 200));
-        window.draw(confirmBtn);
-
-        sf::Text confirmTxt(uiFont, "Confirm", 15);
-        confirmTxt.setStyle(sf::Text::Bold);
-        confirmTxt.setFillColor(sf::Color::White);
-        confirmTxt.setPosition({ confirmBtn.getPosition().x + (confirmBtn.getSize().x - confirmTxt.getGlobalBounds().size.x) / 2.f, confirmBtn.getPosition().y + 10.f });
-        window.draw(confirmTxt);
-
-        sf::FloatRect cancelBtnRect({ qBoxPos.x + 210.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
-        bool cancelHover = cancelBtnRect.contains(mousePos);
-        sf::RectangleShape cancelBtn({ 160.f, 40.f });
-        cancelBtn.setPosition({ qBoxPos.x + 210.f, qBoxPos.y + 150.f });
-        cancelBtn.setFillColor(cancelHover ? sf::Color(200, 60, 60) : sf::Color(150, 40, 40));
-        window.draw(cancelBtn);
-
-        sf::Text cancelTxt(uiFont, "Cancel", 15);
-        cancelTxt.setStyle(sf::Text::Bold);
-        cancelTxt.setFillColor(sf::Color::White);
-        cancelTxt.setPosition({ cancelBtn.getPosition().x + (cancelBtn.getSize().x - cancelTxt.getGlobalBounds().size.x) / 2.f, cancelBtn.getPosition().y + 10.f });
-        window.draw(cancelTxt);
-    }
-
     // ✅ HUD Market Stats Button
     sf::RectangleShape marketBtnTopRight({ 150.f, 40.f });
     marketBtnTopRight.setPosition({ (float)width - 300.f, 20.f });
@@ -8441,6 +8394,71 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             statusTxt.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 215.f });
             window.draw(statusTxt);
         }
+    }
+
+    if (quantityPromptOpen) {
+        sf::View currentView = window.getView();
+        window.setView(GetUIView(&window));
+
+        sf::RectangleShape qBox({ 400.f, 220.f });
+        sf::Vector2f qBoxPos = { ((float)width - 400.f) / 2.f, ((float)height - 220.f) / 2.f };
+        qBox.setPosition(qBoxPos);
+        qBox.setFillColor(sf::Color(20, 25, 35, 250));
+        qBox.setOutlineThickness(3.f);
+        qBox.setOutlineColor(sf::Color(0, 242, 254, 180));
+        window.draw(qBox);
+
+        sf::Text qTitle(uiFont, "ENTER AMOUNT", 20);
+        qTitle.setStyle(sf::Text::Bold);
+        qTitle.setFillColor(sf::Color(0, 242, 254));
+        qTitle.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 25.f });
+        window.draw(qTitle);
+
+        std::string labelText = "Enter quantity to put in trade";
+        if (quantityPromptIsCampfire) {
+            if (quantityPromptCampfireSlot == 1) {
+                labelText = "Enter quantity of fuel to place";
+            } else {
+                labelText = "Enter quantity of food to place";
+            }
+        }
+        sf::Text qLabel(uiFont, labelText + " (Max: " + std::to_string(quantityPromptMax) + "):", 12);
+        qLabel.setFillColor(sf::Color(200, 200, 210));
+        qLabel.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 65.f });
+        window.draw(qLabel);
+
+        quantityInput.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 95.f });
+        quantityInput.draw(window);
+
+        sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
+
+        sf::FloatRect confirmBtnRect({ qBoxPos.x + 30.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+        bool confirmHover = confirmBtnRect.contains(mousePos);
+        sf::RectangleShape confirmBtn({ 160.f, 40.f });
+        confirmBtn.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 150.f });
+        confirmBtn.setFillColor(confirmHover ? sf::Color(0, 200, 254) : sf::Color(0, 150, 200));
+        window.draw(confirmBtn);
+
+        sf::Text confirmTxt(uiFont, "Confirm", 15);
+        confirmTxt.setStyle(sf::Text::Bold);
+        confirmTxt.setFillColor(sf::Color::White);
+        confirmTxt.setPosition({ confirmBtn.getPosition().x + (confirmBtn.getSize().x - confirmTxt.getGlobalBounds().size.x) / 2.f, confirmBtn.getPosition().y + 10.f });
+        window.draw(confirmTxt);
+
+        sf::FloatRect cancelBtnRect({ qBoxPos.x + 210.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+        bool cancelHover = cancelBtnRect.contains(mousePos);
+        sf::RectangleShape cancelBtn({ 160.f, 40.f });
+        cancelBtn.setPosition({ qBoxPos.x + 210.f, qBoxPos.y + 150.f });
+        cancelBtn.setFillColor(cancelHover ? sf::Color(200, 60, 60) : sf::Color(150, 40, 40));
+        window.draw(cancelBtn);
+
+        sf::Text cancelTxt(uiFont, "Cancel", 15);
+        cancelTxt.setStyle(sf::Text::Bold);
+        cancelTxt.setFillColor(sf::Color::White);
+        cancelTxt.setPosition({ cancelBtn.getPosition().x + (cancelBtn.getSize().x - cancelTxt.getGlobalBounds().size.x) / 2.f, cancelBtn.getPosition().y + 10.f });
+        window.draw(cancelTxt);
+
+        window.setView(currentView);
     }
 
     if (isSleeping) {
