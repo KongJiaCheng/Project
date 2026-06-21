@@ -2075,7 +2075,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     c.position.x,
                     c.position.y,
                     c.timeRemaining,
-                    c.isCrafted
+                    c.isCrafted,
+                    c.fuel,
+                    c.inputItem,
+                    c.inputCount,
+                    c.outputItem,
+                    c.outputCount
                     });
             }
 
@@ -2964,7 +2969,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 authManager.saveStructures(username.c_str(), structData);
 
                 std::vector<StoredCampfire> campData;
-                for (auto& c : campfires) campData.push_back({ c.position.x, c.position.y, c.timeRemaining, c.isCrafted });
+                for (auto& c : campfires) {
+                    campData.push_back({
+                        c.position.x,
+                        c.position.y,
+                        c.timeRemaining,
+                        c.isCrafted,
+                        c.fuel,
+                        c.inputItem,
+                        c.inputCount,
+                        c.outputItem,
+                        c.outputCount
+                    });
+                }
                 authManager.saveCampfires(username.c_str(), campData);
 
                 window.close();
@@ -3012,7 +3029,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     authManager.saveStructures(username.c_str(), structData);
 
                     std::vector<StoredCampfire> campData;
-                    for (auto& c : campfires) campData.push_back({ c.position.x, c.position.y, c.timeRemaining, c.isCrafted });
+                    for (auto& c : campfires) {
+                        campData.push_back({
+                            c.position.x,
+                            c.position.y,
+                            c.timeRemaining,
+                            c.isCrafted,
+                            c.fuel,
+                            c.inputItem,
+                            c.inputCount,
+                            c.outputItem,
+                            c.outputCount
+                        });
+                    }
                     authManager.saveCampfires(username.c_str(), campData);
 
                     std::cout << "Saved!\n";
@@ -4327,8 +4356,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         if (inventory.hasItem(clickedSlot))
                         {
                             const sf::Texture* tex = inventory.getItemTexture(clickedSlot);
-                            // Only block consumption during trade
-                            if (!tradeMenuOpen)
+                            bool campfireOpen = false;
+                            for (auto& f : campfires) {
+                                if (f.menuOpen) {
+                                    campfireOpen = true;
+                                    break;
+                                }
+                            }
+                            // Only block consumption during trade or cooking
+                            if (!tradeMenuOpen && !p2pTradeOpen && !campfireOpen)
                             {
                                 if (tex == &saplingTex)
                                 {
@@ -4750,6 +4786,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 pc.isCrafted = c.isCrafted;
                 pc.currentFrame = 0;
                 pc.frameTimer = 0.f;
+                pc.fuel = c.fuel;
+                pc.inputItem = c.inputItem;
+                pc.inputCount = c.inputCount;
+                pc.outputItem = c.outputItem;
+                pc.outputCount = c.outputCount;
                 campfires.push_back(pc);
             }
 
@@ -8269,6 +8310,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 bg.getPosition().y + 10.f
             });
             window.draw(title);
+
+            if (fire.inputCount > 0 || fire.outputCount > 0 || fire.fuel > 0) {
+                sf::Text prompt(uiFont, "Continue cooking progress saved!", 12);
+                prompt.setFillColor(sf::Color(0, 242, 254));
+                prompt.setPosition({
+                    bg.getPosition().x + 20.f,
+                    bg.getPosition().y + 45.f
+                });
+                window.draw(prompt);
+            }
 
             // Close button (X) in the top right corner
             sf::RectangleShape closeBtn({ 40.f, 40.f });
