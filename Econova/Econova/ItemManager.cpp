@@ -3,6 +3,7 @@
 #include "PigMeat.h"
 #include "ZombieFlesh.h"
 #include "Food.h"
+#include "SheepMeat.h"
 #include "ViewUtils.h"
 
 #include <cmath>
