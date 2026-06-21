@@ -16,6 +16,8 @@
 #include "ChickenMeat.h"
 #include "PigMeat.h"
 #include "ZombieFlesh.h"
+#include "Sheep.h"
+#include "SheepMeat.h"
 #include "AuthManager.h"
 #include "ItemID.h"
 #include "Settings.h"
