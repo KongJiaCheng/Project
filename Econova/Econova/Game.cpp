@@ -2949,6 +2949,22 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
             if (event->is<sf::Event::Closed>())
             {
+                for (int i = 0; i < 4; i++) {
+                    if (playerTradeSlots[i].tex != nullptr) {
+                        inventory.addItem(playerTradeSlots[i].id, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
+                        playerTradeSlots[i] = {};
+                    }
+                }
+                for (int i = 0; i < 4; i++) {
+                    if (myP2PSlots[i].tex != nullptr) {
+                        inventory.addItem(myP2PSlots[i].id, *myP2PSlots[i].tex, myP2PSlots[i].count);
+                        myP2PSlots[i] = {};
+                    }
+                }
+                if (p2pTradeID > 0) {
+                    authManager.cancelP2PTrade(p2pTradeID);
+                }
+
                 std::vector<std::pair<int, int>> items(20, { 0, 0 });
                 for (int i = 0; i < 20; i++) {
                     if (inventory.hasItem(i)) {
@@ -3008,6 +3024,22 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         }
                         continue;
                     }
+                    for (int i = 0; i < 4; i++) {
+                        if (playerTradeSlots[i].tex != nullptr) {
+                            inventory.addItem(playerTradeSlots[i].id, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
+                            playerTradeSlots[i] = {};
+                        }
+                    }
+                    for (int i = 0; i < 4; i++) {
+                        if (myP2PSlots[i].tex != nullptr) {
+                            inventory.addItem(myP2PSlots[i].id, *myP2PSlots[i].tex, myP2PSlots[i].count);
+                            myP2PSlots[i] = {};
+                        }
+                    }
+                    if (p2pTradeID > 0) {
+                        authManager.cancelP2PTrade(p2pTradeID);
+                    }
+
                     std::vector<std::pair<int, int>> items(20, { 0, 0 });
                     for (int i = 0; i < 20; i++) {
                         if (inventory.hasItem(i)) {
