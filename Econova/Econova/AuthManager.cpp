@@ -165,8 +165,23 @@ bool AuthManager::initDB() {
                         "PosX FLOAT, "
                         "PosY FLOAT, "
                         "TimeRemaining FLOAT, "
-                        "IsCrafted BOOLEAN"
+                        "IsCrafted BOOLEAN, "
+                        "Fuel INT DEFAULT 0, "
+                        "InputItem INT DEFAULT 0, "
+                        "InputCount INT DEFAULT 0, "
+                        "OutputItem INT DEFAULT 0, "
+                        "OutputCount INT DEFAULT 0"
                         ")");
+                    try { stmt->execute("ALTER TABLE campfires ADD COLUMN Fuel INT DEFAULT 0"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE campfires ADD COLUMN InputItem INT DEFAULT 0"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE campfires ADD COLUMN InputCount INT DEFAULT 0"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE campfires ADD COLUMN OutputItem INT DEFAULT 0"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE campfires ADD COLUMN OutputCount INT DEFAULT 0"); }
+                    catch (...) {}
                 }
             }
             catch (sql::SQLException& e) {
@@ -589,7 +604,7 @@ void AuthManager::saveCampfires(const sql::SQLString& username, const std::vecto
         delStmt->setString(1, username);
         delStmt->executeUpdate();
 
-        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO campfires (Username, PosX, PosY, TimeRemaining, IsCrafted) VALUES (?, ?, ?, ?, ?)"));
+        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO campfires (Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
         if (!insStmt) return;
         for (auto& c : campfires) {
             insStmt->setString(1, username);
@@ -597,6 +612,11 @@ void AuthManager::saveCampfires(const sql::SQLString& username, const std::vecto
             insStmt->setDouble(3, c.y);
             insStmt->setDouble(4, c.timeRemaining);
             insStmt->setBoolean(5, c.isCrafted);
+            insStmt->setInt(6, c.fuel);
+            insStmt->setInt(7, c.inputItem);
+            insStmt->setInt(8, c.inputCount);
+            insStmt->setInt(9, c.outputItem);
+            insStmt->setInt(10, c.outputCount);
             insStmt->executeUpdate();
         }
     }
@@ -610,12 +630,22 @@ std::vector<StoredCampfire> AuthManager::loadCampfires(const sql::SQLString& use
     std::vector<StoredCampfire> campfires;
     if (!con) return campfires;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT PosX, PosY, TimeRemaining, IsCrafted FROM campfires WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount FROM campfires WHERE Username = ?"));
         if (!pstmt) return campfires;
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            campfires.push_back({ (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("TimeRemaining"), res->getBoolean("IsCrafted") });
+            StoredCampfire sc;
+            sc.x = (float)res->getDouble("PosX");
+            sc.y = (float)res->getDouble("PosY");
+            sc.timeRemaining = (float)res->getDouble("TimeRemaining");
+            sc.isCrafted = res->getBoolean("IsCrafted");
+            sc.fuel = res->getInt("Fuel");
+            sc.inputItem = res->getInt("InputItem");
+            sc.inputCount = res->getInt("InputCount");
+            sc.outputItem = res->getInt("OutputItem");
+            sc.outputCount = res->getInt("OutputCount");
+            campfires.push_back(sc);
         }
     }
     catch (sql::SQLException& e) {

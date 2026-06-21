@@ -35,6 +35,11 @@ struct StoredStructure {
 struct StoredCampfire {
     float x, y, timeRemaining;
     bool isCrafted;
+    int fuel = 0;
+    int inputItem = 0;
+    int inputCount = 0;
+    int outputItem = 0;
+    int outputCount = 0;
 };
 
 struct QuestInfo {
