@@ -1486,8 +1486,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             int mobCount = 0;
 
             auto snapGrid = [](sf::Vector2f pos) -> sf::Vector2f {
-                pos.x = std::round(pos.x / 200.f) * 200.f;
-                pos.y = std::round(pos.y / 100.f) * 100.f;
+                // Snap to cell origin (top-left) to match grid drawing (cells at gx*200, gy*100)
+                pos.x = std::floor(pos.x / 200.f) * 200.f;
+                pos.y = std::floor(pos.y / 100.f) * 100.f;
                 return pos;
             };
 
@@ -4273,8 +4274,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     else
                     {
                         saplingFollowingCursor = !saplingFollowingCursor;
-                        saplingPlacementPos.x = std::round(worldPos.x / 200.f) * 200.f;
-                        saplingPlacementPos.y = std::round(worldPos.y / 100.f) * 100.f;
+                        saplingPlacementPos.x = std::floor(worldPos.x / 200.f) * 200.f;
+                        saplingPlacementPos.y = std::floor(worldPos.y / 100.f) * 100.f;
                         clickHandled = true;
                     }
                 }
@@ -4379,9 +4380,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             placementPos = worldPos;
                         }
 
-                        // Snap to grid for building items
-                        placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
-                        placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                        // Snap to grid cell origin (floor, matching drawn grid)
+                        placementPos.x = std::floor(placementPos.x / 200.f) * 200.f;
+                        placementPos.y = std::floor(placementPos.y / 100.f) * 100.f;
                         // Stairs snap one grid row higher so they sit on top of a wood tile
                         if (placementItemID == ITEM_WOOD_STAIRS) {
                             placementPos.y -= 100.f;
@@ -4906,8 +4907,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             hungerMultiplierText.setString("X" + std::to_string(hungerMultiplier));
             thirstMultiplierText.setString("X" + std::to_string(thirstMultiplier));
 
-            // Apply Structures
+            // Apply Structures (skip any that don't align with the 200x100 grid)
             for (auto& s : loaded.structures) {
+                // Check grid alignment: position must be exactly at a cell origin
+                float snappedX = std::floor(s.x / 200.f) * 200.f;
+                float snappedY = std::floor(s.y / 100.f) * 100.f;
+                if (std::abs(s.x - snappedX) > 1.f || std::abs(s.y - snappedY) > 1.f) {
+                    continue; // doesn't fit the grid — discard
+                }
                 const sf::Texture* tex = nullptr;
                 if (s.id == ITEM_FURNACE) tex = &furnaceTex;
                 else if (s.id == ITEM_WOOD_TILE) tex = &woodTileTex;
@@ -4927,8 +4934,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
-            // Apply Other Players' Structures
+            // Apply Other Players' Structures (skip any that don't align with the 200x100 grid)
             for (auto& s : loaded.otherStructures) {
+                // Check grid alignment: position must be exactly at a cell origin
+                float snappedX = std::floor(s.x / 200.f) * 200.f;
+                float snappedY = std::floor(s.y / 100.f) * 100.f;
+                if (std::abs(s.x - snappedX) > 1.f || std::abs(s.y - snappedY) > 1.f) {
+                    continue; // doesn't fit the grid — discard
+                }
                 const sf::Texture* tex = nullptr;
                 if (s.id == ITEM_FURNACE) tex = &furnaceTex;
                 else if (s.id == ITEM_WOOD_TILE) tex = &woodTileTex;
@@ -5621,6 +5634,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         // -------------------------------------------------------------------------
         // RENDER MINECRAFT-LIKE FLOOR GRID BOXES FOR THE WHOLE WORLD (CULLED)
+        // Each cell spans [gx*200, (gx+1)*200] x [gy*100, (gy+1)*100]
         // -------------------------------------------------------------------------
         {
             // Build a fast lookup for structure shear at each grid coord
@@ -5628,38 +5642,38 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             for (auto& s : structures) {
                 if (s.sprite.has_value()) {
                     sf::Vector2f pos = s.sprite->getPosition();
-                    int gx = (int)std::round(pos.x / 200.f);
-                    int gy = (int)std::round(pos.y / 100.f);
+                    // cell index = floor(pos / cellSize)
+                    int gx = (int)std::floor(pos.x / 200.f);
+                    int gy = (int)std::floor(pos.y / 100.f);
                     gridShearMap[{gx, gy}] = s.shearY;
                 }
             }
 
-            // Find current highlighted cell under mouse cursor in world coords
+            // Find highlighted cell under mouse cursor (use floor so it matches cell origin)
             sf::Vector2i pixelMouse = sf::Mouse::getPosition(window);
             sf::Vector2f worldM = window.mapPixelToCoords(pixelMouse);
-            int hoverGx = (int)std::round(worldM.x / 200.f);
-            int hoverGy = (int)std::round(worldM.y / 100.f);
+            int hoverGx = (int)std::floor(worldM.x / 200.f);
+            int hoverGy = (int)std::floor(worldM.y / 100.f);
 
             // Get viewport bounds for frustum culling
             sf::View currentView = window.getView();
             sf::Vector2f center = currentView.getCenter();
-            sf::Vector2f size = currentView.getSize();
+            sf::Vector2f viewSize = currentView.getSize();
 
-            float left = center.x - size.x / 2.f;
-            float right = center.x + size.x / 2.f;
-            float top = center.y - size.y / 2.f;
-            float bottom = center.y + size.y / 2.f;
+            float left   = center.x - viewSize.x / 2.f;
+            float right  = center.x + viewSize.x / 2.f;
+            float top    = center.y - viewSize.y / 2.f;
+            float bottom = center.y + viewSize.y / 2.f;
 
-            // Map pixel bounds to grid coordinates
-            // Add a buffer of 2 cells on each side to avoid clipping at the screen edge
-            int minGx = (int)std::floor(left / 200.f) - 2;
-            int maxGx = (int)std::ceil(right / 200.f) + 2;
-            int minGy = (int)std::floor(top / 100.f) - 2;
-            int maxGy = (int)std::ceil(bottom / 100.f) + 2;
+            // Map world bounds to cell indices with 1-cell buffer
+            int minGx = (int)std::floor(left   / 200.f) - 1;
+            int maxGx = (int)std::floor(right  / 200.f) + 1;
+            int minGy = (int)std::floor(top    / 100.f) - 1;
+            int maxGy = (int)std::floor(bottom / 100.f) + 1;
 
-            // Clamp to world dimensions (0 to MAP_WIDTH/200, 0 to MAP_HEIGHT/100)
-            int mapMaxGx = (int)(MAP_WIDTH / 200);
-            int mapMaxGy = (int)(MAP_HEIGHT / 100);
+            // Clamp to world
+            int mapMaxGx = (int)(MAP_WIDTH  / 200) - 1;
+            int mapMaxGy = (int)(MAP_HEIGHT / 100) - 1;
             if (minGx < 0) minGx = 0;
             if (maxGx > mapMaxGx) maxGx = mapMaxGx;
             if (minGy < 0) minGy = 0;
@@ -5669,43 +5683,44 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             for (int gx = minGx; gx <= maxGx; ++gx) {
                 for (int gy = minGy; gy <= maxGy; ++gy) {
-                    float cx = gx * 200.f;
-                    float cy = gy * 100.f;
+                    // Top-left corner of this cell in world space
+                    float x0 = gx * 200.f;
+                    float y0 = gy * 100.f;
+                    float x1 = x0 + 200.f;
+                    float y1 = y0 + 100.f;
 
+                    // Apply shear if a structure sits in this cell
                     float shear = 0.f;
                     auto it = gridShearMap.find({gx, gy});
                     if (it != gridShearMap.end()) {
                         shear = it->second;
                     }
 
-                    // Determine cell outline corners
-                    sf::Vector2f p0(cx - 100.f, cy - 100.f * shear);
-                    sf::Vector2f p1(cx + 100.f, cy + 100.f * shear);
-                    sf::Vector2f p2(cx + 100.f, cy - 100.f + 100.f * shear);
-                    sf::Vector2f p3(cx - 100.f, cy - 100.f - 100.f * shear);
+                    // Four corners of the cell (flat rectangle, optionally sheared on y)
+                    sf::Vector2f tl(x0, y0 + shear * 100.f);
+                    sf::Vector2f tr(x1, y0 + shear * 100.f);
+                    sf::Vector2f br(x1, y1 + shear * 100.f);
+                    sf::Vector2f bl(x0, y1 + shear * 100.f);
 
                     sf::Color col;
                     if (gx == hoverGx && gy == hoverGy) {
-                        col = sf::Color(0, 255, 0, 150); // Highlighted green for cursor target
+                        col = sf::Color(0, 255, 80, 200); // bright green highlight
                     } else {
-                        col = sf::Color(255, 255, 255, 30); // Subtle soft white for standard grid
+                        col = sf::Color(255, 255, 255, 80); // visible white
                     }
 
-                    // Bottom edge: p0 -> p1
-                    lines.append(sf::Vertex{p0, col});
-                    lines.append(sf::Vertex{p1, col});
-
-                    // Right edge: p1 -> p2
-                    lines.append(sf::Vertex{p1, col});
-                    lines.append(sf::Vertex{p2, col});
-
-                    // Top edge: p2 -> p3
-                    lines.append(sf::Vertex{p2, col});
-                    lines.append(sf::Vertex{p3, col});
-
-                    // Left edge: p3 -> p0
-                    lines.append(sf::Vertex{p3, col});
-                    lines.append(sf::Vertex{p0, col});
+                    // Top edge
+                    lines.append(sf::Vertex{tl, col});
+                    lines.append(sf::Vertex{tr, col});
+                    // Right edge
+                    lines.append(sf::Vertex{tr, col});
+                    lines.append(sf::Vertex{br, col});
+                    // Bottom edge
+                    lines.append(sf::Vertex{br, col});
+                    lines.append(sf::Vertex{bl, col});
+                    // Left edge
+                    lines.append(sf::Vertex{bl, col});
+                    lines.append(sf::Vertex{tl, col});
                 }
             }
             window.draw(lines);
@@ -5771,9 +5786,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         if (placementMode) {
             if (placementFollowingCursor) {
                 placementPos = worldPos;
-                // Snap to grid for building items
-                placementPos.x = std::round(placementPos.x / 200.f) * 200.f;
-                placementPos.y = std::round(placementPos.y / 100.f) * 100.f;
+                // Snap to grid cell origin (floor, matching drawn grid)
+                placementPos.x = std::floor(placementPos.x / 200.f) * 200.f;
+                placementPos.y = std::floor(placementPos.y / 100.f) * 100.f;
                 // Stairs snap one grid row higher so they sit on top of a wood tile
                 if (placementItemID == ITEM_WOOD_STAIRS) {
                     placementPos.y -= 100.f;
@@ -6048,8 +6063,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             {
                 sf::Vector2i pixelPos = sf::Mouse::getPosition(window);
                 sf::Vector2f worldM = window.mapPixelToCoords(pixelPos);
-                saplingPlacementPos.x = std::round(worldM.x / 200.f) * 200.f;
-                saplingPlacementPos.y = std::round(worldM.y / 100.f) * 100.f;
+                saplingPlacementPos.x = std::floor(worldM.x / 200.f) * 200.f;
+                saplingPlacementPos.y = std::floor(worldM.y / 100.f) * 100.f;
             }
 
             sf::Sprite ghost(saplingTex);
@@ -6519,7 +6534,27 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 for (int a = 0; a < 20; ++a)
                 {
                     sf::Vector2f p(randX(gen), randY(gen));
-                    if (itemManager.isAreaFreeExplicit(p, 120.f, &stoneTex))
+                    // Snap to grid cell origin
+                    p.x = std::floor(p.x / 200.f) * 200.f;
+                    p.y = std::floor(p.y / 100.f) * 100.f;
+
+                    // Skip if near a structure or campfire
+                    bool nearPlaceable = false;
+                    for (auto& s : structures) {
+                        if (s.sprite.has_value()) {
+                            sf::Vector2f sPos = s.sprite->getPosition();
+                            float dx = p.x - sPos.x, dy = p.y - sPos.y;
+                            if (std::sqrt(dx*dx + dy*dy) < 220.f) { nearPlaceable = true; break; }
+                        }
+                    }
+                    if (!nearPlaceable) {
+                        for (auto& c : campfires) {
+                            float dx = p.x - c.position.x, dy = p.y - c.position.y;
+                            if (std::sqrt(dx*dx + dy*dy) < 220.f) { nearPlaceable = true; break; }
+                        }
+                    }
+
+                    if (!nearPlaceable && itemManager.isAreaFreeExplicit(p, 120.f, &stoneTex))
                     {
                         itemManager.addItem(ITEM_STONE, stoneTex, p, 1);
                         break;
@@ -6620,6 +6655,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     }),
                                 structures.end());
                             for (auto& s : res.otherStructures) {
+                                // Discard if not on a grid cell origin
+                                float snappedX = std::floor(s.x / 200.f) * 200.f;
+                                float snappedY = std::floor(s.y / 100.f) * 100.f;
+                                if (std::abs(s.x - snappedX) > 1.f || std::abs(s.y - snappedY) > 1.f) {
+                                    continue;
+                                }
                                 const sf::Texture* tex = nullptr;
                                 if      (s.id == ITEM_FURNACE)     tex = &furnaceTex;
                                 else if (s.id == ITEM_WOOD_TILE)   tex = &woodTileTex;
