@@ -40,6 +40,7 @@ struct StoredCampfire {
     int inputCount = 0;
     int outputItem = 0;
     int outputCount = 0;
+    std::string owner = "";   // username of the owner; "" = self
 };
 
 struct QuestInfo {
@@ -142,6 +143,11 @@ public:
 
     void saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires);
     std::vector<StoredCampfire> loadCampfires(const sql::SQLString& username);
+    std::vector<StoredCampfire> loadOtherCampfires(const sql::SQLString& username);
+
+    // World / server-time helpers
+    int       getOrCreateWorldSeed();
+    long long getServerEpochSeconds();
 
 private:
     sql::mysql::MySQL_Driver* driver = nullptr;

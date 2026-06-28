@@ -129,6 +129,11 @@ struct SyncResult {
     std::string pullByUsername;
     int pendingTradeID = -1;
     P2PTradeState pendingTradeState;
+    // World sync fields
+    long long serverEpoch = 0;
+    std::vector<StoredStructure> otherStructures;
+    std::vector<StoredCampfire>  otherCampfires;
+    bool structuresUpdated = false;
 };
 
 void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTimeFlag)
@@ -387,6 +392,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     int exp = 0;
     float timeOffset = 0.f;
     float elapsedGameTime = 0.f;
+    long long serverEpochCache = 0LL;  // server UNIX epoch for synced day/night
 
     bool isSleeping = false;
     float sleepFadeTimer = 0.f;
@@ -516,6 +522,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         int outputCount = 0;
 
         bool menuOpen = false;
+        std::string owner = "";  // empty=self, otherwise other player username
     };
 
     struct PlantedSapling {
@@ -550,6 +557,47 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     };
     std::vector<PlacedStructure> structures;
     std::vector<PlacedCampfire> campfires;
+
+    auto syncSaveLocalStructuresAndCampfires = [&]() {
+        if (!dbStartupEnabled) return;
+        std::vector<StoredStructure> structData;
+        for (auto& s : structures)
+        {
+            if (s.sprite.has_value() &&
+                (s.owner == username || s.owner == ""))
+            {
+                structData.push_back({
+                    s.id,
+                    s.sprite->getPosition().x,
+                    s.sprite->getPosition().y,
+                    s.health,
+                    s.rotation,
+                    s.isOpen,
+                    s.shearY
+                    });
+            }
+        }
+        authManager.saveStructures(username.c_str(), structData);
+
+        std::vector<StoredCampfire> campData;
+        for (auto& c : campfires)
+        {
+            if (c.owner == username || c.owner == "") {
+                campData.push_back({
+                    c.position.x,
+                    c.position.y,
+                    c.timeRemaining,
+                    c.isCrafted,
+                    c.fuel,
+                    c.inputItem,
+                    c.inputCount,
+                    c.outputItem,
+                    c.outputCount
+                    });
+            }
+        }
+        authManager.saveCampfires(username.c_str(), campData);
+    };
     sf::Texture campfireFrames[8];
     for (int i = 0; i < 8; i++) {
         campfireFrames[i].loadFromFile(resolvePath("Items/campfire/frame_" + std::to_string(i) + "_campfire.png"));
@@ -1027,6 +1075,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     // --- Online player interpolation: store target (DB) positions ---
     std::map<std::string, sf::Vector2f> onlinePlayerTargets;  // target pos from DB
     std::map<std::string, sf::Vector2f> onlinePlayerDisplayPos; // smoothed display pos
+    std::map<std::string, sf::FloatRect> onlinePlayerWrenchBounds; // wrench hitbox per online player
 
     // Story Cinematic State
     bool introActive = isFirstTimeFlag;
@@ -1254,6 +1303,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         std::chrono::high_resolution_clock::now().time_since_epoch().count()
         ^ static_cast<long long>(reinterpret_cast<std::uintptr_t>(&window))
     );
+    if (dbStartupEnabled) {
+        seed = static_cast<unsigned int>(authManager.getOrCreateWorldSeed());
+    }
     std::mt19937 gen(seed);
     traceStartup("before_main_loop");
 
@@ -2260,6 +2312,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 for (int c = 0; c < amt; c++) {
                                     inventory.consumeItem(quantityPromptSourceSlot);
                                 }
+                                syncSaveLocalStructuresAndCampfires();
                             }
                         } else if (quantityPromptIsP2P) {
                             myP2PSlots[quantityPromptTargetSlot].id = inventory.getItemID(quantityPromptSourceSlot);
@@ -2339,6 +2392,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     for (int c = 0; c < amt; c++) {
                                         inventory.consumeItem(quantityPromptSourceSlot);
                                     }
+                                    syncSaveLocalStructuresAndCampfires();
                                 }
                             } else if (quantityPromptIsP2P) {
                                 myP2PSlots[quantityPromptTargetSlot].id = inventory.getItemID(quantityPromptSourceSlot);
@@ -2639,6 +2693,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         nearestDoor->isOpen = !nearestDoor->isOpen;
                         float ignore;
                         applyStructureScale(*nearestDoor->sprite, nearestDoor->id, nearestDoor->rotation, nearestDoor->isOpen, ignore);
+                        syncSaveLocalStructuresAndCampfires();
                     }
                 }
             }
@@ -2690,7 +2745,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 {
                                     if (inventory.getItemID(i) == ITEM_WRENCH)
                                     {
-                                        fire.menuOpen = true;
+                                        if (fire.owner.empty() || fire.owner == username)
+                                            fire.menuOpen = true;
                                     }
                                 }
                             }
@@ -2747,6 +2803,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                             inventory.addItem(ITEM_SAPLING, saplingTex, saplingReturn);
                                         }
                                         fire.fuel = 0;
+                                        syncSaveLocalStructuresAndCampfires();
                                     } else {
                                         // Add fuel
                                         int selSlot = inventory.getSelectedSlot();
@@ -2774,6 +2831,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                                         }
                                                     }
                                                     inventory.consumeItem(selSlot);
+                                                    syncSaveLocalStructuresAndCampfires();
                                                 }
                                             }
                                         }
@@ -2793,6 +2851,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                         }
                                         fire.inputCount = 0;
                                         fire.inputItem = 0;
+                                        syncSaveLocalStructuresAndCampfires();
                                     } else {
                                         // Add raw food
                                         int selSlot = inventory.getSelectedSlot();
@@ -2814,6 +2873,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                                     fire.inputItem = itemID;
                                                     fire.inputCount = 1;
                                                     inventory.consumeItem(selSlot);
+                                                    syncSaveLocalStructuresAndCampfires();
                                                 }
                                             }
                                         }
@@ -2835,6 +2895,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                         }
                                         fire.outputCount = 0;
                                         fire.outputItem = 0;
+                                        syncSaveLocalStructuresAndCampfires();
                                     }
                                     clickHandled = true;
                                     campfireMenuClickHandled = true;
@@ -2862,7 +2923,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                         }
                                         if (hasWrench) {
                                             for (auto& f : campfires) f.menuOpen = false;
-                                            fire.menuOpen = true;
+                                            if (fire.owner.empty() || fire.owner == username)
+                                                fire.menuOpen = true;
                                             clickHandled = true;
                                             break;
                                         }
@@ -2898,6 +2960,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     float ignore;
                                     applyStructureScale(*nearestDoor->sprite, nearestDoor->id, nearestDoor->rotation, nearestDoor->isOpen, ignore);
                                     clickHandled = true;
+                                    syncSaveLocalStructuresAndCampfires();
                                 }
                             }
                             // Check Bed Interaction Button in world coordinates
@@ -3294,7 +3357,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             auto dispIt = onlinePlayerDisplayPos.find(op.username);
                             sf::Vector2f opPos = (dispIt != onlinePlayerDisplayPos.end()) ? dispIt->second : sf::Vector2f(op.x, op.y);
                             sf::FloatRect opBounds({ opPos.x - 30.f, opPos.y - 50.f }, { 60.f, 100.f });
-                            if (opBounds.contains(worldPos)) {
+                            bool hitWrench = false;
+                            {
+                                auto wbIt = onlinePlayerWrenchBounds.find(op.username);
+                                if (wbIt != onlinePlayerWrenchBounds.end())
+                                    hitWrench = wbIt->second.contains(worldPos);
+                            }
+                            if (opBounds.contains(worldPos) || hitWrench) {
                                 wrenchMenuOpen = true;
                                 isTargetNPC = false;
                                 wrenchTargetPlayer = op.username;
@@ -4170,7 +4239,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             pc.isCrafted = false;
                             pc.currentFrame = 0;
                             pc.frameTimer = 0.f;
+                            pc.owner = username;
                             campfires.push_back(pc);
+                            syncSaveLocalStructuresAndCampfires();
 
                             if (!tutorialActive && qInfo.questID == 3 && qInfo.progress < 1) {
                                 qInfo.progress++;
@@ -4184,6 +4255,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 inventory.consumeItem(placementFromInventorySlot);
                             }
                             // Remove conflicting/duplicate structures at the placement position
+                            bool structureRemoved = false;
                             for (auto it = structures.begin(); it != structures.end(); ) {
                                 if (it->sprite.has_value() && it->sprite->getPosition() == placementPos) {
                                     bool shouldRemove = false;
@@ -4196,12 +4268,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                     }
                                     if (shouldRemove) {
                                         it = structures.erase(it);
+                                        structureRemoved = true;
                                     } else {
                                         ++it;
                                     }
                                 } else {
                                     ++it;
                                 }
+                            }
+                            if (structureRemoved) {
+                                syncSaveLocalStructuresAndCampfires();
                             }
                             if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex, placementRotation, false);
                             else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex, placementRotation, false);
@@ -4218,6 +4294,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             applyStructureScale(*newS.sprite, placementItemID, placementRotation, false, newS.shearY);
 
                             newS.sprite->setPosition(placementPos);
+                            syncSaveLocalStructuresAndCampfires();
 
                             placementMode = false;
                         }
@@ -4659,12 +4736,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
 
         // ---- Async DB load: fetch inventory/structures/campfires in background ----
-        // Bundle all 4 DB calls into one future so the main thread stays responsive.
+        // Bundle all 5 DB calls into one future so the main thread stays responsive.
         struct LoadedGameData {
             std::vector<std::pair<int, int>>    inventory;
             std::vector<StoredStructure>       structures;
             std::vector<StoredStructure>       otherStructures;
             std::vector<StoredCampfire>        campfires;
+            std::vector<StoredCampfire>        otherCampfires;
         };
         struct SharedLoadState {
             LoadedGameData data;
@@ -4682,6 +4760,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     d.structures = authManager.loadStructures(loadUser.c_str());
                     d.otherStructures = authManager.loadOtherStructures(loadUser.c_str());
                     d.campfires = authManager.loadCampfires(loadUser.c_str());
+                    d.otherCampfires = authManager.loadOtherCampfires(loadUser.c_str());
                 }
                 catch (...) {
                     loadState->failed = true;
@@ -4823,6 +4902,24 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 pc.inputCount = c.inputCount;
                 pc.outputItem = c.outputItem;
                 pc.outputCount = c.outputCount;
+                pc.owner = username;  // own campfire
+                campfires.push_back(pc);
+            }
+
+            // Apply Other Players' Campfires
+            for (auto& c : loaded.otherCampfires) {
+                PlacedCampfire pc;
+                pc.position = { c.x, c.y };
+                pc.timeRemaining = c.timeRemaining;
+                pc.isCrafted = c.isCrafted;
+                pc.currentFrame = 0;
+                pc.frameTimer = 0.f;
+                pc.fuel = c.fuel;
+                pc.inputItem = c.inputItem;
+                pc.inputCount = c.inputCount;
+                pc.outputItem = c.outputItem;
+                pc.outputCount = c.outputCount;
+                pc.owner = c.owner;  // other player's campfire
                 campfires.push_back(pc);
             }
 
@@ -5408,6 +5505,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         if (pc.inputCount <= 0) {
                             pc.inputItem = 0;
                         }
+                        syncSaveLocalStructuresAndCampfires();
                     }
                 } else {
                     pc.timeRemaining = 0.f;
@@ -6141,9 +6239,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
 
 
+        bool structureDestroyed = false;
         for (auto it = structures.begin(); it != structures.end(); ) {
             if (it->health <= 0) {
                 it = structures.erase(it);
+                structureDestroyed = true;
             }
             else {
                 if (it->isHurt) {
@@ -6152,6 +6252,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
                 ++it;
             }
+        }
+        if (structureDestroyed) {
+            syncSaveLocalStructuresAndCampfires();
         }
 
         for (auto& m : monsters)
@@ -6319,6 +6422,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             authManager.clearPull(uname.c_str());
                         }
 
+                        // Server epoch for day/night sync
+                        result.serverEpoch = authManager.getServerEpochSeconds();
+
+                        // Periodic structure + campfire sync every ~5s (20 ticks x 0.25s)
+                        static int structSyncTick = 0;
+                        ++structSyncTick;
+                        if (structSyncTick >= 20) {
+                            result.otherStructures = authManager.loadOtherStructures(uname.c_str());
+                            result.otherCampfires  = authManager.loadOtherCampfires(uname.c_str());
+                            result.structuresUpdated = true;
+                            structSyncTick = 0;
+                        }
+
                         // P2P trade invite check
                         result.pendingTradeID = authManager.getPendingP2PTradeFor(uname);
                         if (result.pendingTradeID > 0) {
@@ -6340,6 +6456,59 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         SyncResult res = syncFuture.get();
 
                         otherPlayers = res.players;
+
+                        // Cache server epoch for day/night sync
+                        if (res.serverEpoch > 0) serverEpochCache = res.serverEpoch;
+
+                        // Apply live other-player structure/campfire updates
+                        if (res.structuresUpdated) {
+                            structures.erase(
+                                std::remove_if(structures.begin(), structures.end(),
+                                    [&](const PlacedStructure& s) {
+                                        return !s.owner.empty() && s.owner != username;
+                                    }),
+                                structures.end());
+                            for (auto& s : res.otherStructures) {
+                                const sf::Texture* tex = nullptr;
+                                if      (s.id == ITEM_FURNACE)     tex = &furnaceTex;
+                                else if (s.id == ITEM_WOOD_TILE)   tex = &woodTileTex;
+                                else if (s.id == ITEM_WOOD_WALL)   tex = &woodWallTex;
+                                else if (s.id == ITEM_WOOD_DOOR)   tex = &woodDoorTex;
+                                else if (s.id == ITEM_WOOD_ROOF)   tex = &woodRoofTex;
+                                else if (s.id == ITEM_WOOD_STAIRS) tex = &woodStairsTex;
+                                else if (s.id == ITEM_BED)         tex = &bedTex;
+                                if (tex) {
+                                    structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, "other");
+                                    auto& ns = structures.back();
+                                    ns.sprite->setPosition({ s.x, s.y });
+                                    ns.health = s.health;
+                                    sf::Vector2u ts = ns.sprite->getTexture().getSize();
+                                    ns.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+                                    applyStructureScale(*ns.sprite, s.id, s.rotation, s.isOpen, ns.shearY);
+                                }
+                            }
+                            campfires.erase(
+                                std::remove_if(campfires.begin(), campfires.end(),
+                                    [&](const PlacedCampfire& c) {
+                                        return !c.owner.empty() && c.owner != username;
+                                    }),
+                                campfires.end());
+                            for (auto& c : res.otherCampfires) {
+                                PlacedCampfire pc;
+                                pc.position      = { c.x, c.y };
+                                pc.timeRemaining = c.timeRemaining;
+                                pc.isCrafted     = c.isCrafted;
+                                pc.currentFrame  = 0;
+                                pc.frameTimer    = 0.f;
+                                pc.fuel          = c.fuel;
+                                pc.inputItem     = c.inputItem;
+                                pc.inputCount    = c.inputCount;
+                                pc.outputItem    = c.outputItem;
+                                pc.outputCount   = c.outputCount;
+                                pc.owner         = c.owner;
+                                campfires.push_back(pc);
+                            }
+                        }
 
                         // Update interpolation targets
                         for (const auto& op : otherPlayers)
@@ -6429,13 +6598,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             opSprite.setPosition(renderPos);
             window.draw(opSprite);
 
+            // Name tag above character (matching local player height)
             sf::Text opName(uiFont, op.username, 16);
             opName.setFillColor(sf::Color::White);
             opName.setOutlineColor(sf::Color::Black);
             opName.setOutlineThickness(1.f);
             sf::FloatRect nb = opName.getLocalBounds();
-            opName.setPosition({ renderPos.x - nb.size.x / 2.f + 16.f, renderPos.y - 40.f });
+            opName.setPosition({ renderPos.x - nb.size.x / 2.f, renderPos.y - 280.f });
             window.draw(opName);
+
+            // Wrench icon to the right of the name tag
+            sf::Sprite opWrench(wrenchTex);
+            opWrench.setScale({ 0.05f, 0.05f });
+            float wIconX = opName.getPosition().x + opName.getLocalBounds().size.x + 5.f;
+            float wIconY = opName.getPosition().y;
+            opWrench.setPosition({ wIconX, wIconY });
+            window.draw(opWrench);
+            // Store wrench hitbox in world space for click detection
+            onlinePlayerWrenchBounds[op.username] = sf::FloatRect(
+                { wIconX, wIconY },
+                { opWrench.getGlobalBounds().size.x, opWrench.getGlobalBounds().size.y });
         }
 
 
@@ -6579,7 +6761,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             authManager.addTradeRecord(vPlayer.c_str(), vAction, itemName, qty, unitPrice, totalG);
         }
     }
-    float cycleValue = std::fmod(elapsedGameTime, totalCycleTime);
+    // Use server epoch for synchronized day/night (all online players same phase)
+    float cycleValue = (serverEpochCache > 0)
+        ? static_cast<float>(serverEpochCache % static_cast<long long>(totalCycleTime))
+        : std::fmod(elapsedGameTime, totalCycleTime);
     float t = cycleValue / totalCycleTime;
     float timeOfDay = (t < 0.5f) ? (t * 2.f) : (1.f - (t - 0.5f) * 2.f);
     int darknessLevel = static_cast<int>(timeOfDay * 200.f);

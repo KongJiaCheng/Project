@@ -42,7 +42,7 @@ bool AuthManager::initDB() {
         connection_properties["password"] = passStr;
         connection_properties["sslCa"] = caStr;
         connection_properties["OPT_SSL_MODE"] = sql::SSL_MODE_REQUIRED;
-        // IMPORTANT: timeouts must be int, not string – passing a string is silently
+        // IMPORTANT: timeouts must be int, not string ï¿½ passing a string is silently
         // ignored by connector/C++ and leaves connect() blocking indefinitely.
         connection_properties["OPT_CONNECT_TIMEOUT"] = (int)10;
         connection_properties["OPT_READ_TIMEOUT"] = (int)10;
@@ -187,6 +187,19 @@ bool AuthManager::initDB() {
             catch (sql::SQLException& e) {
                 std::cout << "[DEBUG] Table creation error: " << e.what() << "\n";
             }
+
+            // world_settings --- shared world seed (one row, created once)
+            try {
+                std::unique_ptr<sql::Statement> stmt(con->createStatement());
+                if (stmt) {
+                    stmt->execute("CREATE TABLE IF NOT EXISTS world_settings ("
+                        "id INT PRIMARY KEY DEFAULT 1, "
+                        "world_seed INT NOT NULL DEFAULT 0)");
+                    stmt->execute("INSERT IGNORE INTO world_settings (id, world_seed) "
+                        "VALUES (1, FLOOR(RAND() * 2147483647))");
+                }
+            }
+            catch (...) {}
 
             try {
                 std::unique_ptr<sql::Statement> stmt(con->createStatement());
@@ -645,6 +658,7 @@ std::vector<StoredCampfire> AuthManager::loadCampfires(const sql::SQLString& use
             sc.inputCount = res->getInt("InputCount");
             sc.outputItem = res->getInt("OutputItem");
             sc.outputCount = res->getInt("OutputCount");
+            sc.owner = std::string(username.c_str());  // own campfires
             campfires.push_back(sc);
         }
     }
@@ -652,6 +666,69 @@ std::vector<StoredCampfire> AuthManager::loadCampfires(const sql::SQLString& use
         std::cerr << "loadCampfires error: " << e.what() << "\n";
     }
     return campfires;
+}
+
+
+std::vector<StoredCampfire> AuthManager::loadOtherCampfires(const sql::SQLString& username) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    std::vector<StoredCampfire> campfires;
+    if (!con) return campfires;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "SELECT Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount FROM campfires WHERE Username != ?"));
+        if (!pstmt) return campfires;
+        pstmt->setString(1, username);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        while (res && res->next()) {
+            StoredCampfire sc;
+            sc.owner      = std::string(res->getString("Username"));
+            sc.x          = (float)res->getDouble("PosX");
+            sc.y          = (float)res->getDouble("PosY");
+            sc.timeRemaining = (float)res->getDouble("TimeRemaining");
+            sc.isCrafted  = res->getBoolean("IsCrafted");
+            sc.fuel       = res->getInt("Fuel");
+            sc.inputItem  = res->getInt("InputItem");
+            sc.inputCount = res->getInt("InputCount");
+            sc.outputItem = res->getInt("OutputItem");
+            sc.outputCount= res->getInt("OutputCount");
+            campfires.push_back(sc);
+        }
+    }
+    catch (sql::SQLException& e) {
+        std::cerr << "loadOtherCampfires error: " << e.what() << "\n";
+    }
+    return campfires;
+}
+
+int AuthManager::getOrCreateWorldSeed() {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!con) return 12345;
+    try {
+        std::unique_ptr<sql::Statement> stmt(con->createStatement());
+        if (!stmt) return 12345;
+        std::unique_ptr<sql::ResultSet> res(stmt->executeQuery(
+            "SELECT world_seed FROM world_settings WHERE id = 1"));
+        if (res && res->next()) return res->getInt("world_seed");
+    }
+    catch (sql::SQLException& e) {
+        std::cerr << "getOrCreateWorldSeed error: " << e.what() << "\n";
+    }
+    return 12345;
+}
+
+long long AuthManager::getServerEpochSeconds() {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!con) return 0LL;
+    try {
+        std::unique_ptr<sql::Statement> stmt(con->createStatement());
+        if (!stmt) return 0LL;
+        std::unique_ptr<sql::ResultSet> res(stmt->executeQuery("SELECT UNIX_TIMESTAMP() AS epoch"));
+        if (res && res->next()) return (long long)res->getInt64("epoch");
+    }
+    catch (sql::SQLException& e) {
+        std::cerr << "getServerEpochSeconds error: " << e.what() << "\n";
+    }
+    return 0LL;
 }
 
 void AuthManager::setFirstTimeFinished(const sql::SQLString& username)
