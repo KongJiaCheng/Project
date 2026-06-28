@@ -12,6 +12,19 @@
 #include <iostream>
 #include <SFML/Graphics.hpp>
 
+const float GLOBAL_SHEAR = -0.5f;
+
+static sf::Vector2f snapToShearedGrid(sf::Vector2f pos) {
+    const float STEP_X = 200.f;
+    const float STEP_Y = 100.f;
+    float gx = std::round(pos.x / STEP_X);
+    float gy = std::round((pos.y - pos.x * GLOBAL_SHEAR) / STEP_Y);
+    
+    float snappedX = gx * STEP_X;
+    float snappedY = gx * STEP_X * GLOBAL_SHEAR + gy * STEP_Y;
+    return { snappedX, snappedY };
+}
+
 // --------------------------------------------------
 // Helpers
 // --------------------------------------------------
@@ -84,15 +97,21 @@ std::vector<Item>& ItemManager::getItems()
 
 void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, int quantity)
 {
+    if (id == ITEM_TREE || id == ITEM_STONE) {
+        sf::Vector2f snapped = snapToShearedGrid(pos);
+        if (std::abs(pos.x - snapped.x) > 1.f || std::abs(pos.y - snapped.y) > 1.f) {
+            return; // doesn't fit the grid — discard / remove
+        }
+    }
+
     size_t idx = items.size();
     items.emplace_back(id, quantity, texture, pos);
-    // Natural resources fill exactly one grid cell (wood tile footprint: 501.6 x 250.8).
-    const float TARGET_W = 1254.f * 0.4f;
-    const float TARGET_H = 1254.f * 0.2f;
+    // Natural resources fill exactly one grid cell (footprint: 200 x 100).
     auto sz = texture.getSize();
-    float cellScaleX = (sz.x > 0) ? TARGET_W / static_cast<float>(sz.x) : 0.4f;
-    float cellScaleY = (sz.y > 0) ? TARGET_H / static_cast<float>(sz.y) : 0.2f;
     if (id == ITEM_TREE || id == ITEM_STONE) {
+        items.back().sprite.setOrigin({ sz.x / 2.f, static_cast<float>(sz.y) });
+        float cellScaleX = (sz.x > 0) ? 200.f / static_cast<float>(sz.x) : 1.f;
+        float cellScaleY = (sz.y > 0) ? 100.f / static_cast<float>(sz.y) : 1.f;
         items.back().sprite.setScale({ cellScaleX, cellScaleY });
     }
     else if (id == ITEM_SAPLING) {
@@ -131,7 +150,18 @@ void ItemManager::draw(sf::RenderWindow& window)
             i.sprite.setColor(sf::Color::White);
         }
 
-        window.draw(i.sprite);
+        if (i.id == ITEM_TREE || i.id == ITEM_STONE)
+        {
+            sf::Transform trans;
+            trans.translate(i.sprite.getPosition());
+            trans.combine(sf::Transform(1.f, 0.f, 0.f, GLOBAL_SHEAR, 1.f, 0.f, 0.f, 0.f, 1.f));
+            trans.translate(-i.sprite.getPosition());
+            window.draw(i.sprite, trans);
+        }
+        else
+        {
+            window.draw(i.sprite);
+        }
 
         if (i.id == ITEM_TREE && i.health < i.maxHealth)
         {

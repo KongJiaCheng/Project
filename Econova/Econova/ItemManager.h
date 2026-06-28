@@ -120,8 +120,8 @@ public:
         RectF r;
         r.w = static_cast<float>(ts.x) * scale.x;
         r.h = static_cast<float>(ts.y) * scale.y;
-        r.x = pos.x - origin.x;
-        r.y = pos.y - origin.y;
+        r.x = pos.x - origin.x * scale.x;
+        r.y = pos.y - origin.y * scale.y;
 
         return r;
     }
