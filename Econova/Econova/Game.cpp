@@ -1240,51 +1240,62 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     }
 
     auto applyStructureScale = [](sf::Sprite& spr, int id, float rotation, bool isOpen, float& outShearY) {
+        // Target visual size = wood tile footprint: 1254*0.4 x 1254*0.2 = 501.6 x 250.8 world units.
+        // Every structure is scaled so it fills exactly one parallelogram grid cell.
+        const float TARGET_W = 1254.f * 0.4f; // 501.6
+        const float TARGET_H = 1254.f * 0.2f; // 250.8
+
+        auto sz = spr.getTexture().getSize();
+        float scaleX = TARGET_W / static_cast<float>(sz.x);
+        float scaleY = TARGET_H / static_cast<float>(sz.y);
+
         outShearY = 0.f;
-        if (id == ITEM_WOOD_TILE) spr.setScale({ 0.4f, 0.2f });
+        if (id == ITEM_WOOD_TILE) {
+            spr.setScale({ scaleX, scaleY }); // flat floor tile, no shear
+        }
         else if (id == ITEM_WOOD_WALL) {
             if (rotation == 90.f) {
-                spr.setScale({ 0.4f, 0.4f });
+                spr.setScale({ scaleX, scaleY });
                 outShearY = -0.5f;
             }
             else if (rotation == 180.f) {
-                spr.setScale({ 0.4f, 0.4f });
+                spr.setScale({ scaleX, scaleY });
                 outShearY = 0.5f;
             }
-            else spr.setScale({ 0.4f, 0.4f });
+            else spr.setScale({ scaleX, scaleY });
         }
         else if (id == ITEM_WOOD_DOOR) {
             if (isOpen) {
-                if (rotation == 90.f) { spr.setScale({ 0.054f, 0.49f }); outShearY = -0.5f; }
-                else if (rotation == 180.f) { spr.setScale({ 0.054f, 0.49f }); outShearY = 0.5f; }
-                else spr.setScale({ 0.49f, 0.054f });
+                if (rotation == 90.f)        { spr.setScale({ scaleX * 0.11f, scaleY }); outShearY = -0.5f; }
+                else if (rotation == 180.f)  { spr.setScale({ scaleX * 0.11f, scaleY }); outShearY = 0.5f; }
+                else                          spr.setScale({ scaleX, scaleY * 0.11f });
             }
             else {
-                if (rotation == 90.f) { spr.setScale({ 0.49f, 0.49f }); outShearY = -0.5f; }
-                else if (rotation == 180.f) { spr.setScale({ 0.49f, 0.49f }); outShearY = 0.5f; }
-                else spr.setScale({ 0.49f, 0.49f });
+                if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = -0.5f; }
+                else if (rotation == 180.f)  { spr.setScale({ scaleX, scaleY }); outShearY = 0.5f; }
+                else                          spr.setScale({ scaleX, scaleY });
             }
         }
         else if (id == ITEM_FURNACE) {
-            if (rotation == 90.f) { spr.setScale({ 0.25f, 0.35f }); outShearY = -0.3f; }
-            else spr.setScale({ 0.35f, 0.35f });
+            if (rotation == 90.f) { spr.setScale({ scaleX, scaleY }); outShearY = -0.3f; }
+            else                   spr.setScale({ scaleX, scaleY });
         }
         else if (id == ITEM_BED) {
-            if (rotation == 90.f) { spr.setScale({ 0.25f, 0.48f }); outShearY = -0.3f; }
-            else spr.setScale({ 0.48f, 0.48f });
+            if (rotation == 90.f) { spr.setScale({ scaleX, scaleY }); outShearY = -0.3f; }
+            else                   spr.setScale({ scaleX, scaleY });
         }
         else if (id == ITEM_WOOD_STAIRS) {
-            if (rotation == 90.f) { spr.setScale({ 0.49f, 0.49f }); outShearY = -0.5f; }
-            else if (rotation == 180.f) { spr.setScale({ 0.49f, 0.49f }); outShearY = 0.5f; }
-            else spr.setScale({ 0.49f, 0.49f });
+            if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = -0.5f; }
+            else if (rotation == 180.f)  { spr.setScale({ scaleX, scaleY }); outShearY = 0.5f; }
+            else                          spr.setScale({ scaleX, scaleY });
         }
         else if (id == ITEM_WOOD_ROOF) {
-            if (rotation == 90.f) { spr.setScale({ 0.49f, 0.49f }); outShearY = -0.5f; }
-            else if (rotation == 180.f) { spr.setScale({ 0.49f, 0.49f }); outShearY = 0.5f; }
-            else spr.setScale({ 0.49f, 0.49f });
+            if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = -0.5f; }
+            else if (rotation == 180.f)  { spr.setScale({ scaleX, scaleY }); outShearY = 0.5f; }
+            else                          spr.setScale({ scaleX, scaleY });
         }
-        else if (id == ITEM_NONE) spr.setScale({ 0.9f, 0.9f });
-        else spr.setScale({ 0.3f, 0.3f });
+        else if (id == ITEM_NONE) spr.setScale({ scaleX * 1.8f, scaleY * 1.8f }); // campfire: slightly larger
+        else spr.setScale({ scaleX, scaleY });
         };
 
     std::vector<OnlinePlayer> otherPlayers;
@@ -5633,47 +5644,56 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         window.draw(background);
 
         // -------------------------------------------------------------------------
-        // RENDER MINECRAFT-LIKE FLOOR GRID BOXES FOR THE WHOLE WORLD (CULLED)
-        // Each cell spans [gx*200, (gx+1)*200] x [gy*100, (gy+1)*100]
+        // PARALLELOGRAM FLOOR GRID — matches the wood tile visual footprint exactly.
+        //
+        // Wood tile: texture 1254x1254, scale {0.4, 0.2}, origin at bottom-center.
+        //   halfW = 1254 * 0.4 / 2 = 250.8
+        //   tileH = 1254 * 0.2     = 250.8
+        // The SFML shear transform is:  y' = y + shearY * (x - px)
+        // Snap step: 200 x 100 (grid density — cell anchors at gx*200, gy*100).
         // -------------------------------------------------------------------------
         {
-            // Build a fast lookup for structure shear at each grid coord
-            std::map<std::pair<int, int>, float> gridShearMap;
+            const float TILE_HALF_W = woodTileTex.getSize().x * 0.4f * 0.5f; // ≈ 250.8
+            const float TILE_H      = woodTileTex.getSize().y * 0.2f;         // ≈ 250.8
+            const float STEP_X      = 200.f;
+            const float STEP_Y      = 100.f;
+
+            // Build shear lookup: grid cell (gx,gy) → shearY of structure sitting there
+            std::map<std::pair<int,int>, float> gridShearMap;
             for (auto& s : structures) {
                 if (s.sprite.has_value()) {
                     sf::Vector2f pos = s.sprite->getPosition();
-                    // cell index = floor(pos / cellSize)
-                    int gx = (int)std::floor(pos.x / 200.f);
-                    int gy = (int)std::floor(pos.y / 100.f);
+                    int gx = (int)std::round(pos.x / STEP_X);
+                    int gy = (int)std::round(pos.y / STEP_Y);
                     gridShearMap[{gx, gy}] = s.shearY;
                 }
             }
 
-            // Find highlighted cell under mouse cursor (use floor so it matches cell origin)
+            // Hover cell — which anchor is closest to the mouse
             sf::Vector2i pixelMouse = sf::Mouse::getPosition(window);
-            sf::Vector2f worldM = window.mapPixelToCoords(pixelMouse);
-            int hoverGx = (int)std::floor(worldM.x / 200.f);
-            int hoverGy = (int)std::floor(worldM.y / 100.f);
+            sf::Vector2f worldM     = window.mapPixelToCoords(pixelMouse);
+            int hoverGx = (int)std::round(worldM.x / STEP_X);
+            int hoverGy = (int)std::round(worldM.y / STEP_Y);
 
-            // Get viewport bounds for frustum culling
-            sf::View currentView = window.getView();
-            sf::Vector2f center = currentView.getCenter();
-            sf::Vector2f viewSize = currentView.getSize();
+            // Viewport bounds for frustum culling (with generous margin for large tiles)
+            sf::View  currentView = window.getView();
+            sf::Vector2f vCenter  = currentView.getCenter();
+            sf::Vector2f vSize    = currentView.getSize();
+            float margin = TILE_HALF_W + TILE_H; // ensure partially-visible tiles are drawn
 
-            float left   = center.x - viewSize.x / 2.f;
-            float right  = center.x + viewSize.x / 2.f;
-            float top    = center.y - viewSize.y / 2.f;
-            float bottom = center.y + viewSize.y / 2.f;
+            float left   = vCenter.x - vSize.x * 0.5f - margin;
+            float right  = vCenter.x + vSize.x * 0.5f + margin;
+            float top    = vCenter.y - vSize.y * 0.5f - margin;
+            float bottom = vCenter.y + vSize.y * 0.5f + margin;
 
-            // Map world bounds to cell indices with 1-cell buffer
-            int minGx = (int)std::floor(left   / 200.f) - 1;
-            int maxGx = (int)std::floor(right  / 200.f) + 1;
-            int minGy = (int)std::floor(top    / 100.f) - 1;
-            int maxGy = (int)std::floor(bottom / 100.f) + 1;
+            int minGx = (int)std::floor(left   / STEP_X);
+            int maxGx = (int)std::ceil (right  / STEP_X);
+            int minGy = (int)std::floor(top    / STEP_Y);
+            int maxGy = (int)std::ceil (bottom / STEP_Y);
 
             // Clamp to world
-            int mapMaxGx = (int)(MAP_WIDTH  / 200) - 1;
-            int mapMaxGy = (int)(MAP_HEIGHT / 100) - 1;
+            int mapMaxGx = (int)std::round((float)MAP_WIDTH  / STEP_X);
+            int mapMaxGy = (int)std::round((float)MAP_HEIGHT / STEP_Y);
             if (minGx < 0) minGx = 0;
             if (maxGx > mapMaxGx) maxGx = mapMaxGx;
             if (minGy < 0) minGy = 0;
@@ -5683,44 +5703,40 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             for (int gx = minGx; gx <= maxGx; ++gx) {
                 for (int gy = minGy; gy <= maxGy; ++gy) {
-                    // Top-left corner of this cell in world space
-                    float x0 = gx * 200.f;
-                    float y0 = gy * 100.f;
-                    float x1 = x0 + 200.f;
-                    float y1 = y0 + 100.f;
+                    // Anchor = bottom-center of the parallelogram (matches sprite position)
+                    float px = gx * STEP_X;
+                    float py = gy * STEP_Y;
 
-                    // Apply shear if a structure sits in this cell
+                    // Shear for this cell (0 if no structure here)
                     float shear = 0.f;
                     auto it = gridShearMap.find({gx, gy});
-                    if (it != gridShearMap.end()) {
-                        shear = it->second;
-                    }
+                    if (it != gridShearMap.end()) shear = it->second;
 
-                    // Four corners of the cell (flat rectangle, optionally sheared on y)
-                    sf::Vector2f tl(x0, y0 + shear * 100.f);
-                    sf::Vector2f tr(x1, y0 + shear * 100.f);
-                    sf::Vector2f br(x1, y1 + shear * 100.f);
-                    sf::Vector2f bl(x0, y1 + shear * 100.f);
+                    // Four corners, matching the wood tile parallelogram:
+                    //   BL = (px - halfW, py)            BR = (px + halfW, py)
+                    //   TL = (px - halfW, py - tileH)    TR = (px + halfW, py - tileH)
+                    // After SFML shear y' = y + shearY*(x - px):
+                    //   delta_y at x = px ± halfW  →  ±shear * halfW
+                    float dyL = shear * (-TILE_HALF_W); // left side shear offset
+                    float dyR = shear * ( TILE_HALF_W); // right side shear offset
+
+                    sf::Vector2f BL(px - TILE_HALF_W, py         + dyL);
+                    sf::Vector2f BR(px + TILE_HALF_W, py         + dyR);
+                    sf::Vector2f TR(px + TILE_HALF_W, py - TILE_H + dyR);
+                    sf::Vector2f TL(px - TILE_HALF_W, py - TILE_H + dyL);
 
                     sf::Color col;
                     if (gx == hoverGx && gy == hoverGy) {
-                        col = sf::Color(0, 255, 80, 200); // bright green highlight
+                        col = sf::Color(0, 255, 80, 200); // bright green hover
                     } else {
-                        col = sf::Color(255, 255, 255, 80); // visible white
+                        col = sf::Color(255, 255, 255, 70); // soft white grid
                     }
 
-                    // Top edge
-                    lines.append(sf::Vertex{tl, col});
-                    lines.append(sf::Vertex{tr, col});
-                    // Right edge
-                    lines.append(sf::Vertex{tr, col});
-                    lines.append(sf::Vertex{br, col});
-                    // Bottom edge
-                    lines.append(sf::Vertex{br, col});
-                    lines.append(sf::Vertex{bl, col});
-                    // Left edge
-                    lines.append(sf::Vertex{bl, col});
-                    lines.append(sf::Vertex{tl, col});
+                    // Draw 4 edges of the parallelogram
+                    lines.append(sf::Vertex{TL, col}); lines.append(sf::Vertex{TR, col}); // top
+                    lines.append(sf::Vertex{TR, col}); lines.append(sf::Vertex{BR, col}); // right
+                    lines.append(sf::Vertex{BR, col}); lines.append(sf::Vertex{BL, col}); // bottom
+                    lines.append(sf::Vertex{BL, col}); lines.append(sf::Vertex{TL, col}); // left
                 }
             }
             window.draw(lines);

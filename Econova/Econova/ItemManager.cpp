@@ -86,7 +86,16 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
 {
     size_t idx = items.size();
     items.emplace_back(id, quantity, texture, pos);
-    if (id == ITEM_SAPLING) {
+    // Natural resources fill exactly one grid cell (wood tile footprint: 501.6 x 250.8).
+    const float TARGET_W = 1254.f * 0.4f;
+    const float TARGET_H = 1254.f * 0.2f;
+    auto sz = texture.getSize();
+    float cellScaleX = (sz.x > 0) ? TARGET_W / static_cast<float>(sz.x) : 0.4f;
+    float cellScaleY = (sz.y > 0) ? TARGET_H / static_cast<float>(sz.y) : 0.2f;
+    if (id == ITEM_TREE || id == ITEM_STONE) {
+        items.back().sprite.setScale({ cellScaleX, cellScaleY });
+    }
+    else if (id == ITEM_SAPLING) {
         items.back().sprite.setScale({ 0.2f, 0.2f });
     }
     else if (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_ZOMBIE_FLESH || id == ITEM_COOKED_CHICKEN || id == ITEM_COOKED_PIG) {
@@ -193,7 +202,7 @@ void ItemManager::tryPickup(
     }
 
     items.erase(items.begin() + bestIdx);
-    rebuildGrid();   // indices shifted after erase – must rebuild
+    rebuildGrid();   // indices shifted after erase ï¿½ must rebuild
 }
 
 float ItemManager::getNearestDistance(const sf::Sprite& player) const
