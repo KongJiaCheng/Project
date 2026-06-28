@@ -1491,6 +1491,28 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 return pos;
             };
 
+            auto isNearPlaceable = [&](sf::Vector2f pos) -> bool {
+                const float threshold = 220.f;
+                for (auto& s : structures) {
+                    if (s.sprite.has_value()) {
+                        sf::Vector2f sPos = s.sprite->getPosition();
+                        float dx = pos.x - sPos.x;
+                        float dy = pos.y - sPos.y;
+                        if (std::sqrt(dx * dx + dy * dy) < threshold) {
+                            return true;
+                        }
+                    }
+                }
+                for (auto& c : campfires) {
+                    float dx = pos.x - c.position.x;
+                    float dy = pos.y - c.position.y;
+                    if (std::sqrt(dx * dx + dy * dy) < threshold) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
             auto trySpawnNear = [&](int itemId, sf::Texture& tex, int& done, int total, int radius) {
                 while (done < total && itemAttempts < ITEM_ATTEMPTS_BUDGET) {
                     ++itemAttempts;
@@ -1502,7 +1524,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     if (itemId == ITEM_TREE) {
                         bool placed = false;
                         for (int attempt = 0; attempt < 30; ++attempt) {
-                            if (!isInWater(p, pondBoundsList)) {
+                            if (!isInWater(p, pondBoundsList) && !isNearPlaceable(p)) {
                                 itemManager.addItem(itemId, tex, p, 1);
                                 ++done;
                                 placed = true;
@@ -1516,13 +1538,34 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                             ++itemAttempts;
                         }
                         if (!placed) {
-                            itemManager.addItem(itemId, tex, p, 1);
-                            ++done;
+                            if (!isNearPlaceable(p)) {
+                                itemManager.addItem(itemId, tex, p, 1);
+                                ++done;
+                            }
                         }
                     }
                     else {
-                        itemManager.addItem(itemId, tex, p, 1);
-                        ++done;
+                        bool placed = false;
+                        for (int attempt = 0; attempt < 30; ++attempt) {
+                            if (!isNearPlaceable(p)) {
+                                itemManager.addItem(itemId, tex, p, 1);
+                                ++done;
+                                placed = true;
+                                break;
+                            }
+                            p = sf::Vector2f(
+                                MAP_WIDTH / 2.f + (rand() % (radius * 2) - radius),
+                                MAP_HEIGHT / 2.f + (rand() % (radius * 2) - radius)
+                            );
+                            p = snapGrid(p);
+                            ++itemAttempts;
+                        }
+                        if (!placed) {
+                            if (!isNearPlaceable(p)) {
+                                itemManager.addItem(itemId, tex, p, 1);
+                                ++done;
+                            }
+                        }
                     }
                 }
             };
@@ -1539,6 +1582,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         if (itemId == ITEM_TREE && isInWater(p, pondBoundsList)) {
                             continue;
                         }
+                        if (isNearPlaceable(p)) {
+                            continue;
+                        }
                         if (itemManager.isAreaFreeExplicit(p, MIN_DISTANCE, &tex)) {
                             spotFound = true;
                             break;
@@ -1548,13 +1594,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         for (int attempt = 0; attempt < 20; ++attempt) {
                             p = sf::Vector2f(randX(gen), randY(gen));
                             p = snapGrid(p);
-                            if (!isInWater(p, pondBoundsList)) {
+                            if (!isInWater(p, pondBoundsList) && !isNearPlaceable(p)) {
+                                spotFound = true;
                                 break;
                             }
                         }
                     }
-                    itemManager.addItem(itemId, tex, p, 1);
-                    ++done;
+                    if (spotFound || !isNearPlaceable(p)) {
+                        itemManager.addItem(itemId, tex, p, 1);
+                        ++done;
+                    }
                 }
             };
 
