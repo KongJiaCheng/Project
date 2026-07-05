@@ -37,10 +37,10 @@ const float GRID_STEP_Y = 250.f;
 const float GLOBAL_SHEAR = -0.5f;
 
 inline sf::Vector2f snapToShearedGrid(sf::Vector2f pos) {
-    float gx = std::round(pos.x / GRID_STEP_X);
-    float gy = std::round((pos.y - pos.x * GLOBAL_SHEAR) / GRID_STEP_Y);
-    pos.x = gx * GRID_STEP_X;
-    pos.y = gx * GRID_STEP_X * GLOBAL_SHEAR + gy * GRID_STEP_Y;
+    float gx = std::round(pos.x / 500.f + pos.y / 250.f);
+    float gy = std::round(pos.y / 250.f - pos.x / 500.f);
+    pos.x = (gx - gy) * 250.f;
+    pos.y = (gx + gy) * 125.f;
     return pos;
 }
 
@@ -56,7 +56,7 @@ inline float distanceToSegment(sf::Vector2f P, sf::Vector2f A, sf::Vector2f B) {
 inline int getFloorLevelFromY(float y) {
     int iy = (int)std::round(y);
     for (int L = 0; L <= 10; ++L) {
-        if ((iy + L * 450) % 250 == 0) {
+        if ((iy + L * 450) % 125 == 0) {
             return L;
         }
     }
@@ -1260,7 +1260,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         float scaleX = TARGET_W / static_cast<float>(sz.x);
         float scaleY = TARGET_H / static_cast<float>(sz.y);
 
-        outShearY = GLOBAL_SHEAR; // Default floor slant
+        outShearY = 0.f; // Draw flat without shear
         if (id == ITEM_WOOD_TILE) {
             spr.setScale({ scaleX, scaleY });
         }
@@ -1269,13 +1269,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 float scaleX_vert = 250.f / static_cast<float>(sz.x);
                 float scaleY_vert = 450.f / static_cast<float>(sz.y);
                 spr.setScale({ scaleX_vert, scaleY_vert });
-                outShearY = 0.f; // vertical wall stands straight up
             }
             else {
                 float scaleX_slant = 500.f / static_cast<float>(sz.x);
                 float scaleY_slant = 450.f / static_cast<float>(sz.y);
                 spr.setScale({ scaleX_slant, scaleY_slant });
-                outShearY = GLOBAL_SHEAR;
             }
         }
         else if (id == ITEM_WOOD_DOOR) {
@@ -1284,13 +1282,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     float scaleX_vert = 250.f / static_cast<float>(sz.x);
                     float scaleY_vert = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_vert * 0.11f, scaleY_vert });
-                    outShearY = 0.f;
                 }
                 else {
                     float scaleX_slant = 500.f / static_cast<float>(sz.x);
                     float scaleY_slant = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_slant, scaleY_slant * 0.11f });
-                    outShearY = GLOBAL_SHEAR;
                 }
             }
             else {
@@ -1298,13 +1294,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     float scaleX_vert = 250.f / static_cast<float>(sz.x);
                     float scaleY_vert = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_vert, scaleY_vert });
-                    outShearY = 0.f;
                 }
                 else {
                     float scaleX_slant = 500.f / static_cast<float>(sz.x);
                     float scaleY_slant = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_slant, scaleY_slant });
-                    outShearY = GLOBAL_SHEAR;
                 }
             }
         }
@@ -1319,12 +1313,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             spr.setScale({ scaleX, sY });
         }
         else if (id == ITEM_WOOD_STAIRS) {
-            if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = 0.f; }
-            else                          spr.setScale({ scaleX, scaleY });
+            spr.setScale({ scaleX, scaleY });
         }
         else if (id == ITEM_WOOD_ROOF) {
-            if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = 0.f; }
-            else                          spr.setScale({ scaleX, scaleY });
+            spr.setScale({ scaleX, scaleY });
         }
         else if (id == ITEM_NONE) spr.setScale({ scaleX * 1.3f, scaleY * 1.3f }); // campfire: 1.3x larger to stand out
         else spr.setScale({ scaleX, scaleY });
@@ -4423,8 +4415,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         placementPos = snapToShearedGrid(placementPos);
 
                         if (placementItemID == ITEM_WOOD_WALL) {
-                            if (placementRotation == 90.f) {
-                                placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
+                            if (placementRotation == 0.f) {
+                                placementPos = { placementPos.x - 125.f, placementPos.y - 62.5f };
+                            } else if (placementRotation == 90.f) {
+                                placementPos = { placementPos.x + 125.f, placementPos.y - 62.5f };
                             }
                         }
                         else if (placementItemID == ITEM_WOOD_DOOR) {
@@ -4446,8 +4440,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 placementPos = nearestWall->sprite->getPosition();
                                 placementRotation = nearestWall->rotation;
                             } else {
-                                if (placementRotation == 90.f) {
-                                    placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
+                                if (placementRotation == 0.f) {
+                                    placementPos = { placementPos.x - 125.f, placementPos.y - 62.5f };
+                                } else if (placementRotation == 90.f) {
+                                    placementPos = { placementPos.x + 125.f, placementPos.y - 62.5f };
                                 }
                             }
                         }
@@ -5669,14 +5665,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         // Snap step: 200 x 100 (grid density — cell anchors at gx*200, gy*100).
         // -------------------------------------------------------------------------
         {
-            const float STEP_X = 500.f;
-            const float STEP_Y = 250.f;
-
-            // Hover cell — which anchor is closest to the mouse
+            // Hover cell — standard isometric projection
             sf::Vector2i pixelMouse = sf::Mouse::getPosition(window);
             sf::Vector2f worldM     = window.mapPixelToCoords(pixelMouse);
-            int hoverGx = (int)std::round(worldM.x / STEP_X);
-            int hoverGy = (int)std::round((worldM.y - worldM.x * GLOBAL_SHEAR) / STEP_Y);
+            int hoverGx = (int)std::round(worldM.x / 500.f + worldM.y / 250.f);
+            int hoverGy = (int)std::round(worldM.y / 250.f - worldM.x / 500.f);
 
             // Viewport bounds for frustum culling
             sf::View  currentView = window.getView();
@@ -5689,35 +5682,31 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             float top    = vCenter.y - vSize.y * 0.5f - margin;
             float bottom = vCenter.y + vSize.y * 0.5f + margin;
 
-            int minGx = (int)std::floor(left   / STEP_X);
-            int maxGx = (int)std::ceil (right  / STEP_X);
+            int minGx = (int)std::floor(left / 500.f + top / 250.f) - 2;
+            int maxGx = (int)std::ceil(right / 500.f + bottom / 250.f) + 2;
+            int minGy = (int)std::floor(top / 250.f - right / 500.f) - 2;
+            int maxGy = (int)std::ceil(bottom / 250.f - left / 500.f) + 2;
 
-            // Clamp to world
-            int mapMaxGx = (int)std::round((float)MAP_WIDTH  / STEP_X);
-            int mapMaxGy = (int)std::round((float)MAP_HEIGHT / STEP_Y);
-            if (minGx < 0) minGx = 0;
-            if (maxGx > mapMaxGx) maxGx = mapMaxGx;
+            // Clamp to map boundaries
+            int maxGxLimit = (int)std::ceil((float)MAP_WIDTH / 500.f + (float)MAP_HEIGHT / 250.f);
+            int minGyLimit = (int)std::floor(0.f - (float)MAP_WIDTH / 500.f);
+            int maxGyLimit = (int)std::ceil((float)MAP_HEIGHT / 250.f);
 
             sf::VertexArray lines(sf::PrimitiveType::Lines);
 
             for (int gx = minGx; gx <= maxGx; ++gx) {
-                // Compute gy range for this column to cover frustum Y
-                float colYOffset = gx * STEP_X * GLOBAL_SHEAR;
-                int minGy = (int)std::floor((top - colYOffset) / STEP_Y);
-                int maxGy = (int)std::ceil ((bottom - colYOffset) / STEP_Y);
-
-                if (minGy < 0) minGy = 0;
-                if (maxGy > mapMaxGy) maxGy = mapMaxGy;
-
+                if (gx < -10 || gx > maxGxLimit + 10) continue;
                 for (int gy = minGy; gy <= maxGy; ++gy) {
-                    // Anchor = bottom-center of the cell
-                    float px = gx * STEP_X;
-                    float py = colYOffset + gy * STEP_Y;
+                    if (gy < minGyLimit - 10 || gy > maxGyLimit + 10) continue;
 
-                    // Parallelogram corners (500x250 cell, sheared by -0.5f)
-                    sf::Vector2f BL(px - 250.f, py + 125.f);
+                    // Anchor = bottom-center of the cell (which is bottom corner in isometric grid)
+                    float px = (gx - gy) * 250.f;
+                    float py = (gx + gy) * 125.f;
+
+                    // Symmetric Isometric corners (500x250 diamond)
+                    sf::Vector2f BL(px, py);
                     sf::Vector2f BR(px + 250.f, py - 125.f);
-                    sf::Vector2f TR(px + 250.f, py - 375.f);
+                    sf::Vector2f TR(px, py - 250.f);
                     sf::Vector2f TL(px - 250.f, py - 125.f);
 
                     sf::Color col;
@@ -5801,8 +5790,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 placementPos = snapToShearedGrid(placementPos);
 
                 if (placementItemID == ITEM_WOOD_WALL) {
-                    if (placementRotation == 90.f) {
-                        placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
+                    if (placementRotation == 0.f) {
+                        placementPos = { placementPos.x - 125.f, placementPos.y - 62.5f };
+                    } else if (placementRotation == 90.f) {
+                        placementPos = { placementPos.x + 125.f, placementPos.y - 62.5f };
                     }
                 }
                 else if (placementItemID == ITEM_WOOD_DOOR) {
@@ -5824,8 +5815,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         placementPos = nearestWall->sprite->getPosition();
                         placementRotation = nearestWall->rotation;
                     } else {
-                        if (placementRotation == 90.f) {
-                            placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
+                        if (placementRotation == 0.f) {
+                            placementPos = { placementPos.x - 125.f, placementPos.y - 62.5f };
+                        } else if (placementRotation == 90.f) {
+                            placementPos = { placementPos.x + 125.f, placementPos.y - 62.5f };
                         }
                     }
                 }

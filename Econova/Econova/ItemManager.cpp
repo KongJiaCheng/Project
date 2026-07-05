@@ -15,13 +15,11 @@
 const float GLOBAL_SHEAR = -0.5f;
 
 static sf::Vector2f snapToShearedGrid(sf::Vector2f pos) {
-    const float STEP_X = 500.f;
-    const float STEP_Y = 250.f;
-    float gx = std::round(pos.x / STEP_X);
-    float gy = std::round((pos.y - pos.x * GLOBAL_SHEAR) / STEP_Y);
+    float gx = std::round(pos.x / 500.f + pos.y / 250.f);
+    float gy = std::round(pos.y / 250.f - pos.x / 500.f);
     
-    float snappedX = gx * STEP_X;
-    float snappedY = gx * STEP_X * GLOBAL_SHEAR + gy * STEP_Y;
+    float snappedX = (gx - gy) * 250.f;
+    float snappedY = (gx + gy) * 125.f;
     return { snappedX, snappedY };
 }
 
@@ -171,18 +169,7 @@ void ItemManager::draw(sf::RenderWindow& window)
             i.sprite.setColor(sf::Color::White);
         }
 
-        if (i.id == ITEM_TREE || i.id == ITEM_STONE)
-        {
-            sf::Transform trans;
-            trans.translate(i.sprite.getPosition());
-            trans.combine(sf::Transform(1.f, 0.f, 0.f, GLOBAL_SHEAR, 1.f, 0.f, 0.f, 0.f, 1.f));
-            trans.translate(-i.sprite.getPosition());
-            window.draw(i.sprite, trans);
-        }
-        else
-        {
-            window.draw(i.sprite);
-        }
+        window.draw(i.sprite);
 
         if (i.id == ITEM_TREE && i.health < i.maxHealth)
         {
