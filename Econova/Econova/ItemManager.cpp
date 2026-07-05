@@ -15,8 +15,8 @@
 const float GLOBAL_SHEAR = -0.5f;
 
 static sf::Vector2f snapToShearedGrid(sf::Vector2f pos) {
-    const float STEP_X = 200.f;
-    const float STEP_Y = 100.f;
+    const float STEP_X = 500.f;
+    const float STEP_Y = 250.f;
     float gx = std::round(pos.x / STEP_X);
     float gy = std::round((pos.y - pos.x * GLOBAL_SHEAR) / STEP_Y);
     
@@ -115,12 +115,12 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
             static_cast<float>(sz.y)
             });
 
-        float scale = (sz.x > 0) ? 240.f / static_cast<float>(sz.x) : 1.2f;
+        float scale = (sz.x > 0) ? 600.f / static_cast<float>(sz.x) : 1.2f;
 
         items.back().sprite.setScale({ scale, scale });
 
         // Makes the tree appear to come out of the tile.
-        items.back().sprite.move({ 0.f, -40.f });
+        items.back().sprite.move({ 0.f, -100.f });
     }
     else if (id == ITEM_STONE)
     {
@@ -129,11 +129,11 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
             static_cast<float>(sz.y)
             });
 
-        float scale = (sz.x > 0) ? 240.f / static_cast<float>(sz.x) : 1.2f;
+        float scale = (sz.x > 0) ? 600.f / static_cast<float>(sz.x) : 1.2f;
 
         items.back().sprite.setScale({ scale, scale });
 
-        items.back().sprite.move({ 0.f, -15.f });
+        items.back().sprite.move({ 0.f, -37.5f });
     }
     else if (id == ITEM_SAPLING) {
         items.back().sprite.setScale({ 0.2f, 0.2f });

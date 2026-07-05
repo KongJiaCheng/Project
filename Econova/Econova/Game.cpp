@@ -32,8 +32,8 @@
 #include <iostream>
 #include <optional>
 
-const float GRID_STEP_X = 200.f;
-const float GRID_STEP_Y = 100.f;
+const float GRID_STEP_X = 500.f;
+const float GRID_STEP_Y = 250.f;
 const float GLOBAL_SHEAR = -0.5f;
 
 inline sf::Vector2f snapToShearedGrid(sf::Vector2f pos) {
@@ -56,7 +56,7 @@ inline float distanceToSegment(sf::Vector2f P, sf::Vector2f A, sf::Vector2f B) {
 inline int getFloorLevelFromY(float y) {
     int iy = (int)std::round(y);
     for (int L = 0; L <= 10; ++L) {
-        if ((iy + L * 180) % 100 == 0) {
+        if ((iy + L * 450) % 250 == 0) {
             return L;
         }
     }
@@ -1252,9 +1252,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     }
 
     auto applyStructureScale = [](sf::Sprite& spr, int id, float rotation, bool isOpen, float& outShearY) {
-        // Target visual size = fits the grid cell: 200 x 100 world units.
-        const float TARGET_W = 200.f;
-        const float TARGET_H = 100.f;
+        // Target visual size = fits the grid cell: 500 x 250 world units.
+        const float TARGET_W = 500.f;
+        const float TARGET_H = 250.f;
 
         auto sz = spr.getTexture().getSize();
         float scaleX = TARGET_W / static_cast<float>(sz.x);
@@ -1266,14 +1266,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
         else if (id == ITEM_WOOD_WALL) {
             if (rotation == 90.f) {
-                float scaleX_vert = 100.f / static_cast<float>(sz.x);
-                float scaleY_vert = 180.f / static_cast<float>(sz.y);
+                float scaleX_vert = 250.f / static_cast<float>(sz.x);
+                float scaleY_vert = 450.f / static_cast<float>(sz.y);
                 spr.setScale({ scaleX_vert, scaleY_vert });
                 outShearY = 0.f; // vertical wall stands straight up
             }
             else {
-                float scaleX_slant = 200.f / static_cast<float>(sz.x);
-                float scaleY_slant = 180.f / static_cast<float>(sz.y);
+                float scaleX_slant = 500.f / static_cast<float>(sz.x);
+                float scaleY_slant = 450.f / static_cast<float>(sz.y);
                 spr.setScale({ scaleX_slant, scaleY_slant });
                 outShearY = GLOBAL_SHEAR;
             }
@@ -1281,41 +1281,41 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         else if (id == ITEM_WOOD_DOOR) {
             if (isOpen) {
                 if (rotation == 90.f) {
-                    float scaleX_vert = 100.f / static_cast<float>(sz.x);
-                    float scaleY_vert = 180.f / static_cast<float>(sz.y);
+                    float scaleX_vert = 250.f / static_cast<float>(sz.x);
+                    float scaleY_vert = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_vert * 0.11f, scaleY_vert });
                     outShearY = 0.f;
                 }
                 else {
-                    float scaleX_slant = 200.f / static_cast<float>(sz.x);
-                    float scaleY_slant = 180.f / static_cast<float>(sz.y);
+                    float scaleX_slant = 500.f / static_cast<float>(sz.x);
+                    float scaleY_slant = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_slant, scaleY_slant * 0.11f });
                     outShearY = GLOBAL_SHEAR;
                 }
             }
             else {
                 if (rotation == 90.f) {
-                    float scaleX_vert = 100.f / static_cast<float>(sz.x);
-                    float scaleY_vert = 180.f / static_cast<float>(sz.y);
+                    float scaleX_vert = 250.f / static_cast<float>(sz.x);
+                    float scaleY_vert = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_vert, scaleY_vert });
                     outShearY = 0.f;
                 }
                 else {
-                    float scaleX_slant = 200.f / static_cast<float>(sz.x);
-                    float scaleY_slant = 180.f / static_cast<float>(sz.y);
+                    float scaleX_slant = 500.f / static_cast<float>(sz.x);
+                    float scaleY_slant = 450.f / static_cast<float>(sz.y);
                     spr.setScale({ scaleX_slant, scaleY_slant });
                     outShearY = GLOBAL_SHEAR;
                 }
             }
         }
         else if (id == ITEM_FURNACE) {
-            // Furnace covers the grid (200 width) but stands out tall (150 height)
-            float sY = (sz.y > 0) ? 150.f / static_cast<float>(sz.y) : scaleY;
+            // Furnace covers the grid (500 width) but stands out tall (375 height)
+            float sY = (sz.y > 0) ? 375.f / static_cast<float>(sz.y) : scaleY;
             spr.setScale({ scaleX, sY });
         }
         else if (id == ITEM_BED) {
-            // Bed covers the grid (200 width) but stands out tall (130 height)
-            float sY = (sz.y > 0) ? 130.f / static_cast<float>(sz.y) : scaleY;
+            // Bed covers the grid (500 width) but stands out tall (325 height)
+            float sY = (sz.y > 0) ? 325.f / static_cast<float>(sz.y) : scaleY;
             spr.setScale({ scaleX, sY });
         }
         else if (id == ITEM_WOOD_STAIRS) {
@@ -1519,7 +1519,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         << " | globalSheep: " << spawnPlan.globalSheepsDone << "/" << spawnPlan.globalSheepsTotal;
                 traceStartup(debugSs.str());
             }
-            const float MIN_DISTANCE = 120.f;
+            const float MIN_DISTANCE = 300.f;
 
             // Budget per frame (keeps FPS responsive)
             const int ITEM_ATTEMPTS_BUDGET = 250;
@@ -1533,7 +1533,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             };
 
             auto isNearPlaceable = [&](sf::Vector2f pos) -> bool {
-                const float threshold = 120.f;
+                const float threshold = 300.f;
                 for (auto& s : structures) {
                     if (s.sprite.has_value()) {
                         sf::Vector2f sPos = s.sprite->getPosition();
@@ -4424,7 +4424,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                         if (placementItemID == ITEM_WOOD_WALL) {
                             if (placementRotation == 90.f) {
-                                placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                                placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
                             }
                         }
                         else if (placementItemID == ITEM_WOOD_DOOR) {
@@ -4447,15 +4447,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                                 placementRotation = nearestWall->rotation;
                             } else {
                                 if (placementRotation == 90.f) {
-                                    placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                                    placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
                                 }
                             }
                         }
                         else if (placementItemID == ITEM_WOOD_ROOF) {
-                            placementPos.y -= 180.f;
+                            placementPos.y -= 450.f;
                         }
                         else if (placementItemID == ITEM_WOOD_STAIRS) {
-                            placementPos.y -= 100.f;
+                            placementPos.y -= 250.f;
                         }
                         clickHandled = true;
                     }
@@ -5669,8 +5669,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         // Snap step: 200 x 100 (grid density — cell anchors at gx*200, gy*100).
         // -------------------------------------------------------------------------
         {
-            const float STEP_X = 200.f;
-            const float STEP_Y = 100.f;
+            const float STEP_X = 500.f;
+            const float STEP_Y = 250.f;
 
             // Hover cell — which anchor is closest to the mouse
             sf::Vector2i pixelMouse = sf::Mouse::getPosition(window);
@@ -5682,7 +5682,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             sf::View  currentView = window.getView();
             sf::Vector2f vCenter  = currentView.getCenter();
             sf::Vector2f vSize    = currentView.getSize();
-            float margin = 200.f; // generous margin
+            float margin = 500.f; // generous margin
 
             float left   = vCenter.x - vSize.x * 0.5f - margin;
             float right  = vCenter.x + vSize.x * 0.5f + margin;
@@ -5714,11 +5714,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     float px = gx * STEP_X;
                     float py = colYOffset + gy * STEP_Y;
 
-                    // Parallelogram corners (200x100 cell, sheared by -0.5f)
-                    sf::Vector2f BL(px - 100.f, py + 50.f);
-                    sf::Vector2f BR(px + 100.f, py - 50.f);
-                    sf::Vector2f TR(px + 100.f, py - 150.f);
-                    sf::Vector2f TL(px - 100.f, py - 50.f);
+                    // Parallelogram corners (500x250 cell, sheared by -0.5f)
+                    sf::Vector2f BL(px - 250.f, py + 125.f);
+                    sf::Vector2f BR(px + 250.f, py - 125.f);
+                    sf::Vector2f TR(px + 250.f, py - 375.f);
+                    sf::Vector2f TL(px - 250.f, py - 125.f);
 
                     sf::Color col;
                     if (gx == hoverGx && gy == hoverGy) {
@@ -5802,7 +5802,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                 if (placementItemID == ITEM_WOOD_WALL) {
                     if (placementRotation == 90.f) {
-                        placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                        placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
                     }
                 }
                 else if (placementItemID == ITEM_WOOD_DOOR) {
@@ -5825,15 +5825,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         placementRotation = nearestWall->rotation;
                     } else {
                         if (placementRotation == 90.f) {
-                            placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                            placementPos = { placementPos.x - 250.f, placementPos.y + 125.f };
                         }
                     }
                 }
                 else if (placementItemID == ITEM_WOOD_ROOF) {
-                    placementPos.y -= 180.f;
+                    placementPos.y -= 450.f;
                 }
                 else if (placementItemID == ITEM_WOOD_STAIRS) {
-                    placementPos.y -= 100.f;
+                    placementPos.y -= 250.f;
                 }
             }
 
@@ -6543,17 +6543,17 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         if (s.sprite.has_value()) {
                             sf::Vector2f sPos = s.sprite->getPosition();
                             float dx = p.x - sPos.x, dy = p.y - sPos.y;
-                            if (std::sqrt(dx*dx + dy*dy) < 120.f) { nearPlaceable = true; break; }
+                            if (std::sqrt(dx*dx + dy*dy) < 300.f) { nearPlaceable = true; break; }
                         }
                     }
                     if (!nearPlaceable) {
                         for (auto& c : campfires) {
                             float dx = p.x - c.position.x, dy = p.y - c.position.y;
-                            if (std::sqrt(dx*dx + dy*dy) < 120.f) { nearPlaceable = true; break; }
+                            if (std::sqrt(dx*dx + dy*dy) < 300.f) { nearPlaceable = true; break; }
                         }
                     }
 
-                    if (!nearPlaceable && itemManager.isAreaFreeExplicit(p, 120.f, &stoneTex))
+                    if (!nearPlaceable && itemManager.isAreaFreeExplicit(p, 300.f, &stoneTex))
                     {
                         itemManager.addItem(ITEM_STONE, stoneTex, p, 1);
                         break;
