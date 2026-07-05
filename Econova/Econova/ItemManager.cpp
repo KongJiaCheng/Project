@@ -108,11 +108,32 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
     items.emplace_back(id, quantity, texture, pos);
     // Natural resources fill exactly one grid cell (footprint: 200 x 100).
     auto sz = texture.getSize();
-    if (id == ITEM_TREE || id == ITEM_STONE) {
-        items.back().sprite.setOrigin({ sz.x / 2.f, static_cast<float>(sz.y) });
-        float cellScaleX = (sz.x > 0) ? 200.f / static_cast<float>(sz.x) : 1.f;
-        float cellScaleY = (sz.y > 0) ? 100.f / static_cast<float>(sz.y) : 1.f;
-        items.back().sprite.setScale({ cellScaleX, cellScaleY });
+    if (id == ITEM_TREE)
+    {
+        items.back().sprite.setOrigin({
+            sz.x / 2.f,
+            static_cast<float>(sz.y)
+            });
+
+        float scale = (sz.x > 0) ? 240.f / static_cast<float>(sz.x) : 1.2f;
+
+        items.back().sprite.setScale({ scale, scale });
+
+        // Makes the tree appear to come out of the tile.
+        items.back().sprite.move({ 0.f, -40.f });
+    }
+    else if (id == ITEM_STONE)
+    {
+        items.back().sprite.setOrigin({
+            sz.x / 2.f,
+            static_cast<float>(sz.y)
+            });
+
+        float scale = (sz.x > 0) ? 240.f / static_cast<float>(sz.x) : 1.2f;
+
+        items.back().sprite.setScale({ scale, scale });
+
+        items.back().sprite.move({ 0.f, -15.f });
     }
     else if (id == ITEM_SAPLING) {
         items.back().sprite.setScale({ 0.2f, 0.2f });

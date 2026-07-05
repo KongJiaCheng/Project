@@ -1266,29 +1266,57 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         }
         else if (id == ITEM_WOOD_WALL) {
             if (rotation == 90.f) {
-                spr.setScale({ scaleX, scaleY });
+                float scaleX_vert = 100.f / static_cast<float>(sz.x);
+                float scaleY_vert = 180.f / static_cast<float>(sz.y);
+                spr.setScale({ scaleX_vert, scaleY_vert });
                 outShearY = 0.f; // vertical wall stands straight up
             }
             else {
-                spr.setScale({ scaleX, scaleY });
+                float scaleX_slant = 200.f / static_cast<float>(sz.x);
+                float scaleY_slant = 180.f / static_cast<float>(sz.y);
+                spr.setScale({ scaleX_slant, scaleY_slant });
                 outShearY = GLOBAL_SHEAR;
             }
         }
         else if (id == ITEM_WOOD_DOOR) {
             if (isOpen) {
-                if (rotation == 90.f)        { spr.setScale({ scaleX * 0.11f, scaleY }); outShearY = 0.f; }
-                else                          spr.setScale({ scaleX, scaleY * 0.11f });
+                if (rotation == 90.f) {
+                    float scaleX_vert = 100.f / static_cast<float>(sz.x);
+                    float scaleY_vert = 180.f / static_cast<float>(sz.y);
+                    spr.setScale({ scaleX_vert * 0.11f, scaleY_vert });
+                    outShearY = 0.f;
+                }
+                else {
+                    float scaleX_slant = 200.f / static_cast<float>(sz.x);
+                    float scaleY_slant = 180.f / static_cast<float>(sz.y);
+                    spr.setScale({ scaleX_slant, scaleY_slant * 0.11f });
+                    outShearY = GLOBAL_SHEAR;
+                }
             }
             else {
-                if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = 0.f; }
-                else                          spr.setScale({ scaleX, scaleY });
+                if (rotation == 90.f) {
+                    float scaleX_vert = 100.f / static_cast<float>(sz.x);
+                    float scaleY_vert = 180.f / static_cast<float>(sz.y);
+                    spr.setScale({ scaleX_vert, scaleY_vert });
+                    outShearY = 0.f;
+                }
+                else {
+                    float scaleX_slant = 200.f / static_cast<float>(sz.x);
+                    float scaleY_slant = 180.f / static_cast<float>(sz.y);
+                    spr.setScale({ scaleX_slant, scaleY_slant });
+                    outShearY = GLOBAL_SHEAR;
+                }
             }
         }
         else if (id == ITEM_FURNACE) {
-            spr.setScale({ scaleX, scaleY });
+            // Furnace covers the grid (200 width) but stands out tall (150 height)
+            float sY = (sz.y > 0) ? 150.f / static_cast<float>(sz.y) : scaleY;
+            spr.setScale({ scaleX, sY });
         }
         else if (id == ITEM_BED) {
-            spr.setScale({ scaleX, scaleY });
+            // Bed covers the grid (200 width) but stands out tall (130 height)
+            float sY = (sz.y > 0) ? 130.f / static_cast<float>(sz.y) : scaleY;
+            spr.setScale({ scaleX, sY });
         }
         else if (id == ITEM_WOOD_STAIRS) {
             if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = 0.f; }
@@ -1298,7 +1326,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             if (rotation == 90.f)        { spr.setScale({ scaleX, scaleY }); outShearY = 0.f; }
             else                          spr.setScale({ scaleX, scaleY });
         }
-        else if (id == ITEM_NONE) spr.setScale({ scaleX * 1.2f, scaleY * 1.2f }); // campfire: slightly larger
+        else if (id == ITEM_NONE) spr.setScale({ scaleX * 1.3f, scaleY * 1.3f }); // campfire: 1.3x larger to stand out
         else spr.setScale({ scaleX, scaleY });
         };
 
@@ -4393,51 +4421,42 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
                         // Snap to grid cell origin (floor, matching drawn grid)
                         placementPos = snapToShearedGrid(placementPos);
-                        // Stairs snap one grid row higher so they sit on top of a wood tile
-                        if (placementItemID == ITEM_WOOD_STAIRS) {
+
+                        if (placementItemID == ITEM_WOOD_WALL) {
+                            if (placementRotation == 90.f) {
+                                placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                            }
+                        }
+                        else if (placementItemID == ITEM_WOOD_DOOR) {
+                            float bestDist = 150.f;
+                            PlacedStructure* nearestWall = nullptr;
+                            for (auto& s : structures) {
+                                if (s.id == ITEM_WOOD_WALL && s.sprite.has_value()) {
+                                    sf::Vector2f wallPos = s.sprite->getPosition();
+                                    float dx = worldPos.x - wallPos.x;
+                                    float dy = worldPos.y - wallPos.y;
+                                    float dist = std::sqrt(dx * dx + dy * dy);
+                                    if (dist < bestDist) {
+                                        bestDist = dist;
+                                        nearestWall = &s;
+                                    }
+                                }
+                            }
+                            if (nearestWall) {
+                                placementPos = nearestWall->sprite->getPosition();
+                                placementRotation = nearestWall->rotation;
+                            } else {
+                                if (placementRotation == 90.f) {
+                                    placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                                }
+                            }
+                        }
+                        else if (placementItemID == ITEM_WOOD_ROOF) {
+                            placementPos.y -= 180.f;
+                        }
+                        else if (placementItemID == ITEM_WOOD_STAIRS) {
                             placementPos.y -= 100.f;
                         }
-                            if (placementItemID == ITEM_WOOD_DOOR) {
-                                float bestDist = 150.f;
-                                PlacedStructure* nearestWall = nullptr;
-                                for (auto& s : structures) {
-                                    if (s.id == ITEM_WOOD_WALL && s.sprite.has_value()) {
-                                        sf::Vector2f wallPos = s.sprite->getPosition();
-                                        float dx = worldPos.x - wallPos.x;
-                                        float dy = worldPos.y - wallPos.y;
-                                        float dist = std::sqrt(dx * dx + dy * dy);
-                                        if (dist < bestDist) {
-                                            bestDist = dist;
-                                            nearestWall = &s;
-                                        }
-                                    }
-                                }
-                                if (nearestWall) {
-                                    placementPos = nearestWall->sprite->getPosition();
-                                    placementRotation = nearestWall->rotation;
-                                }
-                            }
-                            else if (placementItemID == ITEM_WOOD_ROOF) {
-                                float bestDist = 150.f;
-                                PlacedStructure* nearestWall = nullptr;
-                                for (auto& s : structures) {
-                                    if ((s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) && s.sprite.has_value()) {
-                                        sf::Vector2f wallPos = s.sprite->getPosition();
-                                        float dx = worldPos.x - wallPos.x;
-                                        float dy = worldPos.y - wallPos.y;
-                                        float dist = std::sqrt(dx * dx + dy * dy);
-                                        if (dist < bestDist) {
-                                            bestDist = dist;
-                                            nearestWall = &s;
-                                        }
-                                    }
-                                }
-                                if (nearestWall) {
-                                    placementPos = nearestWall->sprite->getPosition();
-                                    placementPos.y -= 180.f;
-                                    placementRotation = nearestWall->rotation;
-                                }
-                            }
                         clickHandled = true;
                     }
                 }
@@ -5780,51 +5799,42 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 placementPos = worldPos;
                 // Snap to grid cell origin (floor, matching drawn grid)
                 placementPos = snapToShearedGrid(placementPos);
-                // Stairs snap one grid row higher so they sit on top of a wood tile
-                if (placementItemID == ITEM_WOOD_STAIRS) {
+
+                if (placementItemID == ITEM_WOOD_WALL) {
+                    if (placementRotation == 90.f) {
+                        placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                    }
+                }
+                else if (placementItemID == ITEM_WOOD_DOOR) {
+                    float bestDist = 150.f;
+                    PlacedStructure* nearestWall = nullptr;
+                    for (auto& s : structures) {
+                        if (s.id == ITEM_WOOD_WALL && s.sprite.has_value()) {
+                            sf::Vector2f wallPos = s.sprite->getPosition();
+                            float dx = worldPos.x - wallPos.x;
+                            float dy = worldPos.y - wallPos.y;
+                            float dist = std::sqrt(dx * dx + dy * dy);
+                            if (dist < bestDist) {
+                                bestDist = dist;
+                                nearestWall = &s;
+                            }
+                        }
+                    }
+                    if (nearestWall) {
+                        placementPos = nearestWall->sprite->getPosition();
+                        placementRotation = nearestWall->rotation;
+                    } else {
+                        if (placementRotation == 90.f) {
+                            placementPos = { placementPos.x - 100.f, placementPos.y + 50.f };
+                        }
+                    }
+                }
+                else if (placementItemID == ITEM_WOOD_ROOF) {
+                    placementPos.y -= 180.f;
+                }
+                else if (placementItemID == ITEM_WOOD_STAIRS) {
                     placementPos.y -= 100.f;
                 }
-                    if (placementItemID == ITEM_WOOD_DOOR) {
-                        float bestDist = 150.f;
-                        PlacedStructure* nearestWall = nullptr;
-                        for (auto& s : structures) {
-                            if (s.id == ITEM_WOOD_WALL && s.sprite.has_value()) {
-                                sf::Vector2f wallPos = s.sprite->getPosition();
-                                float dx = worldPos.x - wallPos.x;
-                                float dy = worldPos.y - wallPos.y;
-                                float dist = std::sqrt(dx * dx + dy * dy);
-                                if (dist < bestDist) {
-                                    bestDist = dist;
-                                    nearestWall = &s;
-                                }
-                            }
-                        }
-                        if (nearestWall) {
-                            placementPos = nearestWall->sprite->getPosition();
-                            placementRotation = nearestWall->rotation;
-                        }
-                    }
-                    else if (placementItemID == ITEM_WOOD_ROOF) {
-                        float bestDist = 150.f;
-                        PlacedStructure* nearestWall = nullptr;
-                        for (auto& s : structures) {
-                            if ((s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) && s.sprite.has_value()) {
-                                sf::Vector2f wallPos = s.sprite->getPosition();
-                                float dx = worldPos.x - wallPos.x;
-                                float dy = worldPos.y - wallPos.y;
-                                float dist = std::sqrt(dx * dx + dy * dy);
-                                if (dist < bestDist) {
-                                    bestDist = dist;
-                                    nearestWall = &s;
-                                }
-                            }
-                        }
-                        if (nearestWall) {
-                            placementPos = nearestWall->sprite->getPosition();
-                            placementPos.y -= 180.f;
-                            placementRotation = nearestWall->rotation;
-                        }
-                    }
             }
 
             sf::Sprite preview(campfireFrames[0]);
