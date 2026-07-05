@@ -15,11 +15,11 @@
 const float GLOBAL_SHEAR = -0.5f;
 
 static sf::Vector2f snapToShearedGrid(sf::Vector2f pos) {
-    float gx = std::round(pos.x / 500.f + pos.y / 250.f);
-    float gy = std::round(pos.y / 250.f - pos.x / 500.f);
+    float gy = std::round(pos.y / 250.f);
+    float gx = std::round((pos.x + gy * 125.f) / 500.f);
     
-    float snappedX = (gx - gy) * 250.f;
-    float snappedY = (gx + gy) * 125.f;
+    float snappedX = gx * 500.f - gy * 125.f + 250.f;
+    float snappedY = gy * 250.f;
     return { snappedX, snappedY };
 }
 
