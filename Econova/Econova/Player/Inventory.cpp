@@ -1,4 +1,5 @@
 #include "Inventory.h"
+#include "ItemID.h"
 #include "ViewUtils.h"
 #include <iostream>
 #include <algorithm> // std::min
@@ -125,6 +126,54 @@ void Inventory::draw(sf::RenderWindow& window)
         }
     }
 
+    // ---- Tooltip for hovered slot ----
+    if (hoveredSlot >= 0 && hoveredSlot < SLOT_COUNT &&
+        slots[hoveredSlot].occupied)
+    {
+        std::string name = getItemName(slots[hoveredSlot].id);
+        if (!name.empty())
+        {
+            sf::Text tipText(font, name, 22);
+            tipText.setFillColor(sf::Color::White);
+            tipText.setStyle(sf::Text::Bold);
+
+            sf::FloatRect tb = tipText.getLocalBounds();
+            const float padX = 18.f, padY = 10.f;
+            float tw = tb.size.x + padX * 2.f;
+            float th = 34.f;
+
+            sf::Vector2f slotPos = slotBox[hoveredSlot].getPosition();
+            float tx = slotPos.x + boxW / 2.f - tw / 2.f;
+            float ty = slotPos.y - th - 10.f;
+
+            // Clamp to screen edges
+            float screenW = 1920.f;
+            if (tx < 4.f) tx = 4.f;
+            if (tx + tw > screenW - 4.f) tx = screenW - 4.f - tw;
+
+            // Background pill
+            sf::RectangleShape tipBg({ tw, th });
+            tipBg.setPosition({ tx, ty });
+            tipBg.setFillColor(sf::Color(20, 20, 30, 220));
+            tipBg.setOutlineThickness(2.f);
+            tipBg.setOutlineColor(sf::Color(120, 200, 255, 200));
+            window.draw(tipBg);
+
+            // Accent bar on left edge
+            sf::RectangleShape accent({ 4.f, th });
+            accent.setPosition({ tx, ty });
+            accent.setFillColor(sf::Color(100, 200, 255, 230));
+            window.draw(accent);
+
+            // Text centred in pill
+            tipText.setPosition({
+                tx + padX,
+                ty + (th - tb.size.y) / 2.f - tb.position.y
+            });
+            window.draw(tipText);
+        }
+    }
+
     window.setView(old);
 }
 
@@ -175,6 +224,44 @@ int Inventory::getSlotAt(sf::Vector2f mousePos)
 
     return -1; // no slot clicked
 }
+
+void Inventory::updateHover(const sf::Vector2i& mousePos, sf::RenderWindow& window)
+{
+    sf::Vector2f uiPos = window.mapPixelToCoords(mousePos, GetUIView(&window));
+    hoveredSlot = getSlotAt(uiPos);
+}
+// Item display name lookup
+std::string Inventory::getItemName(int id)
+{
+    switch (id)
+    {
+    case ITEM_NONE:          return "";
+    case ITEM_TREE:          return "Tree";
+    case ITEM_STONE:         return "Stone";
+    case ITEM_WOOD:          return "Wood";
+    case ITEM_WOODEN_SWORD:  return "Wooden Sword";
+    case ITEM_SAPLING:       return "Sapling";
+    case ITEM_SHIELD:        return "Shield";
+    case ITEM_FURNACE:       return "Furnace";
+    case ITEM_WOOD_TILE:     return "Wood Tile";
+    case ITEM_WOOD_WALL:     return "Wood Wall";
+    case ITEM_WOOD_DOOR:     return "Wood Door";
+    case ITEM_WOOD_ROOF:     return "Wood Roof";
+    case ITEM_WOOD_STAIRS:   return "Wood Stairs";
+    case ITEM_BED:           return "Bed";
+    case ITEM_WRENCH:        return "Wrench";
+    case ITEM_CHICKEN_MEAT:  return "Chicken Meat";
+    case ITEM_PIG_MEAT:      return "Pig Meat";
+    case ITEM_ZOMBIE_FLESH:  return "Zombie Flesh";
+    case ITEM_COOKED_CHICKEN:return "Cooked Chicken";
+    case ITEM_COOKED_PIG:    return "Cooked Pork";
+    case ITEM_SHEEP_MEAT:    return "Sheep Meat";
+    case ITEM_COOKED_SHEEP:  return "Cooked Lamb";
+    case ITEM_WOOL:          return "Wool";
+    default:                 return "Unknown Item";
+    }
+}
+
 
 void Inventory::addItem(int id, const sf::Texture& texture, int amount)
 {
@@ -261,5 +348,84 @@ void Inventory::clearSlot(int slot)
         slots[slot].occupied = false;
         slots[slot].icon.reset();
     }
+}
+
+#include "Food.h"
+#include "StructureSystem.h"
+
+bool handleInventoryInteractionClick(
+    sf::Vector2f uiPos,
+    sf::Vector2i mousePixelPos,
+    sf::RenderWindow& window,
+    Inventory& inventory,
+    bool& inventoryOpen,
+    bool tradeMenuOpen,
+    bool p2pTradeOpen,
+    const std::vector<PlacedCampfire>& campfires,
+    const sf::Texture& saplingTex,
+    const sf::Texture campfireFrames[8],
+    bool& saplingPlacementMode,
+    bool& saplingFollowingCursor,
+    int& saplingFromInventorySlot,
+    float& saplingRotation,
+    bool& placementMode,
+    bool& placementFollowingCursor,
+    int& placementItemID,
+    int& placementFromInventorySlot,
+    float& hunger,
+    int& hungerMultiplier,
+    float maxHunger,
+    int MAX_MULTIPLIER,
+    float& hp
+) {
+    if (!inventoryOpen) return false;
+
+    int clickedSlot = inventory.getSlotAt(uiPos);
+    if (clickedSlot != -1)
+    {
+        inventory.handleClick(mousePixelPos, window);
+
+        if (inventory.hasItem(clickedSlot))
+        {
+            const sf::Texture* tex = inventory.getItemTexture(clickedSlot);
+            bool campfireOpen = false;
+            for (const auto& f : campfires) {
+                if (f.menuOpen) {
+                    campfireOpen = true;
+                    break;
+                }
+            }
+
+            if (!tradeMenuOpen && !p2pTradeOpen && !campfireOpen)
+            {
+                if (tex == &saplingTex)
+                {
+                    saplingPlacementMode = true;
+                    saplingFollowingCursor = false;
+                    saplingFromInventorySlot = clickedSlot;
+                    saplingRotation = 0.f;
+                    inventoryOpen = false;
+                    return true;
+                }
+
+                int itemId = inventory.getItemID(clickedSlot);
+                if ((itemId >= ITEM_FURNACE && itemId <= ITEM_BED) || (itemId == ITEM_NONE && tex == &campfireFrames[0])) {
+                    inventoryOpen = false;
+                    placementMode = true;
+                    placementFollowingCursor = false;
+                    placementItemID = itemId;
+                    placementFromInventorySlot = clickedSlot;
+                    return true;
+                }
+
+                if (consumeFoodItem(itemId, hunger, hungerMultiplier, maxHunger, MAX_MULTIPLIER, hp)) {
+                    inventory.consumeItem(clickedSlot);
+                    return true;
+                }
+            }
+        }
+        return true;
+    }
+    return false;
 }
 

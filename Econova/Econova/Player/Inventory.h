@@ -7,6 +7,7 @@ class Inventory
 public:
     Inventory();
     void draw(sf::RenderWindow& window);
+    void updateHover(const sf::Vector2i& mousePos, sf::RenderWindow& window);
     void handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& window);
     void setItem(int index, int id, const sf::Texture& texture, int count);
     int getSlotAt(sf::Vector2f mousePos);
@@ -67,6 +68,9 @@ private:
     
     sf::Clock doubleClickClock;
     int lastClickedSlot = -1;
+    int hoveredSlot = -1;
+
+    static std::string getItemName(int id);
 
     struct Slot
     {
@@ -80,3 +84,32 @@ private:
 
 
 };
+
+struct PlacedCampfire;
+
+bool handleInventoryInteractionClick(
+    sf::Vector2f uiPos,
+    sf::Vector2i mousePixelPos,
+    sf::RenderWindow& window,
+    Inventory& inventory,
+    bool& inventoryOpen,
+    bool tradeMenuOpen,
+    bool p2pTradeOpen,
+    const std::vector<PlacedCampfire>& campfires,
+    const sf::Texture& saplingTex,
+    const sf::Texture campfireFrames[8],
+    bool& saplingPlacementMode,
+    bool& saplingFollowingCursor,
+    int& saplingFromInventorySlot,
+    float& saplingRotation,
+    bool& placementMode,
+    bool& placementFollowingCursor,
+    int& placementItemID,
+    int& placementFromInventorySlot,
+    float& hunger,
+    int& hungerMultiplier,
+    float maxHunger,
+    int MAX_MULTIPLIER,
+    float& hp
+);
+

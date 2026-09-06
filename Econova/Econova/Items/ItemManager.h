@@ -76,9 +76,10 @@ public:
         int mapHeight
     );
 
-    void tryPickup(
+    std::vector<int> tryPickup(
         const sf::Sprite& player,
-        Inventory& inventory
+        Inventory& inventory,
+        float maxRadius = 350.f
     );
 
     float getNearestDistance(const sf::Sprite& player) const;

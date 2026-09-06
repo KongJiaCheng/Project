@@ -115,7 +115,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)Release\Database\include\jdbc;$(SolutionDir)Release\External\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)Release\Database\include\jdbc;$(SolutionDir)Release\External\include;$(ProjectDir)Animals;$(ProjectDir)Animals\Loot;$(ProjectDir)World;$(ProjectDir)Player;$(ProjectDir)Items;$(ProjectDir)UI;$(ProjectDir)Economy;$(ProjectDir)Networking;$(ProjectDir)Game;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
     <Link>
@@ -126,7 +126,7 @@
     </Link>
     <PostBuildEvent>
       <Command>xcopy /y /d "$(ProjectDir)mysqlcppconn-10-vs14.dll" "$(OutDir)"
-xcopy /y /d "$(ProjectDir)sfml-*-3.dll" "$(OutDir)"</Command>
+xcopy /y /i "$(ProjectDir)sfml-*.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -138,7 +138,7 @@ xcopy /y /d "$(ProjectDir)sfml-*-3.dll" "$(OutDir)"</Command>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)Release\Database\include\jdbc;$(SolutionDir)Release\External\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)Release\Database\include\jdbc;$(SolutionDir)Release\External\include;$(ProjectDir)Animals;$(ProjectDir)Animals\Loot;$(ProjectDir)World;$(ProjectDir)Player;$(ProjectDir)Items;$(ProjectDir)UI;$(ProjectDir)Economy;$(ProjectDir)Networking;$(ProjectDir)Game;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -148,50 +148,85 @@ xcopy /y /d "$(ProjectDir)sfml-*-3.dll" "$(OutDir)"</Command>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /y /d "$(ProjectDir)mysqlcppconn-10-vs14.dll" "$(OutDir)"
-xcopy /y /d "$(ProjectDir)sfml-*-3.dll" "$(OutDir)"</Command>
+xcopy /y /i "$(ProjectDir)sfml-*.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="AuthManager.cpp" />
-    <ClCompile Include="Camera.cpp" />
-    <ClCompile Include="Chicken.cpp" />
-    <ClCompile Include="ChickenMeat.cpp" />
     <ClCompile Include="Game.cpp" />
-    <ClCompile Include="Inventory.cpp" />
-    <ClCompile Include="ItemManager.cpp" />
-    <ClCompile Include="MainMenu.cpp" />
-    <ClCompile Include="Pig.cpp" />
-    <ClCompile Include="PigMeat.cpp" />
-    <ClCompile Include="Settings.cpp" />
-    <ClCompile Include="TextInput.cpp" />
-    <ClCompile Include="Zombie.cpp" />
-    <ClCompile Include="ZombieFlesh.cpp" />
-    <ClCompile Include="Sheep.cpp" />
-    <ClCompile Include="SheepMeat.cpp" />
+    <ClCompile Include="Animals\Chicken.cpp" />
+    <ClCompile Include="Animals\Pig.cpp" />
+    <ClCompile Include="Animals\Sheep.cpp" />
+    <ClCompile Include="Animals\Zombie.cpp" />
+    <ClCompile Include="Animals\Loot\ChickenMeat.cpp" />
+    <ClCompile Include="Animals\Loot\PigMeat.cpp" />
+    <ClCompile Include="Animals\Loot\SheepMeat.cpp" />
+    <ClCompile Include="Animals\Loot\ZombieFlesh.cpp" />
+    <ClCompile Include="Animals\Loot\Food.cpp" />
+    <ClCompile Include="World\Camera.cpp" />
+    <ClCompile Include="World\WorldRenderer.cpp" />
+    <ClCompile Include="World\StructureSystem.cpp" />
+    <ClCompile Include="World\SpawnEntity.cpp" />
+    <ClCompile Include="Player\PlayerController.cpp" />
+    <ClCompile Include="Player\Inventory.cpp" />
+    <ClCompile Include="Player\Crafting.cpp" />
+    <ClCompile Include="Player\Animation.cpp" />
+    <ClCompile Include="Player\CharacterSelection.cpp" />
+    <ClCompile Include="Items\ItemManager.cpp" />
+    <ClCompile Include="UI\HUD.cpp" />
+    <ClCompile Include="UI\IAPStore.cpp" />
+    <ClCompile Include="UI\ChatSystem.cpp" />
+    <ClCompile Include="UI\Settings.cpp" />
+    <ClCompile Include="UI\TextInput.cpp" />
+    <ClCompile Include="UI\Button.cpp" />
+    <ClCompile Include="Economy\Trade.cpp" />
+    <ClCompile Include="Economy\MarketStats.cpp" />
+    <ClCompile Include="Networking\AuthManager.cpp" />
+    <ClCompile Include="Networking\Server.cpp" />
+    <ClCompile Include="Game\GameInput.cpp" />
+    <ClCompile Include="Game\GameAssets.cpp" />
+    <ClCompile Include="Game\MainMenu.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Animal.h" />
-    <ClInclude Include="AuthManager.h" />
-    <ClInclude Include="Animation.h" />
-    <ClInclude Include="Camera.h" />
-    <ClInclude Include="Chicken.h" />
-    <ClInclude Include="ChickenMeat.h" />
-    <ClInclude Include="Food.h" />
     <ClInclude Include="Game.h" />
-    <ClInclude Include="Inventory.h" />
-    <ClInclude Include="Item.h" />
-    <ClInclude Include="ItemID.h" />
-    <ClInclude Include="ItemManager.h" />
-    <ClInclude Include="Monster.h" />
-    <ClInclude Include="Pig.h" />
-    <ClInclude Include="PigMeat.h" />
-    <ClInclude Include="Settings.h" />
-    <ClInclude Include="TextInput.h" />
-    <ClInclude Include="ViewUtils.h" />
-    <ClInclude Include="Sheep.h" />
-    <ClInclude Include="SheepMeat.h" />
+    <ClInclude Include="Animals\Animal.h" />
+    <ClInclude Include="Animals\Monster.h" />
+    <ClInclude Include="Animals\Chicken.h" />
+    <ClInclude Include="Animals\Pig.h" />
+    <ClInclude Include="Animals\Sheep.h" />
+    <ClInclude Include="Animals\Zombie.h" />
+    <ClInclude Include="Animals\Loot\ChickenMeat.h" />
+    <ClInclude Include="Animals\Loot\PigMeat.h" />
+    <ClInclude Include="Animals\Loot\SheepMeat.h" />
+    <ClInclude Include="Animals\Loot\ZombieFlesh.h" />
+    <ClInclude Include="Animals\Loot\Food.h" />
+    <ClInclude Include="World\Camera.h" />
+    <ClInclude Include="World\WorldRenderer.h" />
+    <ClInclude Include="World\StructureSystem.h" />
+    <ClInclude Include="World\SpawnEntity.h" />
+    <ClInclude Include="World\ViewUtils.h" />
+    <ClInclude Include="Player\PlayerController.h" />
+    <ClInclude Include="Player\Inventory.h" />
+    <ClInclude Include="Player\Crafting.h" />
+    <ClInclude Include="Player\Animation.h" />
+    <ClInclude Include="Player\CharacterSelection.h" />
+    <ClInclude Include="Items\Item.h" />
+    <ClInclude Include="Items\ItemID.h" />
+    <ClInclude Include="Items\ItemManager.h" />
+    <ClInclude Include="UI\HUD.h" />
+    <ClInclude Include="UI\IAPStore.h" />
+    <ClInclude Include="UI\ChatSystem.h" />
+    <ClInclude Include="UI\Settings.h" />
+    <ClInclude Include="UI\TextInput.h" />
+    <ClInclude Include="UI\Button.h" />
+    <ClInclude Include="Economy\Trade.h" />
+    <ClInclude Include="Economy\MarketStats.h" />
+    <ClInclude Include="Networking\AuthManager.h" />
+    <ClInclude Include="Networking\Server.h" />
+    <ClInclude Include="Game\GameInput.h" />
+    <ClInclude Include="Game\GameAssets.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+

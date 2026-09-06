@@ -56,7 +56,7 @@ bool AuthManager::initDB() {
         // We write a local file "schema_version.txt" after migrations complete.
         // If it already says the current version, skip all ALTER TABLE calls entirely
         // so startup doesn't waste 20+ network round-trips every launch.
-        const int CURRENT_SCHEMA_VERSION = 3;
+        const int CURRENT_SCHEMA_VERSION = 4;
         const std::string SCHEMA_FILE = "schema_version.txt";
         int localSchemaVersion = 0;
         {
@@ -209,6 +209,23 @@ bool AuthManager::initDB() {
                         "Username VARCHAR(50), "
                         "Message TEXT, "
                         "SentAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        ")");
+                }
+            }
+            catch (...) {}
+
+            // chest_contents
+            try {
+                std::unique_ptr<sql::Statement> stmt(con->createStatement());
+                if (stmt) {
+                    stmt->execute("CREATE TABLE IF NOT EXISTS chest_contents ("
+                        "Username VARCHAR(50), "
+                        "ChestX FLOAT, "
+                        "ChestY FLOAT, "
+                        "SlotIndex INT, "
+                        "ItemID INT, "
+                        "Quantity INT, "
+                        "PRIMARY KEY (Username, ChestX, ChestY, SlotIndex)"
                         ")");
                 }
             }
@@ -608,33 +625,68 @@ std::vector<StoredStructure> AuthManager::loadOtherStructures(const sql::SQLStri
     return structures;
 }
 
+void AuthManager::ensureCampfireColumns() {
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::Statement> stmt(con->createStatement());
+        if (stmt) {
+            stmt->execute("CREATE TABLE IF NOT EXISTS campfires ("
+                "ID INT AUTO_INCREMENT PRIMARY KEY, "
+                "Username VARCHAR(50), "
+                "PosX FLOAT, "
+                "PosY FLOAT, "
+                "TimeRemaining FLOAT, "
+                "IsCrafted BOOLEAN, "
+                "Fuel INT DEFAULT 0, "
+                "InputItem INT DEFAULT 0, "
+                "InputCount INT DEFAULT 0, "
+                "OutputItem INT DEFAULT 0, "
+                "OutputCount INT DEFAULT 0"
+                ")");
+            try { stmt->execute("ALTER TABLE campfires ADD COLUMN Fuel INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE campfires ADD COLUMN InputItem INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE campfires ADD COLUMN InputCount INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE campfires ADD COLUMN OutputItem INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE campfires ADD COLUMN OutputCount INT DEFAULT 0"); } catch (...) {}
+        }
+    }
+    catch (...) {}
+}
+
 void AuthManager::saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires) {
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return;
-    try {
-        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM campfires WHERE Username = ?"));
-        if (!delStmt) return;
-        delStmt->setString(1, username);
-        delStmt->executeUpdate();
+    for (int attempt = 0; attempt < 2; attempt++) {
+        try {
+            std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM campfires WHERE Username = ?"));
+            if (!delStmt) return;
+            delStmt->setString(1, username);
+            delStmt->executeUpdate();
 
-        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO campfires (Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
-        if (!insStmt) return;
-        for (auto& c : campfires) {
-            insStmt->setString(1, username);
-            insStmt->setDouble(2, c.x);
-            insStmt->setDouble(3, c.y);
-            insStmt->setDouble(4, c.timeRemaining);
-            insStmt->setBoolean(5, c.isCrafted);
-            insStmt->setInt(6, c.fuel);
-            insStmt->setInt(7, c.inputItem);
-            insStmt->setInt(8, c.inputCount);
-            insStmt->setInt(9, c.outputItem);
-            insStmt->setInt(10, c.outputCount);
-            insStmt->executeUpdate();
+            std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO campfires (Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+            if (!insStmt) return;
+            for (auto& c : campfires) {
+                insStmt->setString(1, username);
+                insStmt->setDouble(2, c.x);
+                insStmt->setDouble(3, c.y);
+                insStmt->setDouble(4, c.timeRemaining);
+                insStmt->setBoolean(5, c.isCrafted);
+                insStmt->setInt(6, c.fuel);
+                insStmt->setInt(7, c.inputItem);
+                insStmt->setInt(8, c.inputCount);
+                insStmt->setInt(9, c.outputItem);
+                insStmt->setInt(10, c.outputCount);
+                insStmt->executeUpdate();
+            }
+            return;
         }
-    }
-    catch (sql::SQLException& e) {
-        std::cerr << "saveCampfires error: " << e.what() << "\n";
+        catch (sql::SQLException& e) {
+            if (attempt == 0) {
+                ensureCampfireColumns();
+                continue;
+            }
+            std::cerr << "saveCampfires error: " << e.what() << "\n";
+        }
     }
 }
 
@@ -642,28 +694,35 @@ std::vector<StoredCampfire> AuthManager::loadCampfires(const sql::SQLString& use
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
     std::vector<StoredCampfire> campfires;
     if (!con) return campfires;
-    try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount FROM campfires WHERE Username = ?"));
-        if (!pstmt) return campfires;
-        pstmt->setString(1, username);
-        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
-        while (res && res->next()) {
-            StoredCampfire sc;
-            sc.x = (float)res->getDouble("PosX");
-            sc.y = (float)res->getDouble("PosY");
-            sc.timeRemaining = (float)res->getDouble("TimeRemaining");
-            sc.isCrafted = res->getBoolean("IsCrafted");
-            sc.fuel = res->getInt("Fuel");
-            sc.inputItem = res->getInt("InputItem");
-            sc.inputCount = res->getInt("InputCount");
-            sc.outputItem = res->getInt("OutputItem");
-            sc.outputCount = res->getInt("OutputCount");
-            sc.owner = std::string(username.c_str());  // own campfires
-            campfires.push_back(sc);
+    for (int attempt = 0; attempt < 2; attempt++) {
+        try {
+            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount FROM campfires WHERE Username = ?"));
+            if (!pstmt) return campfires;
+            pstmt->setString(1, username);
+            std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+            while (res && res->next()) {
+                StoredCampfire sc;
+                sc.x = (float)res->getDouble("PosX");
+                sc.y = (float)res->getDouble("PosY");
+                sc.timeRemaining = (float)res->getDouble("TimeRemaining");
+                sc.isCrafted = res->getBoolean("IsCrafted");
+                sc.fuel = res->getInt("Fuel");
+                sc.inputItem = res->getInt("InputItem");
+                sc.inputCount = res->getInt("InputCount");
+                sc.outputItem = res->getInt("OutputItem");
+                sc.outputCount = res->getInt("OutputCount");
+                sc.owner = std::string(username.c_str());  // own campfires
+                campfires.push_back(sc);
+            }
+            return campfires;
         }
-    }
-    catch (sql::SQLException& e) {
-        std::cerr << "loadCampfires error: " << e.what() << "\n";
+        catch (sql::SQLException& e) {
+            if (attempt == 0) {
+                ensureCampfireColumns();
+                continue;
+            }
+            std::cerr << "loadCampfires error: " << e.what() << "\n";
+        }
     }
     return campfires;
 }
@@ -673,29 +732,36 @@ std::vector<StoredCampfire> AuthManager::loadOtherCampfires(const sql::SQLString
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
     std::vector<StoredCampfire> campfires;
     if (!con) return campfires;
-    try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
-            "SELECT Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount FROM campfires WHERE Username != ?"));
-        if (!pstmt) return campfires;
-        pstmt->setString(1, username);
-        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
-        while (res && res->next()) {
-            StoredCampfire sc;
-            sc.owner      = std::string(res->getString("Username"));
-            sc.x          = (float)res->getDouble("PosX");
-            sc.y          = (float)res->getDouble("PosY");
-            sc.timeRemaining = (float)res->getDouble("TimeRemaining");
-            sc.isCrafted  = res->getBoolean("IsCrafted");
-            sc.fuel       = res->getInt("Fuel");
-            sc.inputItem  = res->getInt("InputItem");
-            sc.inputCount = res->getInt("InputCount");
-            sc.outputItem = res->getInt("OutputItem");
-            sc.outputCount= res->getInt("OutputCount");
-            campfires.push_back(sc);
+    for (int attempt = 0; attempt < 2; attempt++) {
+        try {
+            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+                "SELECT Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount FROM campfires WHERE Username != ?"));
+            if (!pstmt) return campfires;
+            pstmt->setString(1, username);
+            std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+            while (res && res->next()) {
+                StoredCampfire sc;
+                sc.owner      = std::string(res->getString("Username"));
+                sc.x          = (float)res->getDouble("PosX");
+                sc.y          = (float)res->getDouble("PosY");
+                sc.timeRemaining = (float)res->getDouble("TimeRemaining");
+                sc.isCrafted  = res->getBoolean("IsCrafted");
+                sc.fuel       = res->getInt("Fuel");
+                sc.inputItem  = res->getInt("InputItem");
+                sc.inputCount = res->getInt("InputCount");
+                sc.outputItem = res->getInt("OutputItem");
+                sc.outputCount= res->getInt("OutputCount");
+                campfires.push_back(sc);
+            }
+            return campfires;
         }
-    }
-    catch (sql::SQLException& e) {
-        std::cerr << "loadOtherCampfires error: " << e.what() << "\n";
+        catch (sql::SQLException& e) {
+            if (attempt == 0) {
+                ensureCampfireColumns();
+                continue;
+            }
+            std::cerr << "loadOtherCampfires error: " << e.what() << "\n";
+        }
     }
     return campfires;
 }
@@ -1485,4 +1551,80 @@ void AuthManager::completeP2PTrade(int tradeID) {
         pstmt->executeUpdate();
     }
     catch (sql::SQLException& e) { std::cerr << "completeP2PTrade error: " << e.what() << "\n"; }
+}
+
+void AuthManager::saveChestContents(const sql::SQLString& username, const std::vector<StoredChestItem>& items) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM chest_contents WHERE Username = ?"));
+        if (!delStmt) return;
+        delStmt->setString(1, username);
+        delStmt->executeUpdate();
+
+        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO chest_contents (Username, ChestX, ChestY, SlotIndex, ItemID, Quantity) VALUES (?, ?, ?, ?, ?, ?)"));
+        if (!insStmt) return;
+        for (auto& item : items) {
+            insStmt->setString(1, username);
+            insStmt->setDouble(2, (double)item.chestX);
+            insStmt->setDouble(3, (double)item.chestY);
+            insStmt->setInt(4, item.slotIndex);
+            insStmt->setInt(5, item.itemID);
+            insStmt->setInt(6, item.quantity);
+            insStmt->executeUpdate();
+        }
+    }
+    catch (sql::SQLException& e) {
+        std::cerr << "saveChestContents error: " << e.what() << "\n";
+    }
+}
+
+std::vector<StoredChestItem> AuthManager::loadChestContents(const sql::SQLString& username) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    std::vector<StoredChestItem> items;
+    if (!con) return items;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ChestX, ChestY, SlotIndex, ItemID, Quantity FROM chest_contents WHERE Username = ?"));
+        if (!pstmt) return items;
+        pstmt->setString(1, username);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        while (res && res->next()) {
+            items.push_back({
+                (float)res->getDouble("ChestX"),
+                (float)res->getDouble("ChestY"),
+                res->getInt("SlotIndex"),
+                res->getInt("ItemID"),
+                res->getInt("Quantity")
+            });
+        }
+    }
+    catch (sql::SQLException& e) {
+        std::cerr << "loadChestContents error: " << e.what() << "\n";
+    }
+    return items;
+}
+
+std::vector<StoredChestItem> AuthManager::loadOtherChestContents(const sql::SQLString& username) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    std::vector<StoredChestItem> items;
+    if (!con) return items;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ChestX, ChestY, SlotIndex, ItemID, Quantity FROM chest_contents WHERE Username != ?"));
+        if (!pstmt) return items;
+        pstmt->setString(1, username);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        while (res && res->next()) {
+            items.push_back({
+                (float)res->getDouble("ChestX"),
+                (float)res->getDouble("ChestY"),
+                res->getInt("SlotIndex"),
+                res->getInt("ItemID"),
+                res->getInt("Quantity")
+            });
+        }
+    }
+    catch (sql::SQLException& e) {
+        std::cerr << "loadOtherChestContents error: " << e.what() << "\n";
+    }
+    return items;
 }

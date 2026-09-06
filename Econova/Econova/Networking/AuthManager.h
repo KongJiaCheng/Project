@@ -32,6 +32,14 @@ struct StoredStructure {
     float shearY = 0.f;
 };
 
+struct StoredChestItem {
+    float chestX;
+    float chestY;
+    int slotIndex;
+    int itemID;
+    int quantity;
+};
+
 struct StoredCampfire {
     float x, y, timeRemaining;
     bool isCrafted;
@@ -145,11 +153,16 @@ public:
     std::vector<StoredCampfire> loadCampfires(const sql::SQLString& username);
     std::vector<StoredCampfire> loadOtherCampfires(const sql::SQLString& username);
 
+    void saveChestContents(const sql::SQLString& username, const std::vector<StoredChestItem>& items);
+    std::vector<StoredChestItem> loadChestContents(const sql::SQLString& username);
+    std::vector<StoredChestItem> loadOtherChestContents(const sql::SQLString& username);
+
     // World / server-time helpers
     int       getOrCreateWorldSeed();
     long long getServerEpochSeconds();
 
 private:
+    void ensureCampfireColumns();
     sql::mysql::MySQL_Driver* driver = nullptr;
     sql::Connection* con = nullptr;
     std::recursive_mutex dbMutex;

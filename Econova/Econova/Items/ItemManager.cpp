@@ -1,4 +1,4 @@
-#include "ItemManager.h"
+﻿#include "ItemManager.h"
 #include "ChickenMeat.h"
 #include "PigMeat.h"
 #include "ZombieFlesh.h"
@@ -12,16 +12,12 @@
 #include <iostream>
 #include <SFML/Graphics.hpp>
 
-const float GLOBAL_SHEAR = -0.5f;
+#include "Game.h"
 
-static sf::Vector2f snapToShearedGrid(sf::Vector2f pos) {
-    float gy = std::round(pos.y / 250.f);
-    float gx = std::round((pos.x + gy * 125.f) / 500.f);
-    
-    float snappedX = gx * 500.f - gy * 125.f + 250.f;
-    float snappedY = gy * 250.f;
-    return { snappedX, snappedY };
-}
+// Snap helpers (tree=50x50, stone=25x25)
+static sf::Vector2f snapTree(sf::Vector2f pos)  { return snapToGrid(pos); }
+static sf::Vector2f snapStone(sf::Vector2f pos) { return snapToGrid(pos); }
+
 
 // --------------------------------------------------
 // Helpers
@@ -95,16 +91,14 @@ std::vector<Item>& ItemManager::getItems()
 
 void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, int quantity)
 {
-    if (id == ITEM_TREE || id == ITEM_STONE) {
-        sf::Vector2f snapped = snapToShearedGrid(pos);
-        if (std::abs(pos.x - snapped.x) > 1.f || std::abs(pos.y - snapped.y) > 1.f) {
-            return; // doesn't fit the grid — discard / remove
-        }
+    if (id == ITEM_TREE) {
+        pos = snapToGrid(pos);
+    } else if (id == ITEM_STONE) {
+        pos = snapStone(pos);
     }
 
     size_t idx = items.size();
     items.emplace_back(id, quantity, texture, pos);
-    // Natural resources fill exactly one grid cell (footprint: 200 x 100).
     auto sz = texture.getSize();
     if (id == ITEM_TREE)
     {
@@ -113,12 +107,13 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
             static_cast<float>(sz.y)
             });
 
-        float scale = (sz.x > 0) ? 600.f / static_cast<float>(sz.x) : 1.2f;
-
+        // Scale tree sprite so its base fits a 50×50 ground footprint
+        float scaleX = (sz.x > 0) ? 50.f / static_cast<float>(sz.x) : 1.f;
+        // Keep tree tall – use same uniform scale as before but proportional
+        float scale  = (sz.x > 0) ? 960.f / static_cast<float>(sz.x) : 1.2f;
         items.back().sprite.setScale({ scale, scale });
 
-        // Makes the tree appear to come out of the tile.
-        items.back().sprite.move({ 0.f, -100.f });
+        items.back().sprite.move({ 0.f, -160.f });
     }
     else if (id == ITEM_STONE)
     {
@@ -127,14 +122,14 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
             static_cast<float>(sz.y)
             });
 
-        float scale = (sz.x > 0) ? 600.f / static_cast<float>(sz.x) : 1.2f;
-
+        // Scale stone sprite so it fits a 250×250 cell
+        float scale = (sz.x > 0) ? 250.f / static_cast<float>(sz.x) : 0.5f;
         items.back().sprite.setScale({ scale, scale });
 
-        items.back().sprite.move({ 0.f, -37.5f });
+        items.back().sprite.move({ 0.f, -120.f });
     }
     else if (id == ITEM_SAPLING) {
-        items.back().sprite.setScale({ 0.2f, 0.2f });
+        items.back().sprite.setScale({ 0.32f, 0.32f });
     }
     else if (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_ZOMBIE_FLESH || id == ITEM_COOKED_CHICKEN || id == ITEM_COOKED_PIG) {
         items.back().sprite.setScale({ 0.4f, 0.4f });
@@ -192,55 +187,52 @@ void ItemManager::draw(sf::RenderWindow& window)
 // World logic
 // --------------------------------------------------
 
-void ItemManager::tryPickup(
+std::vector<int> ItemManager::tryPickup(
     const sf::Sprite& player,
-    Inventory& inventory
+    Inventory& inventory,
+    float maxRadius
 )
 {
+    std::vector<int> pickedIds;
     if (items.empty())
-        return;
+        return pickedIds;
 
     sf::Vector2f ppos = getSpriteCenterSafe(player);
 
-    int bestIdx = -1;
-    float bestDist = std::numeric_limits<float>::max();
-
-    for (size_t i = 0; i < items.size(); ++i)
+    for (auto it = items.begin(); it != items.end(); )
     {
-        if (items[i].id == ITEM_TREE) continue;
+        if (it->id == ITEM_TREE)
+        {
+            ++it;
+            continue;
+        }
 
-        sf::Vector2f ipos = getSpriteCenterSafe(items[i].sprite);
+        sf::Vector2f ipos = getSpriteCenterSafe(it->sprite);
         float dx = ipos.x - ppos.x;
         float dy = ipos.y - ppos.y;
         float dist = std::sqrt(dx * dx + dy * dy);
 
-        if (dist < bestDist)
+        if (dist < maxRadius)
         {
-            bestDist = dist;
-            bestIdx = (int)i;
+            int pickedID = it->id;
+            inventory.addItem(
+                pickedID,
+                it->sprite.getTexture(),
+                it->count
+            );
+            pickedIds.push_back(pickedID);
+            it = items.erase(it);
+        }
+        else
+        {
+            ++it;
         }
     }
 
-    if (bestIdx == -1 || bestDist > 250.f)
-        return;
-
-    int pickedID = items[bestIdx].id;
-
-    if (pickedID == ITEM_TREE)
-    {
-        inventory.addItem(ITEM_WOOD, *woodTex, 1);
+    if (!pickedIds.empty()) {
+        rebuildGrid();
     }
-    else
-    {
-        inventory.addItem(
-            pickedID,
-            items[bestIdx].sprite.getTexture(),
-            items[bestIdx].count
-        );
-    }
-
-    items.erase(items.begin() + bestIdx);
-    rebuildGrid();   // indices shifted after erase � must rebuild
+    return pickedIds;
 }
 
 float ItemManager::getNearestDistance(const sf::Sprite& player) const
@@ -412,3 +404,4 @@ void ItemManager::spawnRandomItems(const std::vector<SpawnRule>& rules, int mapW
         }
     }
 }
+

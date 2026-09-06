@@ -684,13 +684,67 @@ int main(int argc, char** argv) {
             }
             else if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>()) {
                 if (keyPressed->scancode == sf::Keyboard::Scancode::Escape) {
-                    window->close();
+                    // In form states go back instead of closing window
+                    if (state == MenuState::Register || state == MenuState::Login) {
+                        state = MenuState::AuthChoice;
+                        errorMessage = "";
+                    } else if (state == MenuState::ForgotPasswordStep1 || state == MenuState::ForgotPasswordStep2) {
+                        state = MenuState::Login;
+                        errorMessage = "";
+                    } else if (state == MenuState::AuthChoice) {
+                        state = MenuState::MainMenu;
+                    } else {
+                        window->close();
+                    }
+                }
+                // Tab: cycle focus through Register fields
+                else if (keyPressed->scancode == sf::Keyboard::Scancode::Tab
+                      && state == MenuState::Register) {
+                    if      (regUser.hasFocus())  { regUser.setFocus(false); regPass.setFocus(true); }
+                    else if (regPass.hasFocus())  { regPass.setFocus(false); regConf.setFocus(true); }
+                    else if (regConf.hasFocus())  { regConf.setFocus(false); regEmail.setFocus(true); }
+                    else                          { regEmail.setFocus(false); regUser.setFocus(true); }
+                }
+                // Tab: cycle focus through Login fields
+                else if (keyPressed->scancode == sf::Keyboard::Scancode::Tab
+                      && state == MenuState::Login) {
+                    if (logUser.hasFocus()) { logUser.setFocus(false); logPass.setFocus(true); }
+                    else                   { logPass.setFocus(false); logUser.setFocus(true); }
+                }
+                // Enter: submit Register form
+                else if (keyPressed->scancode == sf::Keyboard::Scancode::Enter
+                      && state == MenuState::Register) {
+                    std::string u = regUser.getText(), p = regPass.getText();
+                    std::string c = regConf.getText(), e = regEmail.getText();
+                    if (u.empty() || p.empty() || c.empty() || e.empty()) {
+                        errorMessage = "Fields cannot be blank!";
+                    } else if (p != c) {
+                        errorMessage = "Passwords do not match!";
+                    } else if (!isValidPassword(p)) {
+                        errorMessage = "Password needs 1 number, 1 letter, 1 symbol!";
+                    } else {
+                        startRegisterAsync(u, p, e);
+                        state = MenuState::Registering;
+                        errorMessage = "";
+                    }
+                }
+                // Enter: submit Login form
+                else if (keyPressed->scancode == sf::Keyboard::Scancode::Enter
+                      && state == MenuState::Login) {
+                    std::string u = logUser.getText(), p = logPass.getText();
+                    if (u.empty() || p.empty()) {
+                        errorMessage = "Fields cannot be blank!";
+                    } else {
+                        startLoginAsync(u, p);
+                        state = MenuState::LoggingIn;
+                        errorMessage = "";
+                    }
                 }
             }
 
             sf::Vector2f mpos = window->mapPixelToCoords(sf::Mouse::getPosition(*window), GetUIView(window));
 
-            // Distribute events
+            // Distribute events to text inputs
             if (state == MenuState::Register) {
                 regUser.processEvent(*event, mpos);
                 regPass.processEvent(*event, mpos);
@@ -1028,9 +1082,12 @@ int main(int argc, char** argv) {
 
             // ---- Draw progress bar screen ----
             float elapsed = authClock.getElapsedTime().asSeconds();
-            // Bar bounces between 0-100% with a smooth ping-pong animation
-            float ping = std::fmod(elapsed * 0.4f, 2.f);
-            float prog = (ping < 1.f) ? ping : (2.f - ping);
+
+            // Bar fills quickly to 85% then holds – never goes backward
+            constexpr float FILL_DURATION = 1.2f;
+            float fillProg = (elapsed < FILL_DURATION)
+                ? (elapsed / FILL_DURATION) * 0.85f
+                : 0.85f;
 
             float winW = static_cast<float>(width);
             float winH = static_cast<float>(height);
@@ -1045,18 +1102,25 @@ int main(int argc, char** argv) {
             authBarBg.setPosition({ barX, barY });
             window->draw(authBarBg);
 
-            // Animated fill
-            sf::RectangleShape authBarFg({ barW * prog, barH });
+            // Filled portion – only ever grows
+            sf::RectangleShape authBarFg({ barW * fillProg, barH });
             authBarFg.setFillColor(sf::Color(52, 152, 219));
             authBarFg.setPosition({ barX, barY });
             window->draw(authBarFg);
 
-            // Shimmer highlight on top of fill
-            if (barW * prog > 10.f) {
-                sf::RectangleShape shimmer({ barW * prog, barH / 3.f });
-                shimmer.setFillColor(sf::Color(255, 255, 255, 40));
-                shimmer.setPosition({ barX, barY });
-                window->draw(shimmer);
+            // Shimmer pulse sweeps left-to-right across the filled region
+            if (barW * fillProg > 10.f) {
+                float shimmerPhase = std::fmod(elapsed * 1.2f, 1.f); // 0→1, loops
+                float shimmerX = barX + shimmerPhase * (barW * fillProg);
+                float shimmerW = barW * 0.18f; // ~18% width shimmer band
+                // clamp so it doesn't overflow the filled area
+                shimmerW = std::min(shimmerW, (barX + barW * fillProg) - shimmerX);
+                if (shimmerW > 0.f) {
+                    sf::RectangleShape shimmer({ shimmerW, barH });
+                    shimmer.setFillColor(sf::Color(255, 255, 255, 55));
+                    shimmer.setPosition({ shimmerX, barY });
+                    window->draw(shimmer);
+                }
             }
 
             // Animated dots

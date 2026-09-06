@@ -18,6 +18,7 @@ enum ItemID
     ITEM_WOOD_STAIRS = 12,
     ITEM_BED = 13,
     ITEM_WRENCH = 14,
+    ITEM_CHEST = 15,
 
     ITEM_CHICKEN_MEAT = 100,
     ITEM_PIG_MEAT = 101,
