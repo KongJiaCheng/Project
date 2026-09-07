@@ -227,11 +227,20 @@ void drawDoor(
         TL = { pos.x,        pos.y - doorHeight };
     }
 
+    float uLeft = 0.f, uRight = tw;
+    float vTop = 0.f, vBottom = th;
+    if (tw == 1024.f && th == 1024.f) {
+        uLeft = 224.f;
+        uRight = 801.f;
+        vTop = 55.f;
+        vBottom = 968.f;
+    }
+
     sf::VertexArray va(sf::PrimitiveType::TriangleFan, 4);
-    va[0] = sf::Vertex{ BL, color, sf::Vector2f{0.f, th} };
-    va[1] = sf::Vertex{ BR, color, sf::Vector2f{tw,  th} };
-    va[2] = sf::Vertex{ TR, color, sf::Vector2f{tw,  0.f} };
-    va[3] = sf::Vertex{ TL, color, sf::Vector2f{0.f, 0.f} };
+    va[0] = sf::Vertex{ BL, color, sf::Vector2f{uLeft,  vBottom} };
+    va[1] = sf::Vertex{ BR, color, sf::Vector2f{uRight, vBottom} };
+    va[2] = sf::Vertex{ TR, color, sf::Vector2f{uRight, vTop} };
+    va[3] = sf::Vertex{ TL, color, sf::Vector2f{uLeft,  vTop} };
 
     sf::RenderStates rs;
     rs.texture = &tex;
@@ -282,8 +291,11 @@ void drawPlacementPreview(
         // Draw as rhombus to match the grid cell exactly
         drawRhombusTile(window, preview.getTexture(), placementPos,
                         sf::Color(255, 255, 255, 160));
-    } else if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+    } else if (placementItemID == ITEM_WOOD_WALL) {
         drawWall(window, preview.getTexture(), placementPos, placementRotation,
+                 sf::Color(255, 255, 255, 180));
+    } else if (placementItemID == ITEM_WOOD_DOOR) {
+        drawDoor(window, preview.getTexture(), placementPos, placementRotation, false,
                  sf::Color(255, 255, 255, 180));
     } else {
         window.draw(preview);
