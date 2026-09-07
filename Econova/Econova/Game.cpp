@@ -992,9 +992,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (mouse->button == sf::Mouse::Button::Left)
                 {
                     sf::Vector2f uiPos = window.mapPixelToCoords(mouse->position, GetUIView(&window));
+                    sf::Vector2f mouseWorldPos = window.mapPixelToCoords(mouse->position);
                     handleAllGameMouseButtonPressed(
                         uiPos,
-                        worldPos,
+                        mouseWorldPos,
                         mouse->position,
                         window,
                         width,
@@ -1197,9 +1198,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
         characterSelection.updateHover(mousePos);
 
-        window.clear(sf::Color::White);
+        window.clear(sf::Color(20, 20, 20));
+        window.setView(window.getDefaultView());
+        sf::Vector2u winSize = window.getSize();
+        if (selBgSprite.getLocalBounds().size.x > 0 && selBgSprite.getLocalBounds().size.y > 0) {
+            selBgSprite.setScale({
+                (float)winSize.x / selBgSprite.getLocalBounds().size.x,
+                (float)winSize.y / selBgSprite.getLocalBounds().size.y
+            });
+            selBgSprite.setPosition({ 0.f, 0.f });
+            window.draw(selBgSprite);
+        }
         window.setView(GetUIView(&window));
-        window.draw(selBgSprite);
         characterSelection.draw(window);
 
         // Old campfire drawing logic removed

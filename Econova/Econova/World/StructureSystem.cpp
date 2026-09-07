@@ -373,16 +373,11 @@ void applyStructureScale(
     float th = static_cast<float>(sz.y);
 
     if (id == ITEM_WOOD_TILE) {
-        // 250×250 footprint
-        spr.setScale({ 250.f / tw, 250.f / th });
+        // 500×500 footprint
+        spr.setScale({ 500.f / tw, 500.f / th });
     }
     else if (id == ITEM_WOOD_WALL) {
-        if (rotation == 90.f) {
-            // Rotated wall: 250×250 square
-            spr.setScale({ 250.f / tw, 250.f / th });
-        } else {
-            spr.setScale({ 250.f / tw, 250.f / th });
-        }
+        spr.setScale({ 500.f / tw, 500.f / th });
     }
     else if (id == ITEM_WOOD_DOOR) {
         if (isOpen) {
@@ -406,8 +401,8 @@ void applyStructureScale(
         spr.setScale({ 500.f / tw, 500.f / th });
     }
     else if (id == ITEM_WOOD_ROOF) {
-        // 250×250
-        spr.setScale({ 250.f / tw, 250.f / th });
+        // 500×500
+        spr.setScale({ 500.f / tw, 500.f / th });
     }
     else if (id == ITEM_NONE) {
         // Campfire: 500×500
@@ -629,18 +624,13 @@ bool handleStructurePlacementClicks(
         placementFollowingCursor = !placementFollowingCursor;
 
         // Snap placement position based on item footprint
-        if (placementItemID == ITEM_NONE       // campfire 50x50
-         || placementItemID == ITEM_FURNACE    // 50x50
-         || placementItemID == ITEM_BED        // 50x50
-         || placementItemID == ITEM_WOOD_STAIRS) { // 50x50
-            placementPos = snapToGrid(worldPos);
-        }
-        else if (placementItemID == ITEM_WOOD_DOOR) {
-            // Door: 50x100, snap to 25x25 cell corner
-            placementPos = snapToGrid(worldPos);
+        if (placementItemID == ITEM_NONE) {
+            // Campfire: place inside the grid cell, not at the border
+            sf::Vector2f corner = snapToGrid(worldPos);
+            placementPos = { corner.x + 375.f, corner.y - 125.f };
         }
         else {
-            // Wood wall, tile, roof, chest: 25x25
+            // All structures snap to grid cell corner
             placementPos = snapToGrid(worldPos);
         }
         return true;
@@ -847,15 +837,12 @@ void updateAndDrawPlacementPreview(
     if (!placementMode) return;
 
     if (placementFollowingCursor) {
-        // Snap to square grid based on item footprint
-        if (placementItemID == ITEM_NONE       // campfire 50×50
-         || placementItemID == ITEM_FURNACE    // 50×50
-         || placementItemID == ITEM_BED        // 50×50
-         || placementItemID == ITEM_WOOD_STAIRS) { // 50×50
-            placementPos = snapToGrid(worldPos);
+        if (placementItemID == ITEM_NONE) {
+            // Campfire: place inside the grid cell, not at the border
+            sf::Vector2f corner = snapToGrid(worldPos);
+            placementPos = { corner.x + 375.f, corner.y - 125.f };
         }
         else {
-            // wood wall, tile, roof, door, chest: 25×25
             placementPos = snapToGrid(worldPos);
         }
     }

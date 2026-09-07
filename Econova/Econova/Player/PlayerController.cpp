@@ -114,8 +114,10 @@ bool isPositionBlocked(
         if (s.id == ITEM_WOOD_WALL || (s.id == ITEM_WOOD_DOOR && !s.isOpen)) {
             if (targetElevated) continue;
             sf::Vector2f sPos = s.sprite->getPosition();
-            sf::Vector2f A = sPos - sf::Vector2f(250.8f, 250.8f * s.shearY);
-            sf::Vector2f B = sPos + sf::Vector2f(250.8f, 250.8f * s.shearY);
+            sf::Vector2f A = sPos;
+            sf::Vector2f B = (s.rotation == 90.f)
+                ? sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f)
+                : sf::Vector2f(sPos.x + 500.f, sPos.y);
             if (distanceToSegment(targetPos, A, B) < 40.f) return true;
         }
         else if (s.id == ITEM_FURNACE || s.id == ITEM_BED) {
@@ -155,8 +157,10 @@ bool isWorldPositionBlocked(
 
             if (structure.id == ITEM_WOOD_WALL || (structure.id == ITEM_WOOD_DOOR && !structure.isOpen)) {
                 sf::Vector2f sPos = structure.sprite->getPosition();
-                sf::Vector2f A = sPos - sf::Vector2f(250.8f, 250.8f * structure.shearY);
-                sf::Vector2f B = sPos + sf::Vector2f(250.8f, 250.8f * structure.shearY);
+                sf::Vector2f A = sPos;
+                sf::Vector2f B = (structure.rotation == 90.f)
+                    ? sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f)
+                    : sf::Vector2f(sPos.x + 500.f, sPos.y);
                 if (distanceToSegment(pos, A, B) < 40.f) return true;
             }
             else if (structure.id == ITEM_FURNACE || structure.id == ITEM_BED) {
@@ -545,7 +549,7 @@ bool hydrateWorldAndPlayerData(
             npcFemale.sprite->setOrigin({ ts_npcF.x / 2.f, ts_npcF.y / 2.f });
             npcFemale.sprite->setScale({ 500.f / ts_npcF.x, 500.f / ts_npcF.y });
         }
-        npcFemale.sprite->setPosition({ width / 2.f + 150.f, height / 2.f - 50.f });
+        npcFemale.sprite->setPosition({ mapWidth / 2.f + 150.f, mapHeight / 2.f - 50.f });
     }
 
     if (npcMale.texture.loadFromFile(resolvePath("Sprites/NPCMale/Walk/South/frame_000.png"))) {

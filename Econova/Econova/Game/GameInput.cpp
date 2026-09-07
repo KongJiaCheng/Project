@@ -1026,16 +1026,14 @@ bool handleTopBarAndWrenchClicks(
     // Online player click -> open wrench with "Trade" option
     if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !p2pTradeOpen) {
         for (const auto& op : otherPlayers) {
-            auto dispIt = onlinePlayerDisplayPos.find(op.username);
-            sf::Vector2f opPos = (dispIt != onlinePlayerDisplayPos.end()) ? dispIt->second : sf::Vector2f(op.x, op.y);
-            sf::FloatRect opBounds({ opPos.x - 30.f, opPos.y - 50.f }, { 60.f, 100.f });
             bool hitWrench = false;
-            {
-                auto wbIt = onlinePlayerWrenchBounds.find(op.username);
-                if (wbIt != onlinePlayerWrenchBounds.end())
-                    hitWrench = wbIt->second.contains(worldPos);
+            auto wbIt = onlinePlayerWrenchBounds.find(op.username);
+            if (wbIt != onlinePlayerWrenchBounds.end()) {
+                sf::FloatRect wb = wbIt->second;
+                sf::FloatRect wbHit({ wb.position.x - 15.f, wb.position.y - 15.f }, { wb.size.x + 30.f, wb.size.y + 30.f });
+                hitWrench = wbHit.contains(worldPos);
             }
-            if (opBounds.contains(worldPos) || hitWrench) {
+            if (hitWrench) {
                 wrenchMenuOpen = true;
                 isTargetNPC = false;
                 wrenchTargetPlayer = op.username;
@@ -1049,9 +1047,9 @@ bool handleTopBarAndWrenchClicks(
 
     // Allow wrench click only if no other menus are open
     if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen) {
-        // Player wrench button (generous clickable area)
+        // Player wrench button
         sf::FloatRect pb = playerWrenchBtn.getGlobalBounds();
-        sf::FloatRect pbHit({ pb.position.x - 25.f, pb.position.y - 25.f }, { std::max(60.f, pb.size.x + 50.f), std::max(60.f, pb.size.y + 50.f) });
+        sf::FloatRect pbHit({ pb.position.x - 15.f, pb.position.y - 15.f }, { pb.size.x + 30.f, pb.size.y + 30.f });
         if (pbHit.contains(worldPos)) {
             wrenchMenuOpen = true;
             isTargetNPC = false;
@@ -1062,15 +1060,12 @@ bool handleTopBarAndWrenchClicks(
             return true;
         }
 
-        // Female NPC (wrench button or NPC body)
+        // Female NPC wrench button
         bool hitFemale = false;
         if (npcFemale.wrenchBtn.has_value()) {
             sf::FloatRect fb = npcFemale.wrenchBtn->getGlobalBounds();
-            sf::FloatRect fbHit({ fb.position.x - 25.f, fb.position.y - 25.f }, { std::max(60.f, fb.size.x + 50.f), std::max(60.f, fb.size.y + 50.f) });
+            sf::FloatRect fbHit({ fb.position.x - 15.f, fb.position.y - 15.f }, { fb.size.x + 30.f, fb.size.y + 30.f });
             hitFemale = fbHit.contains(worldPos);
-        }
-        if (!hitFemale && npcFemale.sprite.has_value()) {
-            hitFemale = npcFemale.sprite->getGlobalBounds().contains(worldPos);
         }
         if (hitFemale) {
             wrenchMenuOpen = true;
@@ -1082,15 +1077,12 @@ bool handleTopBarAndWrenchClicks(
             return true;
         }
 
-        // Male NPC (wrench button or NPC body)
+        // Male NPC wrench button
         bool hitMale = false;
         if (npcMale.wrenchBtn.has_value()) {
             sf::FloatRect mb = npcMale.wrenchBtn->getGlobalBounds();
-            sf::FloatRect mbHit({ mb.position.x - 25.f, mb.position.y - 25.f }, { std::max(60.f, mb.size.x + 50.f), std::max(60.f, mb.size.y + 50.f) });
+            sf::FloatRect mbHit({ mb.position.x - 15.f, mb.position.y - 15.f }, { mb.size.x + 30.f, mb.size.y + 30.f });
             hitMale = mbHit.contains(worldPos);
-        }
-        if (!hitMale && npcMale.sprite.has_value()) {
-            hitMale = npcMale.sprite->getGlobalBounds().contains(worldPos);
         }
         if (hitMale) {
             wrenchMenuOpen = true;

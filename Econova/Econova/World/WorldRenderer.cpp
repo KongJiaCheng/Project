@@ -10,9 +10,9 @@ void drawFloorGrid(
     // Rhombus grid basis:
     //   e1 = (CELL, 0)   — horizontal axis
     //   e2 = (SX, -SY)   — 45° up-right axis  (SX == SY → exactly 45°)
-    constexpr float CELL = 250.f;
-    constexpr float SX   = 125.f;   // e2.x per row step
-    constexpr float SY   = 125.f;   // e2.y per row step (negative = up on screen)
+    constexpr float CELL = 500.f;
+    constexpr float SX   = 250.f;   // e2.x per row step
+    constexpr float SY   = 250.f;   // e2.y per row step (negative = up on screen)
 
     sf::View currentView = window.getView();
     sf::Vector2f vCenter = currentView.getCenter();
@@ -137,14 +137,14 @@ void drawWorldCampfires(
 // ── Rhombus tile renderer ─────────────────────────────────────────────────────
 // Draws a textured quad filling one parallelogram cell of the slanted grid.
 // pos = BL corner of the cell (direct result of snapToGrid).
-// Grid basis: e1=(250,0), e2=(125,-125)  → exactly 45° slant.
+// Grid basis: e1=(500,0), e2=(250,-250)  → exactly 45° slant.
 static void drawRhombusTile(
     sf::RenderWindow& window,
     const sf::Texture& tex,
     sf::Vector2f pos,
     sf::Color color = sf::Color::White
 ) {
-    constexpr float CELL = 250.f, SX = 125.f, SY = 125.f;
+    constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
 
     sf::Vector2f BL{ pos.x,             pos.y      };
     sf::Vector2f BR{ pos.x + CELL,      pos.y      };
@@ -154,6 +154,46 @@ static void drawRhombusTile(
     auto sz = tex.getSize();
     float tw = static_cast<float>(sz.x);
     float th = static_cast<float>(sz.y);
+
+    sf::VertexArray va(sf::PrimitiveType::TriangleFan, 4);
+    va[0] = sf::Vertex{ BL, color, sf::Vector2f{0.f, th} };
+    va[1] = sf::Vertex{ BR, color, sf::Vector2f{tw,  th} };
+    va[2] = sf::Vertex{ TR, color, sf::Vector2f{tw,  0.f} };
+    va[3] = sf::Vertex{ TL, color, sf::Vector2f{0.f, 0.f} };
+
+    sf::RenderStates rs;
+    rs.texture = &tex;
+    window.draw(va, rs);
+}
+
+void drawWall(
+    sf::RenderWindow& window,
+    const sf::Texture& tex,
+    sf::Vector2f pos,
+    float rotation,
+    sf::Color color
+) {
+    constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
+    constexpr float WALL_HEIGHT = 500.f;
+
+    auto sz = tex.getSize();
+    float tw = static_cast<float>(sz.x);
+    float th = static_cast<float>(sz.y);
+
+    sf::Vector2f BL, BR, TR, TL;
+    if (rotation == 90.f) {
+        // Sheared grid position: along e2 = (SX, -SY)
+        BL = pos;
+        BR = { pos.x + SX, pos.y - SY };
+        TR = { pos.x + SX, pos.y - SY - WALL_HEIGHT };
+        TL = { pos.x,      pos.y - WALL_HEIGHT };
+    } else {
+        // Horizontal grid position: along e1 = (CELL, 0)
+        BL = pos;
+        BR = { pos.x + CELL, pos.y };
+        TR = { pos.x + CELL, pos.y - WALL_HEIGHT };
+        TL = { pos.x,        pos.y - WALL_HEIGHT };
+    }
 
     sf::VertexArray va(sf::PrimitiveType::TriangleFan, 4);
     va[0] = sf::Vertex{ BL, color, sf::Vector2f{0.f, th} };
@@ -210,6 +250,9 @@ void drawPlacementPreview(
         // Draw as rhombus to match the grid cell exactly
         drawRhombusTile(window, preview.getTexture(), placementPos,
                         sf::Color(255, 255, 255, 160));
+    } else if (placementItemID == ITEM_WOOD_WALL) {
+        drawWall(window, preview.getTexture(), placementPos, placementRotation,
+                 sf::Color(255, 255, 255, 180));
     } else {
         window.draw(preview);
     }
@@ -431,6 +474,13 @@ void renderWorldDepthScene(
                                         s.sprite->getPosition(), s.sprite->getColor());
                 } });
             }
+        }
+        else if (s.id == ITEM_WOOD_WALL) {
+            depthDrawables.push_back({ sGroundY, sZ, 1, [&s, &window]() {
+                if (s.sprite.has_value())
+                    drawWall(window, s.sprite->getTexture(),
+                             s.sprite->getPosition(), s.rotation, s.sprite->getColor());
+            } });
         }
         else {
             int priority = (s.id == ITEM_WOOD_ROOF) ? 2 : 1;

@@ -4,13 +4,13 @@
 
 void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTime);
 
-// Slanted rhombus grid: e1=(250,0) horizontal, e2=(125,-125) at 45° up-right
-// World position for cell (gx,gy): x = gx*250 + gy*125, y = -gy*125
+// Slanted rhombus grid: e1=(500,0) horizontal, e2=(250,-250) at 45° up-right
+// World position for cell (gx,gy): x = gx*500 + gy*250, y = -gy*250
 // Compatible with std::function<sf::Vector2f(sf::Vector2f)>
 inline sf::Vector2f snapToGrid(sf::Vector2f pos) {
-    constexpr float CELL = 250.f;
-    constexpr float SX   = 125.f;
-    constexpr float SY   = 125.f;
+    constexpr float CELL = 500.f;
+    constexpr float SX   = 250.f;
+    constexpr float SY   = 250.f;
     float gy = std::round(-pos.y / SY);
     float gx = std::round((pos.x - gy * SX) / CELL);
     pos.x = gx * CELL + gy * SX;
@@ -18,7 +18,7 @@ inline sf::Vector2f snapToGrid(sf::Vector2f pos) {
     return pos;
 }
 
-// Same grid — all items use 250-unit cell corners
+// Same grid — all items use 500-unit cell corners
 inline sf::Vector2f snapToGrid2x2(sf::Vector2f pos) {
     return snapToGrid(pos);
 }

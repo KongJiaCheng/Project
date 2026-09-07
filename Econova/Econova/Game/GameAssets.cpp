@@ -46,6 +46,12 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
 
     (void)assets.selBgTexture.loadFromFile(resolvePath("MainMenu/Background.png"));
     assets.selBgSprite.emplace(assets.selBgTexture);
+    if (assets.selBgTexture.getSize().x > 0 && assets.selBgTexture.getSize().y > 0) {
+        assets.selBgSprite->setScale({
+            1920.f / assets.selBgTexture.getSize().x,
+            1080.f / assets.selBgTexture.getSize().y
+        });
+    }
 
     (void)assets.bgTexture.loadFromFile(resolvePath("Items/Background.jpg"));
     assets.background.emplace(assets.bgTexture);
