@@ -547,8 +547,8 @@ void applyStructureScale(
             // Open: thin strip 500×50
             spr.setScale({ 500.f / tw, 50.f / th });
         } else {
-            // Closed: 500 wide × 1000 tall
-            spr.setScale({ 500.f / tw, 1000.f / th });
+            // Closed: 500 wide × 500 tall (same length and width as wood wall)
+            spr.setScale({ 500.f / tw, 500.f / th });
         }
     }
     else if (id == ITEM_FURNACE) {
@@ -817,7 +817,8 @@ bool handleWorldInteractionClicks(
     PlacedStructure*& activeChest,
     std::function<void()> syncSaveFunc
 ) {
-    bool hasWrench = (inventory.hasItem(0) && inventory.getItemID(0) == ITEM_WRENCH);
+    int selSlot = inventory.getSelectedSlot();
+    bool hasWrench = (selSlot != -1 && inventory.hasItem(selSlot) && inventory.getItemID(selSlot) == ITEM_WRENCH);
 
     // Check Campfire Wrench click in world coordinates
     for (auto& fire : campfires) {

@@ -111,7 +111,8 @@ void drawWorldCampfires(
             window.draw(t);
         }
         else {
-            bool hasWrench = (inventory.hasItem(0) && inventory.getItemID(0) == ITEM_WRENCH);
+            int selSlot = inventory.getSelectedSlot();
+            bool hasWrench = (selSlot != -1 && inventory.hasItem(selSlot) && inventory.getItemID(selSlot) == ITEM_WRENCH);
             if (hasWrench) {
                 sf::Sprite ws(wrenchTex);
                 sf::Vector2u wts = wrenchTex.getSize();
@@ -196,6 +197,47 @@ void drawWall(
     window.draw(va, rs);
 }
 
+void drawDoor(
+    sf::RenderWindow& window,
+    const sf::Texture& tex,
+    sf::Vector2f pos,
+    float rotation,
+    bool isOpen,
+    sf::Color color
+) {
+    constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
+    float doorHeight = isOpen ? 50.f : 500.f;
+
+    auto sz = tex.getSize();
+    float tw = static_cast<float>(sz.x);
+    float th = static_cast<float>(sz.y);
+
+    sf::Vector2f BL, BR, TR, TL;
+    if (rotation == 90.f) {
+        // Sheared grid position: along e2 = (SX, -SY)
+        BL = pos;
+        BR = { pos.x + SX, pos.y - SY };
+        TR = { pos.x + SX, pos.y - SY - doorHeight };
+        TL = { pos.x,      pos.y - doorHeight };
+    } else {
+        // Horizontal grid position: along e1 = (CELL, 0)
+        BL = pos;
+        BR = { pos.x + CELL, pos.y };
+        TR = { pos.x + CELL, pos.y - doorHeight };
+        TL = { pos.x,        pos.y - doorHeight };
+    }
+
+    sf::VertexArray va(sf::PrimitiveType::TriangleFan, 4);
+    va[0] = sf::Vertex{ BL, color, sf::Vector2f{0.f, th} };
+    va[1] = sf::Vertex{ BR, color, sf::Vector2f{tw,  th} };
+    va[2] = sf::Vertex{ TR, color, sf::Vector2f{tw,  0.f} };
+    va[3] = sf::Vertex{ TL, color, sf::Vector2f{0.f, 0.f} };
+
+    sf::RenderStates rs;
+    rs.texture = &tex;
+    window.draw(va, rs);
+}
+
 void drawPlacementPreview(
     sf::RenderWindow& window,
     int placementItemID,
@@ -240,7 +282,7 @@ void drawPlacementPreview(
         // Draw as rhombus to match the grid cell exactly
         drawRhombusTile(window, preview.getTexture(), placementPos,
                         sf::Color(255, 255, 255, 160));
-    } else if (placementItemID == ITEM_WOOD_WALL) {
+    } else if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
         drawWall(window, preview.getTexture(), placementPos, placementRotation,
                  sf::Color(255, 255, 255, 180));
     } else {
@@ -472,6 +514,13 @@ void renderWorldDepthScene(
                              s.sprite->getPosition(), s.rotation, s.sprite->getColor());
             } });
         }
+        else if (s.id == ITEM_WOOD_DOOR) {
+            depthDrawables.push_back({ sGroundY, sZ, 1, [&s, &window]() {
+                if (s.sprite.has_value())
+                    drawDoor(window, s.sprite->getTexture(),
+                             s.sprite->getPosition(), s.rotation, s.isOpen, s.sprite->getColor());
+            } });
+        }
         else {
             int priority = (s.id == ITEM_WOOD_ROOF) ? 2 : 1;
             depthDrawables.push_back({ sGroundY, sZ, priority, [&s, &window]() {
@@ -641,7 +690,8 @@ void drawWorldInteractions(
     const sf::Texture& wrenchTex,
     Inventory& inventory
 ) {
-    bool hasWrench = (inventory.hasItem(0) && inventory.getItemID(0) == ITEM_WRENCH);
+    int selSlot = inventory.getSelectedSlot();
+    bool hasWrench = (selSlot != -1 && inventory.hasItem(selSlot) && inventory.getItemID(selSlot) == ITEM_WRENCH);
 
     if (nearPond) {
         drinkText.setPosition({

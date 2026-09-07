@@ -477,7 +477,11 @@ bool hydrateWorldAndPlayerData(
             newS.sprite->setPosition({ s.x, s.y });
             newS.health = s.health;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
-            newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                newS.sprite->setOrigin({ 0.f, (float)ts.y });
+            } else {
+                newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+            }
             applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, newS.shearY);
         }
     }
@@ -493,7 +497,11 @@ bool hydrateWorldAndPlayerData(
             newS.sprite->setPosition({ s.x, s.y });
             newS.health = s.health;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
-            newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                newS.sprite->setOrigin({ 0.f, (float)ts.y });
+            } else {
+                newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+            }
             applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, newS.shearY);
         }
     }

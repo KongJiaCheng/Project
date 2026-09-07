@@ -1096,7 +1096,8 @@ void handleMouseDragAndScroll(
 
     if (auto* mouse = event.getIf<sf::Event::MouseButtonPressed>()) {
         if (mouse->button == sf::Mouse::Button::Left) {
-            bool hasWrench = (inventory.hasItem(0) && inventory.getItemID(0) == ITEM_WRENCH);
+            int selSlot = inventory.getSelectedSlot();
+            bool hasWrench = (selSlot != -1 && inventory.hasItem(selSlot) && inventory.getItemID(selSlot) == ITEM_WRENCH);
             if (hasWrench) {
                 // Check Campfire
                 for (auto& fire : campfires)

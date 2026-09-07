@@ -185,7 +185,11 @@ void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& wind
     int slot = getSlotAt(uiPos);
     if (slot != -1)
     {
-        selectedSlot = slot;
+        if (selectedSlot == slot && doubleClickClock.getElapsedTime().asSeconds() > 0.5f) {
+            selectedSlot = -1;
+        } else {
+            selectedSlot = slot;
+        }
 
         // check double click
         if (slot == lastClickedSlot && doubleClickClock.getElapsedTime().asSeconds() < 0.5f) {

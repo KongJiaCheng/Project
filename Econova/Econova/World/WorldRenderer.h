@@ -30,6 +30,15 @@ void drawWall(
     sf::Color color = sf::Color::White
 );
 
+void drawDoor(
+    sf::RenderWindow& window,
+    const sf::Texture& tex,
+    sf::Vector2f pos,
+    float rotation,
+    bool isOpen,
+    sf::Color color = sf::Color::White
+);
+
 void drawPlacementPreview(
     sf::RenderWindow& window,
     int placementItemID,

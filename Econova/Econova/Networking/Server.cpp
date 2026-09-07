@@ -255,7 +255,11 @@ void syncAndRenderOnlinePlayers(
                             ns.sprite->setPosition({ s.x, s.y });
                             ns.health = s.health;
                             sf::Vector2u ts = ns.sprite->getTexture().getSize();
-                            ns.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+                            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                                ns.sprite->setOrigin({ 0.f, (float)ts.y });
+                            } else {
+                                ns.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+                            }
                             applyStructureScale(*ns.sprite, s.id, s.rotation, s.isOpen, ns.shearY);
                         }
                     }
