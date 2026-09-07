@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <string>
@@ -49,6 +49,29 @@ bool handleCampfireMenuClicks(
     unsigned int width,
     unsigned int height,
     std::vector<PlacedCampfire>& campfires,
+    Inventory& inventory,
+    const sf::Texture& woodTex,
+    const sf::Texture& saplingTex,
+    const sf::Texture& cookedChickenTex,
+    const sf::Texture& cookedPigTex,
+    const sf::Texture& cookedSheepTex,
+    bool& quantityPromptOpen,
+    int& quantityPromptMax,
+    int& quantityPromptTargetSlot,
+    int& quantityPromptSourceSlot,
+    bool& quantityPromptIsP2P,
+    bool& quantityPromptIsCampfire,
+    int& quantityPromptCampfireSlot,
+    TextInput& quantityInput,
+    bool& saplingPlacementMode,
+    std::function<void()> syncSaveCallback
+);
+
+bool handleFurnaceMenuClicks(
+    sf::Vector2f uiPos,
+    unsigned int width,
+    unsigned int height,
+    std::vector<PlacedStructure>& structures,
     Inventory& inventory,
     const sf::Texture& woodTex,
     const sf::Texture& saplingTex,
@@ -175,7 +198,11 @@ void handleMouseDragAndScroll(
     const sf::Vector2f& worldPos,
     std::vector<PlacedCampfire>& campfires,
     Inventory& inventory,
-    const std::string& username
+    const std::string& username,
+    std::vector<PlacedStructure>& structures,
+    bool& isSleeping,
+    float& sleepFadeTimer,
+    bool& sleepTimeSkipped
 );
 
 bool handleTopBarAndWrenchClicks(
@@ -302,6 +329,8 @@ void handleAllGameMouseButtonPressed(
     int& quantityPromptTargetSlot,
     int& quantityPromptSourceSlot,
     bool& quantityPromptIsP2P,
+    bool& quantityPromptIsCampfire,
+    int& quantityPromptCampfireSlot,
     TextInput& quantityInput,
     QuestInfo& qInfo,
     const std::vector<DailyQuest>& availableQuests,

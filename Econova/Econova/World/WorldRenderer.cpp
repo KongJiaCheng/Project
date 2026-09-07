@@ -111,17 +111,7 @@ void drawWorldCampfires(
             window.draw(t);
         }
         else {
-            int selSlot = inventory.getSelectedSlot();
-            bool hasWrench = false;
-            if (selSlot != -1 && inventory.hasItem(selSlot) && inventory.getItemID(selSlot) == ITEM_WRENCH) {
-                hasWrench = true;
-            }
-            for (int i = 0; i < 20; i++) {
-                if (inventory.hasItem(i) && inventory.getItemID(i) == ITEM_WRENCH && inventory.isEquipped(i)) {
-                    hasWrench = true;
-                    break;
-                }
-            }
+            bool hasWrench = (inventory.hasItem(0) && inventory.getItemID(0) == ITEM_WRENCH);
             if (hasWrench) {
                 sf::Sprite ws(wrenchTex);
                 sf::Vector2u wts = wrenchTex.getSize();
@@ -647,14 +637,32 @@ void drawWorldInteractions(
     bool chestMenuOpen,
     std::vector<PlacedStructure>& structures,
     bool nearPond,
-    sf::Text& drinkText
+    sf::Text& drinkText,
+    const sf::Texture& wrenchTex,
+    Inventory& inventory
 ) {
+    bool hasWrench = (inventory.hasItem(0) && inventory.getItemID(0) == ITEM_WRENCH);
+
     if (nearPond) {
         drinkText.setPosition({
             sprite.getPosition().x - 160.f,
             sprite.getPosition().y - 100.f
         });
         window.draw(drinkText);
+    }
+
+    if (hasWrench) {
+        for (const auto& s : structures) {
+            if ((s.id == ITEM_BED || s.id == ITEM_FURNACE) && s.sprite.has_value()) {
+                sf::Vector2f pos = s.sprite->getPosition();
+                sf::Sprite ws(wrenchTex);
+                sf::Vector2u wts = wrenchTex.getSize();
+                ws.setOrigin({ wts.x / 2.f, wts.y / 2.f });
+                ws.setScale({ 0.08f, 0.08f });
+                ws.setPosition({ pos.x, pos.y - 480.f });
+                window.draw(ws);
+            }
+        }
     }
 
     PlacedStructure* nearestDoor = nullptr;
@@ -712,7 +720,7 @@ void drawWorldInteractions(
         }
     }
 
-    if (nearestBed && !isSleeping) {
+    if (nearestBed && !isSleeping && hasWrench) {
         sf::RectangleShape sleepBtn({ 200.f, 60.f });
         sleepBtn.setPosition({ nearestBed->sprite->getPosition().x - 100.f, nearestBed->sprite->getPosition().y - 120.f });
 

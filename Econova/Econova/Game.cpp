@@ -713,7 +713,14 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 break;
             }
         }
-        bool isMenuOpen = (stockPageOpen || iapPageOpen || iapVerifyingOpen || tradeMenuOpen || tradeConfirmOpen || craftMenuOpen || p2pTradeOpen || anyCampfireMenuOpen || chestMenuOpen);
+        bool anyFurnaceMenuOpen = false;
+        for (auto& s : structures) {
+            if (s.id == ITEM_FURNACE && s.menuOpen) {
+                anyFurnaceMenuOpen = true;
+                break;
+            }
+        }
+        bool isMenuOpen = (stockPageOpen || iapPageOpen || iapVerifyingOpen || tradeMenuOpen || tradeConfirmOpen || craftMenuOpen || p2pTradeOpen || anyCampfireMenuOpen || anyFurnaceMenuOpen || chestMenuOpen);
 
         pollAndSyncP2PTrade(
             dt,
@@ -951,7 +958,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 worldPos,
                 campfires,
                 inventory,
-                username
+                username,
+                structures,
+                isSleeping,
+                sleepFadeTimer,
+                sleepTimeSkipped
             );
 
             if (handleGlobalKeyEvents(
@@ -1092,6 +1103,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         quantityPromptTargetSlot,
                         quantityPromptSourceSlot,
                         quantityPromptIsP2P,
+                        quantityPromptIsCampfire,
+                        quantityPromptCampfireSlot,
                         quantityInput,
                         qInfo,
                         availableQuests,
@@ -1307,7 +1320,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             exp
         );
 
-        updateCampfiresAndCooking(campfires, dt, [&]() { syncSaveLocalStructuresAndCampfires(); });
+        updateCampfiresAndCooking(campfires, structures, dt, [&]() { syncSaveLocalStructuresAndCampfires(); });
 
         updateSaplings(plantedSaplings, itemManager, treeTex, dt);
 
@@ -1393,7 +1406,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             chestMenuOpen,
             structures,
             nearPond,
-            vitalsUI.drinkText
+            vitalsUI.drinkText,
+            wrenchTex,
+            inventory
         );
 
         updateWorldEntitiesAndDrops(
@@ -1596,6 +1611,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         spawnOverlayActive, spawnOverlayDone, spawnOverlayTotal,
         chestMenuOpen,
         campfires,
+        structures,
         quantityPromptOpen, quantityPromptIsCampfire, quantityPromptCampfireSlot, quantityPromptMax, quantityInput,
         isSleeping, sleepFadeTimer, sleepFadeDuration,
         getItemTexture,

@@ -94,7 +94,9 @@ void drawWorldInteractions(
     bool chestMenuOpen,
     std::vector<PlacedStructure>& structures,
     bool nearPond,
-    sf::Text& drinkText
+    sf::Text& drinkText,
+    const sf::Texture& wrenchTex,
+    Inventory& inventory
 );
 
 #include <SFML/Audio.hpp>

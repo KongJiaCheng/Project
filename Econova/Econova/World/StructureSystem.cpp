@@ -248,6 +248,169 @@ void drawCampfireMenu(
     window.draw(statusTxt);
 }
 
+void drawFurnaceMenu(
+    sf::RenderWindow& window,
+    const sf::Font& uiFont,
+    unsigned int width,
+    unsigned int height,
+    PlacedStructure& furnace,
+    const sf::Texture& woodTex,
+    const sf::Texture& cookedChickenTex,
+    const sf::Texture& cookedPigTex,
+    const sf::Texture& cookedSheepTex
+) {
+    window.setView(GetUIView(&window));
+    
+    sf::RectangleShape bg({ 500.f, 300.f });
+    bg.setFillColor(sf::Color(40, 40, 40, 240));
+    bg.setOutlineThickness(3.f);
+    bg.setOutlineColor(sf::Color::White);
+    bg.setPosition({
+        (float)width / 2.f - 250.f,
+        (float)height / 2.f - 150.f
+    });
+    window.draw(bg);
+
+    sf::Text title(uiFont, "Stone Furnace", 28);
+    title.setFillColor(sf::Color::Yellow);
+    title.setPosition({
+        bg.getPosition().x + 20.f,
+        bg.getPosition().y + 10.f
+    });
+    window.draw(title);
+
+    if (furnace.inputCount > 0 || furnace.outputCount > 0 || furnace.fuel > 0) {
+        sf::Text prompt(uiFont, "Smelting and cooking progress saved!", 12);
+        prompt.setFillColor(sf::Color(0, 242, 254));
+        prompt.setPosition({
+            bg.getPosition().x + 20.f,
+            bg.getPosition().y + 45.f
+        });
+        window.draw(prompt);
+    }
+
+    sf::RectangleShape closeBtn({ 40.f, 40.f });
+    closeBtn.setFillColor(sf::Color(200, 50, 50));
+    closeBtn.setPosition({ bg.getPosition().x + 440.f, bg.getPosition().y + 10.f });
+    window.draw(closeBtn);
+    sf::Text closeTxt(uiFont, "X", 24);
+    closeTxt.setFillColor(sf::Color::White);
+    sf::FloatRect ctB = closeTxt.getLocalBounds();
+    closeTxt.setPosition({ closeBtn.getPosition().x + (40.f - ctB.size.x)/2.f - 1.f, closeBtn.getPosition().y + (40.f - ctB.size.y)/2.f - 4.f });
+    window.draw(closeTxt);
+
+    sf::Text fuelLabel(uiFont, "Fuel", 18);
+    fuelLabel.setFillColor(sf::Color::White);
+    fuelLabel.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 80.f });
+    window.draw(fuelLabel);
+
+    sf::Text foodLabel(uiFont, "Raw Food", 18);
+    foodLabel.setFillColor(sf::Color::White);
+    foodLabel.setPosition({ bg.getPosition().x + 210.f, bg.getPosition().y + 80.f });
+    window.draw(foodLabel);
+
+    sf::Text outputLabel(uiFont, "Cooked Food", 18);
+    outputLabel.setFillColor(sf::Color::White);
+    outputLabel.setPosition({ bg.getPosition().x + 360.f, bg.getPosition().y + 80.f });
+    window.draw(outputLabel);
+
+    sf::Vector2f mpos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
+
+    // 1. Fuel slot
+    sf::RectangleShape fuelSlot({ 80.f, 80.f });
+    fuelSlot.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 110.f });
+    bool hoverFuel = fuelSlot.getGlobalBounds().contains(mpos);
+    fuelSlot.setFillColor(sf::Color(30, 30, 30));
+    fuelSlot.setOutlineThickness(2.f);
+    fuelSlot.setOutlineColor(hoverFuel ? sf::Color::Yellow : sf::Color(150, 150, 150));
+    window.draw(fuelSlot);
+
+    if (furnace.fuel > 0) {
+        sf::Sprite fs(woodTex);
+        sf::Vector2u ts = woodTex.getSize();
+        float scale = 64.f / std::max(ts.x, ts.y);
+        fs.setScale({ scale, scale });
+        fs.setPosition({ fuelSlot.getPosition().x + 8.f, fuelSlot.getPosition().y + 8.f });
+        window.draw(fs);
+
+        sf::Text fsText(uiFont, "x" + std::to_string(furnace.fuel), 16);
+        fsText.setFillColor(sf::Color::White);
+        fsText.setPosition({ fuelSlot.getPosition().x + 50.f, fuelSlot.getPosition().y + 55.f });
+        window.draw(fsText);
+    }
+
+    // 2. Input slot
+    sf::RectangleShape inputSlot({ 80.f, 80.f });
+    inputSlot.setPosition({ bg.getPosition().x + 210.f, bg.getPosition().y + 110.f });
+    bool hoverInput = inputSlot.getGlobalBounds().contains(mpos);
+    inputSlot.setFillColor(sf::Color(30, 30, 30));
+    inputSlot.setOutlineThickness(2.f);
+    inputSlot.setOutlineColor(hoverInput ? sf::Color::Yellow : sf::Color(150, 150, 150));
+    window.draw(inputSlot);
+
+    if (furnace.inputCount > 0 && furnace.inputItem != 0) {
+        const sf::Texture* rTex = (furnace.inputItem == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() : 
+                                  (furnace.inputItem == ITEM_PIG_MEAT) ? PigMeat::getTexture() : 
+                                  (furnace.inputItem == ITEM_SHEEP_MEAT) ? SheepMeat::getTexture() : nullptr;
+        if (rTex) {
+            sf::Sprite ispr(*rTex);
+            sf::Vector2u ts = rTex->getSize();
+            float scale = 64.f / std::max(ts.x, ts.y);
+            ispr.setScale({ scale, scale });
+            ispr.setPosition({ inputSlot.getPosition().x + 8.f, inputSlot.getPosition().y + 8.f });
+            window.draw(ispr);
+
+            sf::Text isText(uiFont, "x" + std::to_string(furnace.inputCount), 16);
+            isText.setFillColor(sf::Color::White);
+            isText.setPosition({ inputSlot.getPosition().x + 50.f, inputSlot.getPosition().y + 55.f });
+            window.draw(isText);
+        }
+    }
+
+    // 3. Output slot
+    sf::RectangleShape outputSlot({ 80.f, 80.f });
+    outputSlot.setPosition({ bg.getPosition().x + 360.f, bg.getPosition().y + 110.f });
+    bool hoverOutput = outputSlot.getGlobalBounds().contains(mpos);
+    outputSlot.setFillColor(sf::Color(30, 30, 30));
+    outputSlot.setOutlineThickness(2.f);
+    outputSlot.setOutlineColor(hoverOutput ? sf::Color::Yellow : sf::Color(150, 150, 150));
+    window.draw(outputSlot);
+
+    if (furnace.outputCount > 0 && furnace.outputItem != 0) {
+        const sf::Texture* oTex = (furnace.outputItem == ITEM_COOKED_CHICKEN) ? &cookedChickenTex :
+                                  (furnace.outputItem == ITEM_COOKED_PIG) ? &cookedPigTex :
+                                  (furnace.outputItem == ITEM_COOKED_SHEEP) ? &cookedSheepTex : nullptr;
+        if (oTex) {
+            sf::Sprite ospr(*oTex);
+            sf::Vector2u ts = oTex->getSize();
+            float scale = 64.f / std::max(ts.x, ts.y);
+            ospr.setScale({ scale, scale });
+            ospr.setPosition({ outputSlot.getPosition().x + 8.f, outputSlot.getPosition().y + 8.f });
+            window.draw(ospr);
+
+            sf::Text osText(uiFont, "x" + std::to_string(furnace.outputCount), 16);
+            osText.setFillColor(sf::Color::White);
+            osText.setPosition({ outputSlot.getPosition().x + 50.f, outputSlot.getPosition().y + 55.f });
+            window.draw(osText);
+        }
+    }
+
+    std::string statusStr = "Insert Fuel & Raw Food";
+    sf::Color statusColor(150, 150, 150);
+    if (furnace.inputCount > 0 && furnace.fuel > 0) {
+        statusStr = "Smelting: " + std::to_string(static_cast<int>(furnace.timeRemaining + 0.99f)) + "s";
+        statusColor = sf::Color::Yellow;
+    }
+    else if (furnace.outputCount > 0) {
+        statusStr = "Cooked food ready! Click to retrieve.";
+        statusColor = sf::Color::Green;
+    }
+    sf::Text statusTxt(uiFont, statusStr, 20);
+    statusTxt.setFillColor(statusColor);
+    statusTxt.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 215.f });
+    window.draw(statusTxt);
+}
+
 void drawQuantityPrompt(
     sf::RenderWindow& window,
     const sf::Font& uiFont,
@@ -654,26 +817,53 @@ bool handleWorldInteractionClicks(
     PlacedStructure*& activeChest,
     std::function<void()> syncSaveFunc
 ) {
+    bool hasWrench = (inventory.hasItem(0) && inventory.getItemID(0) == ITEM_WRENCH);
+
     // Check Campfire Wrench click in world coordinates
     for (auto& fire : campfires) {
         if (fire.isCrafted) {
             sf::FloatRect wrenchBtnBounds({ fire.position.x - 20.5f, fire.position.y - 480.f - 20.5f }, { 41.f, 41.f });
-            if (wrenchBtnBounds.contains(worldPos)) {
-                int selSlot = inventory.getSelectedSlot();
-                bool hasWrench = false;
-                if (selSlot != -1 && inventory.hasItem(selSlot) && inventory.getItemID(selSlot) == ITEM_WRENCH) {
-                    hasWrench = true;
-                }
-                for (int i = 0; i < 20; i++) {
-                    if (inventory.hasItem(i) && inventory.getItemID(i) == ITEM_WRENCH && inventory.isEquipped(i)) {
-                        hasWrench = true;
-                        break;
-                    }
-                }
+            sf::FloatRect fireBounds({ fire.position.x - 50.f, fire.position.y - 50.f }, { 100.f, 100.f });
+            if (wrenchBtnBounds.contains(worldPos) || fireBounds.contains(worldPos)) {
                 if (hasWrench) {
                     for (auto& f : campfires) f.menuOpen = false;
+                    for (auto& s : structures) s.menuOpen = false;
                     if (fire.owner.empty() || fire.owner == username)
                         fire.menuOpen = true;
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Check Bed Interaction Button & Wrench Click
+    for (auto& s : structures) {
+        if (s.id == ITEM_BED && s.sprite.has_value()) {
+            sf::Vector2f bPos = s.sprite->getPosition();
+            sf::FloatRect wrenchBtnBounds({ bPos.x - 25.f, bPos.y - 480.f - 25.f }, { 50.f, 50.f });
+            sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
+            if (wrenchBtnBounds.contains(worldPos) || bedBounds.contains(worldPos)) {
+                if (hasWrench && !isSleeping) {
+                    isSleeping = true;
+                    sleepFadeTimer = 0.f;
+                    sleepTimeSkipped = false;
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Check Furnace Wrench Click
+    for (auto& s : structures) {
+        if (s.id == ITEM_FURNACE && s.sprite.has_value()) {
+            sf::Vector2f fPos = s.sprite->getPosition();
+            sf::FloatRect wrenchBtnBounds({ fPos.x - 25.f, fPos.y - 480.f - 25.f }, { 50.f, 50.f });
+            sf::FloatRect furnaceBounds({ fPos.x - 100.f, fPos.y - 120.f }, { 200.f, 120.f });
+            if (wrenchBtnBounds.contains(worldPos) || furnaceBounds.contains(worldPos)) {
+                if (hasWrench) {
+                    for (auto& f : campfires) f.menuOpen = false;
+                    for (auto& st : structures) st.menuOpen = false;
+                    s.menuOpen = true;
                     return true;
                 }
             }
@@ -706,35 +896,6 @@ bool handleWorldInteractionClicks(
             float ignore;
             applyStructureScale(*nearestDoor->sprite, nearestDoor->id, nearestDoor->rotation, nearestDoor->isOpen, ignore);
             syncSaveFunc();
-            return true;
-        }
-    }
-
-    // Check Bed Interaction Button
-    PlacedStructure* nearestBed = nullptr;
-    float minBedDist = 180.f;
-    for (auto& s : structures) {
-        if (s.id == ITEM_BED) {
-            sf::Vector2f bPos = s.sprite->getPosition();
-            sf::Vector2f pPos = playerSprite.getPosition();
-            int bedFloor = getFloorLevelFromY(bPos.y);
-            if (bedFloor == playerFloorLevel) {
-                float dy = (bPos.y + bedFloor * 180.f) - pPos.y;
-                float dx = bPos.x - pPos.x;
-                float d = std::sqrt(dx * dx + dy * dy);
-                if (d < minBedDist) {
-                    minBedDist = d;
-                    nearestBed = &s;
-                }
-            }
-        }
-    }
-    if (nearestBed && !isSleeping) {
-        sf::FloatRect sleepBtnBounds({ nearestBed->sprite->getPosition().x - 100.f, nearestBed->sprite->getPosition().y - 120.f }, { 200.f, 60.f });
-        if (sleepBtnBounds.contains(worldPos)) {
-            isSleeping = true;
-            sleepFadeTimer = 0.f;
-            sleepTimeSkipped = false;
             return true;
         }
     }
@@ -772,6 +933,7 @@ bool handleWorldInteractionClicks(
 
 void updateCampfiresAndCooking(
     std::vector<PlacedCampfire>& campfires,
+    std::vector<PlacedStructure>& structures,
     float dt,
     std::function<void()> syncSaveCallback
 ) {
@@ -809,6 +971,31 @@ void updateCampfiresAndCooking(
                 }
             } else {
                 pc.timeRemaining = 0.f;
+            }
+        }
+    }
+
+    for (auto& s : structures) {
+        if (s.id == ITEM_FURNACE) {
+            if (s.inputCount > 0 && s.fuel > 0) {
+                if (s.timeRemaining <= 0.f) {
+                    s.timeRemaining = 2.0f;
+                }
+                s.timeRemaining -= dt;
+                if (s.timeRemaining <= 0.f) {
+                    s.fuel--;
+                    s.inputCount--;
+                    if (s.inputItem == ITEM_CHICKEN_MEAT) s.outputItem = ITEM_COOKED_CHICKEN;
+                    else if (s.inputItem == ITEM_PIG_MEAT) s.outputItem = ITEM_COOKED_PIG;
+                    else if (s.inputItem == ITEM_SHEEP_MEAT) s.outputItem = ITEM_COOKED_SHEEP;
+                    s.outputCount++;
+                    if (s.inputCount <= 0) {
+                        s.inputItem = 0;
+                    }
+                    syncSaveCallback();
+                }
+            } else {
+                s.timeRemaining = 0.f;
             }
         }
     }

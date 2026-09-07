@@ -446,7 +446,7 @@ bool hydrateWorldAndPlayerData(
     if (loadedItems.size() < 20) {
         loadedItems.resize(20, { 0, 0 });
     }
-    bool hasWrenchInSlot0 = (!loadedItems.empty() && loadedItems[0].first == ITEM_WRENCH);
+    bool hasWrenchInSlot0 = (!loadedItems.empty() && loadedItems[0].first == ITEM_WRENCH && loadedItems[0].second > 0);
     if (!hasWrenchInSlot0) {
         for (int i = 19; i > 0; i--) {
             loadedItems[i] = loadedItems[i - 1];
@@ -540,6 +540,10 @@ bool hydrateWorldAndPlayerData(
                 inventory.setItem(i, itemId, *tex, count);
             }
         }
+    }
+
+    if (!inventory.hasItem(0) || inventory.getItemID(0) != ITEM_WRENCH) {
+        inventory.setItem(0, ITEM_WRENCH, assets.wrenchTex, 1);
     }
 
     if (npcFemale.texture.loadFromFile(resolvePath("Sprites/NPCFemale/Walk/South/frame_000.png"))) {

@@ -40,9 +40,17 @@ struct PlacedStructure {
     bool isOpen = false;
     float shearY = 0.f;
     std::string owner = "";
+    int fuel = 0;
+    int inputItem = 0;
+    int inputCount = 0;
+    int outputItem = 0;
+    int outputCount = 0;
+    float timeRemaining = 0.f;
+    bool menuOpen = false;
 
     PlacedStructure(int i, const sf::Texture& tex, float rot = 0.f, bool open = false, float sh = 0.f, const std::string& own = "")
-        : id(i), rotation(rot), isOpen(open), shearY(sh), owner(own) {
+        : id(i), rotation(rot), isOpen(open), shearY(sh), owner(own),
+          fuel(0), inputItem(0), inputCount(0), outputItem(0), outputCount(0), timeRemaining(0.f), menuOpen(false) {
         sprite.emplace(tex);
         maxHealth = 100.f;
         if (id == ITEM_WOOD_WALL) maxHealth = 200.f;
@@ -72,6 +80,18 @@ void drawCampfireMenu(
     unsigned int width,
     unsigned int height,
     PlacedCampfire& fire,
+    const sf::Texture& woodTex,
+    const sf::Texture& cookedChickenTex,
+    const sf::Texture& cookedPigTex,
+    const sf::Texture& cookedSheepTex
+);
+
+void drawFurnaceMenu(
+    sf::RenderWindow& window,
+    const sf::Font& uiFont,
+    unsigned int width,
+    unsigned int height,
+    PlacedStructure& furnace,
     const sf::Texture& woodTex,
     const sf::Texture& cookedChickenTex,
     const sf::Texture& cookedPigTex,
@@ -171,6 +191,7 @@ bool handleWorldInteractionClicks(
 
 void updateCampfiresAndCooking(
     std::vector<PlacedCampfire>& campfires,
+    std::vector<PlacedStructure>& structures,
     float dt,
     std::function<void()> syncSaveCallback
 );

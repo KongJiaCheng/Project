@@ -636,6 +636,7 @@ void renderAllGameUIs(
     bool spawnOverlayActive, int spawnOverlayDone, int spawnOverlayTotal,
     bool chestMenuOpen,
     std::vector<PlacedCampfire>& campfires,
+    std::vector<PlacedStructure>& structures,
     bool quantityPromptOpen, bool quantityPromptIsCampfire, int quantityPromptCampfireSlot, int quantityPromptMax, TextInput& quantityInput,
     bool isSleeping, float sleepFadeTimer, float sleepFadeDuration,
     std::function<const sf::Texture* (int id)> getItemTexture,
@@ -836,6 +837,12 @@ void renderAllGameUIs(
     for (auto& fire : campfires) {
         if (fire.menuOpen) {
             drawCampfireMenu(window, uiFont, width, height, fire, woodTex, cookedChickenTex, cookedPigTex, cookedSheepTex);
+        }
+    }
+
+    for (auto& s : structures) {
+        if (s.id == ITEM_FURNACE && s.menuOpen) {
+            drawFurnaceMenu(window, uiFont, width, height, s, woodTex, cookedChickenTex, cookedPigTex, cookedSheepTex);
         }
     }
 

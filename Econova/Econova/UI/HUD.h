@@ -293,6 +293,7 @@ void renderAllGameUIs(
     bool spawnOverlayActive, int spawnOverlayDone, int spawnOverlayTotal,
     bool chestMenuOpen,
     std::vector<PlacedCampfire>& campfires,
+    std::vector<PlacedStructure>& structures,
     bool quantityPromptOpen, bool quantityPromptIsCampfire, int quantityPromptCampfireSlot, int quantityPromptMax, TextInput& quantityInput,
     bool isSleeping, float sleepFadeTimer, float sleepFadeDuration,
     std::function<const sf::Texture* (int id)> getItemTexture,

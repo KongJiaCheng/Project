@@ -35,6 +35,7 @@ const sf::Texture* GameAssets::getItemTexture(int id) const {
     if (id == ITEM_WOOD_ROOF) return &woodRoofTex;
     if (id == ITEM_WOOD_STAIRS) return &woodStairsTex;
     if (id == ITEM_CHEST) return &chestTex;
+    if (id == ITEM_WRENCH) return &wrenchTex;
     return nullptr;
 }
 
