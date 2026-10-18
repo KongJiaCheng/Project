@@ -192,7 +192,7 @@ bool handleKeyAndTextInputs(
     std::function<bool(const std::string& cmd, const std::string& args, std::string& feedback)> customCommandHandler = nullptr
 );
 
-void handleMouseDragAndScroll(
+bool handleMouseDragAndScroll(
     const sf::Event& event,
     sf::RenderWindow& window,
     unsigned int width,

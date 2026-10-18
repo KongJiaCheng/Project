@@ -1367,7 +1367,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 }
             }
 
-            handleMouseDragAndScroll(
+            if (handleMouseDragAndScroll(
                 event.value(),
                 window,
                 width,
@@ -1389,7 +1389,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 placementMode,
                 chestMenuOpen,
                 activeChest
-            );
+            )) {
+                continue;
+            }
 
             if (handleGlobalKeyEvents(
                 event.value(),

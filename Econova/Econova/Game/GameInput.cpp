@@ -1241,7 +1241,7 @@ bool handleKeyAndTextInputs(
     return false;
 }
 
-void handleMouseDragAndScroll(
+bool handleMouseDragAndScroll(
     const sf::Event& event,
     sf::RenderWindow& window,
     unsigned int width,
@@ -1270,11 +1270,13 @@ void handleMouseDragAndScroll(
             if (sf::FloatRect({ chatBoxX, chatBoxY }, { chatBoxWidth, chatBoxHeight }).contains(uiPos)) {
                 chatScroll -= wheel->delta * 30.f;
                 if (chatScroll < 0.f) chatScroll = 0.f;
+                return true;
             }
             sf::FloatRect sBoxRect({ (width - 900.f) / 2.f, (height - 600.f) / 2.f }, { 900.f, 600.f });
             if (stockPageOpen && sBoxRect.contains(uiPos)) {
                 marketScrollOffset -= (int)wheel->delta;
                 if (marketScrollOffset < 0) marketScrollOffset = 0;
+                return true;
             }
             else if (!placementMode) {
                 // Slide through items with mouse wheel
@@ -1288,6 +1290,7 @@ void handleMouseDragAndScroll(
                     else cur++;
                     inventory.setSelectedSlot(cur);
                 }
+                return true;
             }
         }
     }
@@ -1303,36 +1306,37 @@ void handleMouseDragAndScroll(
                 // Use the actual click position (not the frame-level worldPos)
                 sf::Vector2f curWorldPos = window.mapPixelToCoords(mouse->position);
 
-                // Structure interactions — mutually exclusive, campfire/furnace on wrench icon ONLY
+                // Structure interactions — mutually exclusive, campfire/furnace on wrench icon or body
                 bool hitWorldStructure = false;
 
-                // Campfire — wrench icon area only (not body click)
+                // Campfire — wrench icon area or campfire body
                 for (auto& fire : campfires)
                 {
                     if (hitWorldStructure) break;
-                    sf::FloatRect wrenchBtnBounds({ fire.position.x - 25.f, fire.position.y - 100.f }, { 50.f, 50.f });
-                    if (wrenchBtnBounds.contains(curWorldPos))
+                    sf::FloatRect wrenchBtnBounds({ fire.position.x - 35.f, fire.position.y - 110.f }, { 70.f, 70.f });
+                    sf::FloatRect fireBounds({ fire.position.x - 50.f, fire.position.y - 70.f }, { 100.f, 80.f });
+                    if (wrenchBtnBounds.contains(curWorldPos) || fireBounds.contains(curWorldPos))
                     {
                         for (auto& f : campfires) f.menuOpen = false;
                         for (auto& st : structures) st.menuOpen = false;
                         chestMenuOpen = false;
                         activeChest = nullptr;
                         isSleeping = false;
-                        if (fire.owner.empty() || fire.owner == username)
-                            fire.menuOpen = true;
+                        fire.menuOpen = true;
                         hitWorldStructure = true;
                     }
                 }
 
-                // Furnace — wrench icon area only (not body click)
+                // Furnace — wrench icon area or furnace body
                 if (!hitWorldStructure) {
                     for (auto& s : structures)
                     {
                         if (hitWorldStructure) break;
                         if (s.id == ITEM_FURNACE && s.sprite.has_value()) {
                             sf::Vector2f fPos = s.sprite->getPosition();
-                            sf::FloatRect wrenchBtnBounds({ fPos.x - 25.f, fPos.y - 175.f }, { 50.f, 50.f });
-                            if (wrenchBtnBounds.contains(curWorldPos)) {
+                            sf::FloatRect wrenchBtnBounds({ fPos.x - 35.f, fPos.y - 185.f }, { 70.f, 70.f });
+                            sf::FloatRect furnaceBounds({ fPos.x - 80.f, fPos.y - 150.f }, { 160.f, 160.f });
+                            if (wrenchBtnBounds.contains(curWorldPos) || furnaceBounds.contains(curWorldPos)) {
                                 for (auto& f : campfires) f.menuOpen = false;
                                 for (auto& st : structures) st.menuOpen = false;
                                 chestMenuOpen = false;
@@ -1352,7 +1356,7 @@ void handleMouseDragAndScroll(
                         if (hitWorldStructure) break;
                         if (s.id == ITEM_BED && s.sprite.has_value()) {
                             sf::Vector2f bPos = s.sprite->getPosition();
-                            sf::FloatRect wrenchBtnBounds({ bPos.x - 25.f, bPos.y - 105.f }, { 50.f, 50.f });
+                            sf::FloatRect wrenchBtnBounds({ bPos.x - 35.f, bPos.y - 115.f }, { 70.f, 70.f });
                             sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
                             if (wrenchBtnBounds.contains(curWorldPos) || bedBounds.contains(curWorldPos)) {
                                 if (!isSleeping) {
@@ -1412,19 +1416,27 @@ void handleMouseDragAndScroll(
                         }
                     }
                 }
+
+                if (hitWorldStructure) {
+                    return true;
+                }
             } // end !placementMode && !isSectionUndergoing
 
             sf::Vector2f uiPos = window.mapPixelToCoords(mouse->position, GetUIView(&window));
             if (sf::FloatRect({ chatBoxX, chatBoxY }, { chatBoxWidth, chatBoxHeight }).contains(uiPos)) {
                 isDraggingChat = true;
                 lastMousePosChat = uiPos;
+                return true;
             }
         }
     }
 
     if (auto* mouse = event.getIf<sf::Event::MouseButtonReleased>()) {
         if (mouse->button == sf::Mouse::Button::Left) {
-            isDraggingChat = false;
+            if (isDraggingChat) {
+                isDraggingChat = false;
+                return true;
+            }
         }
     }
 
@@ -1434,8 +1446,10 @@ void handleMouseDragAndScroll(
             chatScroll -= (uiPos.y - lastMousePosChat.y);
             if (chatScroll < 0.f) chatScroll = 0.f;
             lastMousePosChat = uiPos;
+            return true;
         }
     }
+    return false;
 }
 
 bool handleTopBarAndWrenchClicks(
