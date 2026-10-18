@@ -63,6 +63,27 @@
     <ClCompile Include="SheepMeat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MarketStats.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Server.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Trade.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SpawnEntity.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Animation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Button.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CharacterSelection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Game.h">
@@ -123,6 +144,30 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="SheepMeat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MarketStats.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Server.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Trade.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SpawnEntity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Button.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CharacterSelection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Zombie.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ZombieFlesh.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
