@@ -63,6 +63,12 @@ void TextInput::clear() {
     textDisplay.setString("");
 }
 
+void TextInput::setText(const std::string& text) {
+    inputString = text;
+    std::string displayStr = isPasswordBox ? std::string(inputString.length(), '*') : inputString;
+    textDisplay.setString(displayStr);
+}
+
 void TextInput::setPosition(sf::Vector2f position) {
     background.setPosition(position);
     textDisplay.setPosition({ position.x + 5.f, position.y + (background.getSize().y - textDisplay.getCharacterSize()) / 2.f - 5.f });

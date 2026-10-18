@@ -182,6 +182,8 @@ xcopy /y /i "$(ProjectDir)sfml-*.dll" "$(OutDir)"</Command>
     <ClCompile Include="Economy\MarketStats.cpp" />
     <ClCompile Include="Networking\AuthManager.cpp" />
     <ClCompile Include="Networking\Server.cpp" />
+    <ClCompile Include="Networking\sqlite3.c" />
+    <ClCompile Include="Networking\SQLiteManager.cpp" />
     <ClCompile Include="Game\GameInput.cpp" />
     <ClCompile Include="Game\GameAssets.cpp" />
     <ClCompile Include="Game\MainMenu.cpp" />
@@ -222,6 +224,8 @@ xcopy /y /i "$(ProjectDir)sfml-*.dll" "$(OutDir)"</Command>
     <ClInclude Include="Economy\MarketStats.h" />
     <ClInclude Include="Networking\AuthManager.h" />
     <ClInclude Include="Networking\Server.h" />
+    <ClInclude Include="Networking\sqlite3.h" />
+    <ClInclude Include="Networking\SQLiteManager.h" />
     <ClInclude Include="Game\GameInput.h" />
     <ClInclude Include="Game\GameAssets.h" />
   </ItemGroup>

@@ -12,6 +12,12 @@ void drawFloorGrid(
     unsigned int mapHeight
 );
 
+void drawSecondFloorGrid(
+    sf::RenderWindow& window,
+    const std::vector<PlacedStructure>& structures,
+    int playerFloorLevel
+);
+
 void drawWorldCampfires(
     sf::RenderWindow& window,
     const sf::Font& font,
@@ -52,7 +58,8 @@ void drawPlacementPreview(
     const sf::Texture& woodRoofTex,
     const sf::Texture& woodStairsTex,
     const sf::Texture& bedTex,
-    const sf::Texture& chestTex
+    const sf::Texture& chestTex,
+    const std::vector<PlacedStructure>& structures = {}
 );
 
 void drawSpeechBubble(
@@ -91,7 +98,8 @@ void renderWorldDepthScene(
     const sf::Sprite& playerWrenchBtn,
     float bubbleTimer,
     const std::string& latestPlayerMsg,
-    std::function<sf::Vector2f(sf::Vector2f)> snapGridFunc
+    std::function<sf::Vector2f(sf::Vector2f)> snapGridFunc,
+    float& outStairOffset
 );
 
 void drawWorldInteractions(
@@ -114,6 +122,7 @@ void drawWorldInteractions(
 void updateDayNightCycleAndMusic(
     sf::RenderWindow& window,
     long long serverEpochCache,
+    long long sleepTimeOffset,
     float elapsedGameTime,
     float totalCycleTime,
     sf::RectangleShape& darkness,

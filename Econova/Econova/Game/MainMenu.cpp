@@ -22,6 +22,7 @@
 #include "ViewUtils.h"
 #include "AuthManager.h"
 #include "TextInput.h"
+#include "HUD.h"
 
 using namespace std;
 
@@ -81,6 +82,9 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    loadSettingsFromFile();
+    updateActiveMusicVolume();
+
     std::cout << "[DEBUG] main() started. Pre-constructing AuthManager singleton on main thread." << std::endl;
     // CRITICAL: touch the singleton here on the main thread BEFORE spawning any
     // worker threads.  C++11 guarantees the static-local inside getInstance() is
@@ -94,15 +98,15 @@ int main(int argc, char** argv) {
     // We run it on a thread and give it 15 seconds before showing an error.
     std::atomic<bool> dbDone(false);
     std::atomic<bool> dbSuccess(false);
-    auto launchDBInit = [&]() {
+    auto launchDBInit = [&](bool forceLocal = false) {
         dbDone = false;
         dbSuccess = false;
-        std::thread([&]() {
-            dbSuccess = AuthManager::getInstance().initDB();
+        std::thread([forceLocal, &dbDone, &dbSuccess]() {
+            dbSuccess = AuthManager::getInstance().initDB(forceLocal);
             dbDone = true;
             }).detach();
         };
-    launchDBInit();
+    launchDBInit(false);
 
     // Show loading window while connecting
     {
@@ -172,6 +176,11 @@ int main(int argc, char** argv) {
                         }
                         else if (btnOffline.getGlobalBounds().contains(mp)) {
                             offlineChosen = true;
+                            // Connect to local database for offline mode
+                            timedOut = false;
+                            dbDone = false;
+                            dbSuccess = false;
+                            launchDBInit(true);
                             loadWin.close();
                         }
                     }
@@ -179,9 +188,15 @@ int main(int argc, char** argv) {
             }
 
             if (!timedOut && dbDone.load()) {
-                // Connected (or failed fast) � close and continue
-                loadWin.close();
-                break;
+                if (dbSuccess.load()) {
+                    // Connected successfully - close and continue
+                    loadWin.close();
+                    break;
+                } else {
+                    // Failed to connect to server - show retry / offline screen
+                    timedOut = true;
+                    std::cerr << "[WARN] DB connect failed. Showing retry/offline options.\n";
+                }
             }
 
             if (!timedOut && timeoutClock.getElapsedTime().asSeconds() > TIMEOUT_SECS) {
@@ -235,7 +250,7 @@ int main(int argc, char** argv) {
                 if (fontOk) {
                     auto errTxt = makeText("Could not connect to server", 52, sf::Color(231, 76, 60));
                     auto sub1 = makeText("Check your internet connection or try again.", 30, sf::Color(200, 200, 200));
-                    auto sub2 = makeText("You can also play offline (no saving/loading).", 30, sf::Color(200, 200, 200));
+                    auto sub2 = makeText("You can also play offline with your local database.", 30, sf::Color(200, 200, 200));
                     centerX(errTxt, lh / 2.f - 120.f, lw);
                     centerX(sub1, lh / 2.f - 50.f, lw);
                     centerX(sub2, lh / 2.f - 10.f, lw);
@@ -320,6 +335,16 @@ int main(int argc, char** argv) {
     sf::RenderWindow* window = new sf::RenderWindow(sf::VideoMode({ windowWidth, windowHeight }), "Econova");
     window->setFramerateLimit(60);
 
+    sf::Music menuMusic;
+    bool menuMusicLoaded = false;
+    if (menuMusic.openFromFile("Music/Locally Sourced - Jason Farnham.mp3")) {
+        menuMusic.setLooping(true);
+        menuMusic.setVolume(static_cast<float>(globalSettings.volume));
+        menuMusicLoaded = true;
+        currentActiveMusic = &menuMusic;
+        menuMusic.play();
+    }
+
     sf::Font font;
     if (!font.openFromFile("C:/Windows/Fonts/arial.ttf")) {
         std::cout << "Failed to load font!\n";
@@ -392,6 +417,12 @@ int main(int argc, char** argv) {
     sf::RectangleShape btnRegisterChoice = createButton((width - 600.f) / 2.f, height / 2.f + 50.f, 600.f, 150.f, sf::Color::Blue);
     sf::Text txtRegisterChoice(font, "Register", 100);
     txtRegisterChoice.setPosition(btnRegisterChoice.getPosition());
+
+    sf::Text txtModeStatus(font, "", 36);
+
+    sf::RectangleShape btnToggleMode = createButton((width - 550.f) / 2.f, height / 2.f + 200.f, 550.f, 90.f, sf::Color(22, 160, 133));
+    sf::Text txtToggleMode(font, "Switch to Offline Mode", 36);
+    txtToggleMode.setPosition(btnToggleMode.getPosition());
 
     sf::RectangleShape btnBack = createButton(100.f, 100.f, 300.f, 100.f, sf::Color::Red);
     sf::Text txtBack(font, "Back", 70);
@@ -490,18 +521,25 @@ int main(int argc, char** argv) {
         centerTextInButton(txtExit, btnExit);
 
         // State: AuthChoice
-        titleAuthChoice.setPosition({ w / 2.f - 400.f, 260.f });
+        titleAuthChoice.setPosition({ w / 2.f - 400.f, 200.f });
         titleAuthChoice.setCharacterSize(70);
 
-        btnLoginChoice.setSize({ 500.f, 110.f });
-        btnLoginChoice.setPosition({ (w - 500.f) / 2.f, 520.f });
-        txtLoginChoice.setCharacterSize(50);
+        txtModeStatus.setCharacterSize(36);
+
+        btnLoginChoice.setSize({ 500.f, 100.f });
+        btnLoginChoice.setPosition({ (w - 500.f) / 2.f, 420.f });
+        txtLoginChoice.setCharacterSize(45);
         centerTextInButton(txtLoginChoice, btnLoginChoice);
 
-        btnRegisterChoice.setSize({ 500.f, 110.f });
-        btnRegisterChoice.setPosition({ (w - 500.f) / 2.f, 670.f });
-        txtRegisterChoice.setCharacterSize(50);
+        btnRegisterChoice.setSize({ 500.f, 100.f });
+        btnRegisterChoice.setPosition({ (w - 500.f) / 2.f, 550.f });
+        txtRegisterChoice.setCharacterSize(45);
         centerTextInButton(txtRegisterChoice, btnRegisterChoice);
+
+        btnToggleMode.setSize({ 550.f, 90.f });
+        btnToggleMode.setPosition({ (w - 550.f) / 2.f, 680.f });
+        txtToggleMode.setCharacterSize(34);
+        centerTextInButton(txtToggleMode, btnToggleMode);
 
         btnBack.setSize({ 220.f, 80.f });
         btnBack.setPosition({ 100.f, 100.f });
@@ -666,7 +704,13 @@ int main(int argc, char** argv) {
                 r.success = true;
             }
             else {
-                r.errorMsg = "Registration failed! Username may already exist.";
+                if (!AuthManager::getInstance().isConnected()) {
+                    r.errorMsg = AuthManager::getInstance().isOfflineMode()
+                        ? "Local database error! Could not access econova_offline.db."
+                        : "Server disconnected! Check your internet connection.";
+                } else {
+                    r.errorMsg = "Registration failed! Username may already exist.";
+                }
             }
             {
                 std::lock_guard<std::mutex> lk(authResultMutex);
@@ -775,6 +819,7 @@ int main(int argc, char** argv) {
                             unsigned int tempW = window->getSize().x;
                             unsigned int tempH = window->getSize().y;
                             openSettingsWindow(*window, tempW, tempH);
+                            updateActiveMusicVolume();
                             if (bgSprite.getLocalBounds().size.x > 0 && bgSprite.getLocalBounds().size.y > 0) {
                                 bgSprite.setScale({
                                     1920.f / bgSprite.getLocalBounds().size.x,
@@ -805,6 +850,22 @@ int main(int argc, char** argv) {
                             regPass.clear();
                             regConf.clear();
                             regEmail.clear();
+                        }
+                        else if (btnToggleMode.getGlobalBounds().contains(mpos)) {
+                            bool switchToLocal = !AuthManager::getInstance().isOfflineMode();
+                            errorMessage = switchToLocal ? "Switching to Offline Mode (SQLite)..." : "Switching to Cloud Server...";
+                            std::thread([switchToLocal, &errorMessage]() {
+                                bool ok = AuthManager::getInstance().initDB(switchToLocal);
+                                if (ok) {
+                                    errorMessage = switchToLocal
+                                        ? "Connected to Local Storage (SQLite Offline Mode)."
+                                        : "Connected to Cloud Server (Online Mode).";
+                                } else {
+                                    errorMessage = switchToLocal
+                                        ? "Failed to access Local Offline DB (econova_offline.db)!"
+                                        : "Failed to connect to Cloud Server! Check your internet.";
+                                }
+                            }).detach();
                         }
                     }
                     else if (state == MenuState::Register) {
@@ -921,6 +982,9 @@ int main(int argc, char** argv) {
 
         // Execute game launch outside menu rendering branch to avoid re-entrant render transition stalls.
         if (launchGameRequested) {
+            if (menuMusicLoaded) {
+                menuMusic.stop();
+            }
             {
                 std::ofstream f("mainmenu_transition_trace.log", std::ios::app);
                 if (f.is_open()) f << "before_gameLoop\n";
@@ -930,8 +994,15 @@ int main(int argc, char** argv) {
                 std::ofstream f("mainmenu_transition_trace.log", std::ios::app);
                 if (f.is_open()) f << "after_gameLoop\n";
             }
+            AuthManager::getInstance().clearPlayerChatMessages(launchGameUsername.c_str());
+            AuthManager::getInstance().setPlayerOffline(launchGameUsername.c_str());
             launchGameRequested = false;
             state = MenuState::MainMenu;
+            if (menuMusicLoaded) {
+                menuMusic.setVolume(static_cast<float>(globalSettings.volume));
+                currentActiveMusic = &menuMusic;
+                menuMusic.play();
+            }
             continue;
         }
 
@@ -984,22 +1055,48 @@ int main(int argc, char** argv) {
             window->draw(btnPlay); window->draw(txtPlay);
             window->draw(btnSettings); window->draw(txtSettings);
             window->draw(btnExit); window->draw(txtExit);
+
+            bool isOff = AuthManager::getInstance().isOfflineMode();
+            sf::Text modeTag(font, isOff ? "Offline Mode (Local DB)" : "Online Mode (Cloud Server)", 24);
+            modeTag.setFillColor(isOff ? sf::Color(52, 152, 219, 180) : sf::Color(46, 204, 113, 180));
+            modeTag.setPosition({ (float)width - modeTag.getLocalBounds().size.x - 30.f, (float)height - 45.f });
+            window->draw(modeTag);
         }
         else if (state == MenuState::AuthChoice) {
             handleHover(btnLoginChoice, sf::Color(41, 128, 185), sf::Color(52, 152, 219));
             handleHover(btnRegisterChoice, sf::Color(41, 128, 185), sf::Color(52, 152, 219));
+            handleHover(btnToggleMode, sf::Color(22, 160, 133), sf::Color(26, 188, 156));
             handleHover(btnBack, sf::Color(127, 140, 141), sf::Color(149, 165, 166));
 
+            bool isOff = AuthManager::getInstance().isOfflineMode();
+            std::string modeStr = isOff ? "[ Mode: OFFLINE (SQLite Local Storage) ]" : "[ Mode: ONLINE (Cloud Server) ]";
+            txtModeStatus.setString(modeStr);
+            txtModeStatus.setFillColor(isOff ? sf::Color(52, 152, 219) : sf::Color(46, 204, 113));
+            txtModeStatus.setPosition({ (float)width / 2.f - txtModeStatus.getLocalBounds().size.x / 2.f, 290.f });
+
+            std::string toggleStr = isOff ? "Switch to Online Mode (Cloud)" : "Switch to Offline Mode (SQLite)";
+            txtToggleMode.setString(toggleStr);
+            centerTextInButton(txtToggleMode, btnToggleMode);
+
             window->draw(titleAuthChoice);
+            window->draw(txtModeStatus);
             window->draw(btnLoginChoice); window->draw(txtLoginChoice);
             window->draw(btnRegisterChoice); window->draw(txtRegisterChoice);
+            window->draw(btnToggleMode); window->draw(txtToggleMode);
             window->draw(btnBack); window->draw(txtBack);
+            window->draw(errorText);
         }
         else if (state == MenuState::Register) {
             handleHover(btnSubmitReg, sf::Color(39, 174, 96), sf::Color(46, 204, 113));
             handleHover(btnBack, sf::Color(127, 140, 141), sf::Color(149, 165, 166));
 
             window->draw(titleRegister);
+            bool isOffReg = AuthManager::getInstance().isOfflineMode();
+            sf::Text subTitleReg(font, isOffReg ? "Offline Mode (Local Database)" : "Online Mode (Cloud Server)", 28);
+            subTitleReg.setFillColor(isOffReg ? sf::Color(52, 152, 219) : sf::Color(46, 204, 113));
+            subTitleReg.setPosition({ (float)width / 2.f - subTitleReg.getLocalBounds().size.x / 2.f, 200.f });
+            window->draw(subTitleReg);
+
             window->draw(lblRegUser); regUser.draw(*window);
             window->draw(lblRegPass); regPass.draw(*window);
             window->draw(lblRegConf); regConf.draw(*window);
@@ -1014,6 +1111,12 @@ int main(int argc, char** argv) {
             handleHover(btnBack, sf::Color(127, 140, 141), sf::Color(149, 165, 166));
 
             window->draw(titleLogin);
+            bool isOffLog = AuthManager::getInstance().isOfflineMode();
+            sf::Text subTitleLog(font, isOffLog ? "Offline Mode (Local Database)" : "Online Mode (Cloud Server)", 28);
+            subTitleLog.setFillColor(isOffLog ? sf::Color(52, 152, 219) : sf::Color(46, 204, 113));
+            subTitleLog.setPosition({ (float)width / 2.f - subTitleLog.getLocalBounds().size.x / 2.f, 250.f });
+            window->draw(subTitleLog);
+
             window->draw(lblLogUser); logUser.draw(*window);
             window->draw(lblLogPass); logPass.draw(*window);
             window->draw(btnSubmitLog); window->draw(txtSubmitLog);
@@ -1228,8 +1331,13 @@ int main(int argc, char** argv) {
             window->draw(barFg);
         }
 
+        drawBrightnessOverlay(*window, width, height, static_cast<float>(globalSettings.brightness));
         window->display();
     }
+    if (menuMusicLoaded) {
+        menuMusic.stop();
+    }
+    currentActiveMusic = nullptr;
     delete window;
 
     AuthManager::getInstance().shutdownDB();

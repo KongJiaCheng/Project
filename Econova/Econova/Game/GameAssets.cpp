@@ -35,6 +35,14 @@ const sf::Texture* GameAssets::getItemTexture(int id) const {
     if (id == ITEM_WOOD_ROOF) return &woodRoofTex;
     if (id == ITEM_WOOD_STAIRS) return &woodStairsTex;
     if (id == ITEM_CHEST) return &chestTex;
+    if (id == ITEM_COAL) return &coalTex;
+    if (id == ITEM_COPPER_ORE) return &copperOreTex;
+    if (id == ITEM_COPPER_BAR) return &copperBarTex;
+    if (id == ITEM_IRON_ORE) return &ironOreTex;
+    if (id == ITEM_IRON_BAR) return &ironBarTex;
+    if (id == ITEM_GOLD_ORE) return &goldOreTex;
+    if (id == ITEM_GOLD_BAR) return &goldBarTex;
+    if (id == ITEM_DIAMOND) return &diamondTex;
     if (id == ITEM_WRENCH) return &wrenchTex;
     return nullptr;
 }
@@ -116,6 +124,15 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
     (void)assets.stairsIconTex.loadFromFile(resolvePath("Items/building_parts_icons.png"));
     (void)assets.bedIconTex.loadFromFile(resolvePath("Items/bed.png"));
 
+    (void)assets.coalTex.loadFromFile(resolvePath("Items/coal.png"));
+    (void)assets.copperOreTex.loadFromFile(resolvePath("Items/copper ore.png"));
+    (void)assets.copperBarTex.loadFromFile(resolvePath("Items/copper bar.png"));
+    (void)assets.ironOreTex.loadFromFile(resolvePath("Items/iron ore.png"));
+    (void)assets.ironBarTex.loadFromFile(resolvePath("Items/iron bar.png"));
+    (void)assets.goldOreTex.loadFromFile(resolvePath("Items/gold ore.png"));
+    (void)assets.goldBarTex.loadFromFile(resolvePath("Items/gold bar.png"));
+    (void)assets.diamondTex.loadFromFile(resolvePath("Items/diamond.png"));
+
     assets.goldTexLoaded = (assets.goldTex.getSize().x > 0);
     assets.goldSprite.emplace(assets.goldTex);
     assets.goldSprite->setScale({ 0.5f, 0.5f });
@@ -164,7 +181,7 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
         {"MOVEMENT", "Use [W, A, S, D] to move around the map.", "Walk a short distance"},
         {"SPRINTING", "Hold [Left Shift] while moving to sprint.", "Try sprinting now"},
         {"INVENTORY", "Press [I] to open your backpack. You can equip tools here.", "Open your inventory"},
-        {"GATHERING", "Go near a tree and press [Space] to chop wood.\nGo near a stone and press [E] to pick it up.", "Gather 1 Wood and 1 Stone"},
+        {"GATHERING", "Go near a tree and press [Space] to chop wood.\nGo near a stone and press [Space] to mine stone.", "Gather 1 Wood and 1 Stone"},
         {"COMBAT", "Animals and Monsters are everywhere. Use [Space] to attack.", "Defend yourself!"},
         {"COMMUNICATION", "Press [T] to open the global chat and talk to others.", "Say 'Hello' in chat"},
         {"ALL SET!", "You are ready to survive. Good luck!", "Click 'Finish' to start playing"}
@@ -178,7 +195,7 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
     };
 
     assets.craftableItems = {
-        {ITEM_NONE, "Campfire", 10, 10, 0, &assets.campfireFrames[0]},
+        {ITEM_NONE, "Campfire", 10, 0, 0, &assets.campfireFrames[0]},
         {ITEM_WOODEN_SWORD, "Wooden Sword", 8, 0, 0, &assets.woodenSwordTex},
         {ITEM_SHIELD, "Sturdy Shield", 10, 5, 0, &assets.shieldTex},
         {ITEM_FURNACE, "Stone Furnace", 0, 10, 0, &assets.furnaceTex},

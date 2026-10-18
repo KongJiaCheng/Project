@@ -6,6 +6,8 @@
 #include "ViewUtils.h"
 #include "Game.h"
 #include <algorithm>
+#include <thread>
+#include <sstream>
 
 void syncSaveStructuresAndCampfires(
     AuthManager& authManager,
@@ -18,8 +20,7 @@ void syncSaveStructuresAndCampfires(
     std::vector<StoredStructure> structData;
     for (const auto& s : structures)
     {
-        if (s.sprite.has_value() &&
-            (s.owner == username || s.owner == ""))
+        if (s.sprite.has_value() && s.owner == username)
         {
             structData.push_back({
                 s.id,
@@ -32,12 +33,11 @@ void syncSaveStructuresAndCampfires(
                 });
         }
     }
-    authManager.saveStructures(username.c_str(), structData);
 
     std::vector<StoredCampfire> campData;
     for (const auto& c : campfires)
     {
-        if (c.owner == username || c.owner == "") {
+        if (c.owner == username) {
             campData.push_back({
                 c.position.x,
                 c.position.y,
@@ -51,7 +51,14 @@ void syncSaveStructuresAndCampfires(
                 });
         }
     }
-    authManager.saveCampfires(username.c_str(), campData);
+
+    std::thread([&authManager, username, structData = std::move(structData), campData = std::move(campData)]() {
+        try {
+            authManager.saveStructures(username.c_str(), structData);
+            authManager.saveCampfires(username.c_str(), campData);
+        }
+        catch (...) {}
+    }).detach();
 }
 
 void updateCampfiresSimulation(
@@ -232,20 +239,60 @@ void drawCampfireMenu(
         window.draw(fsText);
     }
 
+    // Status row
+    bool campfireActive = (fire.inputCount > 0 && fire.fuel > 0);
     std::string statusStr = "Insert Fuel & Raw Food";
     sf::Color statusColor(150, 150, 150);
-    if (fire.inputCount > 0 && fire.fuel > 0) {
-        statusStr = "Cooking: " + std::to_string(static_cast<int>(fire.timeRemaining + 0.99f)) + "s";
+    if (campfireActive) {
+        statusStr = "Cooking...";
         statusColor = sf::Color::Yellow;
     }
     else if (fire.outputCount > 0) {
-        statusStr = "Cooked food ready! Click to retrieve.";
+        statusStr = "Cooked food ready! Click \u25BA to retrieve.";
         statusColor = sf::Color::Green;
     }
-    sf::Text statusTxt(uiFont, statusStr, 20);
+    sf::Text statusTxt(uiFont, statusStr, 18);
     statusTxt.setFillColor(statusColor);
-    statusTxt.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 215.f });
+    statusTxt.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 211.f });
     window.draw(statusTxt);
+
+    // Cooking progress bar
+    {
+        const float BAR_X = bg.getPosition().x + 60.f;
+        const float BAR_Y = bg.getPosition().y + 241.f;
+        const float BAR_W = 380.f;
+        const float BAR_H = 18.f;
+
+        sf::RectangleShape barBg({ BAR_W, BAR_H });
+        barBg.setPosition({ BAR_X, BAR_Y });
+        barBg.setFillColor(sf::Color(50, 50, 50));
+        barBg.setOutlineThickness(1.f);
+        barBg.setOutlineColor(sf::Color(90, 90, 90));
+        window.draw(barBg);
+
+        if (campfireActive) {
+            float progress = 1.0f - (fire.timeRemaining / 2.0f);
+            if (progress < 0.f) progress = 0.f;
+            if (progress > 1.f) progress = 1.f;
+            sf::RectangleShape barFill({ BAR_W * progress, BAR_H });
+            barFill.setPosition({ BAR_X, BAR_Y });
+            barFill.setFillColor(sf::Color(255, 140, 30));
+            window.draw(barFill);
+            sf::Text pct(uiFont, std::to_string((int)(progress * 100)) + "%", 12);
+            pct.setFillColor(sf::Color::White);
+            pct.setPosition({ BAR_X + BAR_W / 2.f - 12.f, BAR_Y + 2.f });
+            window.draw(pct);
+        } else if (fire.outputCount > 0) {
+            sf::RectangleShape barFull({ BAR_W, BAR_H });
+            barFull.setPosition({ BAR_X, BAR_Y });
+            barFull.setFillColor(sf::Color(50, 180, 50));
+            window.draw(barFull);
+            sf::Text done(uiFont, "Done!", 12);
+            done.setFillColor(sf::Color::White);
+            done.setPosition({ BAR_X + BAR_W / 2.f - 14.f, BAR_Y + 2.f });
+            window.draw(done);
+        }
+    }
 }
 
 void drawFurnaceMenu(
@@ -257,7 +304,8 @@ void drawFurnaceMenu(
     const sf::Texture& woodTex,
     const sf::Texture& cookedChickenTex,
     const sf::Texture& cookedPigTex,
-    const sf::Texture& cookedSheepTex
+    const sf::Texture& cookedSheepTex,
+    std::function<const sf::Texture*(int id)> getItemTexture
 ) {
     window.setView(GetUIView(&window));
     
@@ -304,14 +352,14 @@ void drawFurnaceMenu(
     fuelLabel.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 80.f });
     window.draw(fuelLabel);
 
-    sf::Text foodLabel(uiFont, "Raw Food", 18);
+    sf::Text foodLabel(uiFont, "Ore / Food", 18);
     foodLabel.setFillColor(sf::Color::White);
-    foodLabel.setPosition({ bg.getPosition().x + 210.f, bg.getPosition().y + 80.f });
+    foodLabel.setPosition({ bg.getPosition().x + 205.f, bg.getPosition().y + 80.f });
     window.draw(foodLabel);
 
-    sf::Text outputLabel(uiFont, "Cooked Food", 18);
+    sf::Text outputLabel(uiFont, "Bar / Cooked", 18);
     outputLabel.setFillColor(sf::Color::White);
-    outputLabel.setPosition({ bg.getPosition().x + 360.f, bg.getPosition().y + 80.f });
+    outputLabel.setPosition({ bg.getPosition().x + 355.f, bg.getPosition().y + 80.f });
     window.draw(outputLabel);
 
     sf::Vector2f mpos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
@@ -349,9 +397,12 @@ void drawFurnaceMenu(
     window.draw(inputSlot);
 
     if (furnace.inputCount > 0 && furnace.inputItem != 0) {
-        const sf::Texture* rTex = (furnace.inputItem == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() : 
-                                  (furnace.inputItem == ITEM_PIG_MEAT) ? PigMeat::getTexture() : 
-                                  (furnace.inputItem == ITEM_SHEEP_MEAT) ? SheepMeat::getTexture() : nullptr;
+        const sf::Texture* rTex = getItemTexture ? getItemTexture(furnace.inputItem) : nullptr;
+        if (!rTex) {
+            if (furnace.inputItem == ITEM_CHICKEN_MEAT) rTex = ChickenMeat::getTexture();
+            else if (furnace.inputItem == ITEM_PIG_MEAT) rTex = PigMeat::getTexture();
+            else if (furnace.inputItem == ITEM_SHEEP_MEAT) rTex = SheepMeat::getTexture();
+        }
         if (rTex) {
             sf::Sprite ispr(*rTex);
             sf::Vector2u ts = rTex->getSize();
@@ -377,9 +428,12 @@ void drawFurnaceMenu(
     window.draw(outputSlot);
 
     if (furnace.outputCount > 0 && furnace.outputItem != 0) {
-        const sf::Texture* oTex = (furnace.outputItem == ITEM_COOKED_CHICKEN) ? &cookedChickenTex :
-                                  (furnace.outputItem == ITEM_COOKED_PIG) ? &cookedPigTex :
-                                  (furnace.outputItem == ITEM_COOKED_SHEEP) ? &cookedSheepTex : nullptr;
+        const sf::Texture* oTex = getItemTexture ? getItemTexture(furnace.outputItem) : nullptr;
+        if (!oTex) {
+            if (furnace.outputItem == ITEM_COOKED_CHICKEN) oTex = &cookedChickenTex;
+            else if (furnace.outputItem == ITEM_COOKED_PIG) oTex = &cookedPigTex;
+            else if (furnace.outputItem == ITEM_COOKED_SHEEP) oTex = &cookedSheepTex;
+        }
         if (oTex) {
             sf::Sprite ospr(*oTex);
             sf::Vector2u ts = oTex->getSize();
@@ -395,20 +449,344 @@ void drawFurnaceMenu(
         }
     }
 
-    std::string statusStr = "Insert Fuel & Raw Food";
+    bool furnaceActive = (furnace.inputCount > 0 && furnace.fuel > 0);
+    std::string statusStr = "Insert Fuel & Ore / Food";
     sf::Color statusColor(150, 150, 150);
-    if (furnace.inputCount > 0 && furnace.fuel > 0) {
-        statusStr = "Smelting: " + std::to_string(static_cast<int>(furnace.timeRemaining + 0.99f)) + "s";
+    if (furnaceActive) {
+        bool isOre = (furnace.inputItem == ITEM_COPPER_ORE || furnace.inputItem == ITEM_IRON_ORE || furnace.inputItem == ITEM_GOLD_ORE);
+        statusStr = isOre ? "Smelting..." : "Cooking...";
         statusColor = sf::Color::Yellow;
     }
     else if (furnace.outputCount > 0) {
-        statusStr = "Cooked food ready! Click to retrieve.";
+        bool isBar = (furnace.outputItem == ITEM_COPPER_BAR || furnace.outputItem == ITEM_IRON_BAR || furnace.outputItem == ITEM_GOLD_BAR);
+        statusStr = isBar ? "Metal bar ready! Click \u25BA to retrieve." : "Cooked food ready! Click \u25BA to retrieve.";
         statusColor = sf::Color::Green;
     }
-    sf::Text statusTxt(uiFont, statusStr, 20);
+    sf::Text statusTxt(uiFont, statusStr, 18);
     statusTxt.setFillColor(statusColor);
-    statusTxt.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 215.f });
+    statusTxt.setPosition({ bg.getPosition().x + 60.f, bg.getPosition().y + 211.f });
     window.draw(statusTxt);
+
+    // Smelting/cooking progress bar
+    {
+        const float BAR_X = bg.getPosition().x + 60.f;
+        const float BAR_Y = bg.getPosition().y + 241.f;
+        const float BAR_W = 380.f;
+        const float BAR_H = 18.f;
+
+        sf::RectangleShape barBg({ BAR_W, BAR_H });
+        barBg.setPosition({ BAR_X, BAR_Y });
+        barBg.setFillColor(sf::Color(50, 50, 50));
+        barBg.setOutlineThickness(1.f);
+        barBg.setOutlineColor(sf::Color(90, 90, 90));
+        window.draw(barBg);
+
+        if (furnaceActive) {
+            float progress = 1.0f - (furnace.timeRemaining / 2.0f);
+            if (progress < 0.f) progress = 0.f;
+            if (progress > 1.f) progress = 1.f;
+            bool isOre2 = (furnace.inputItem == ITEM_COPPER_ORE || furnace.inputItem == ITEM_IRON_ORE || furnace.inputItem == ITEM_GOLD_ORE);
+            sf::RectangleShape barFill({ BAR_W * progress, BAR_H });
+            barFill.setPosition({ BAR_X, BAR_Y });
+            barFill.setFillColor(isOre2 ? sf::Color(200, 110, 30) : sf::Color(255, 140, 30));
+            window.draw(barFill);
+            sf::Text pct(uiFont, std::to_string((int)(progress * 100)) + "%", 12);
+            pct.setFillColor(sf::Color::White);
+            pct.setPosition({ BAR_X + BAR_W / 2.f - 12.f, BAR_Y + 2.f });
+            window.draw(pct);
+        } else if (furnace.outputCount > 0) {
+            sf::RectangleShape barFull({ BAR_W, BAR_H });
+            barFull.setPosition({ BAR_X, BAR_Y });
+            barFull.setFillColor(sf::Color(50, 180, 50));
+            window.draw(barFull);
+            sf::Text done(uiFont, "Done!", 12);
+            done.setFillColor(sf::Color::White);
+            done.setPosition({ BAR_X + BAR_W / 2.f - 14.f, BAR_Y + 2.f });
+            window.draw(done);
+        }
+    }
+}
+
+// ─── Chest Menu (two-panel: inventory left, chest right) ──────────────────────
+void drawChestMenu(
+    sf::RenderWindow& window,
+    const sf::Font& uiFont,
+    unsigned int width,
+    unsigned int height,
+    PlacedStructure& chest,
+    Inventory& inventory,
+    int chestSelectedInvSlot,
+    std::function<const sf::Texture*(int id)> getItemTexture
+) {
+    window.setView(GetUIView(&window));
+    sf::Vector2f mpos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
+
+    // ── Layout ────────────────────────────────────────────────────────────────
+    const int   COLS      = 5;
+    const int   ROWS      = 4;
+    const float SLOT_S    = 66.f;
+    const float GAP       = 7.f;
+    const float GRID_W    = COLS * SLOT_S + (COLS - 1) * GAP;   // 358
+    const float GRID_H    = ROWS * SLOT_S + (ROWS - 1) * GAP;   // 285
+    const float PAD       = 14.f;
+    const float HEADER_H  = 48.f;
+    const float LABEL_H   = 20.f;
+    const float HINT_H    = 26.f;
+    const float DIV_W     = 2.f;
+    const float COL_GAP   = 20.f;
+    const float LEFT_W    = PAD + GRID_W + PAD;          // 14+358+14 = 386
+    const float RIGHT_W   = PAD + GRID_W + PAD + 40.f;  // +40 for close btn = 426
+    const float PANEL_W   = LEFT_W + DIV_W + COL_GAP + RIGHT_W; // 834
+    const float PANEL_H   = HEADER_H + LABEL_H + GAP + GRID_H + PAD + HINT_H;
+
+    float ppx = (float)width  / 2.f - PANEL_W / 2.f;
+    float ppy = (float)height / 2.f - PANEL_H / 2.f;
+
+    // ── Shadow ────────────────────────────────────────────────────────────────
+    sf::RectangleShape shadow({ PANEL_W + 8.f, PANEL_H + 8.f });
+    shadow.setPosition({ ppx - 4.f, ppy + 4.f });
+    shadow.setFillColor(sf::Color(0, 0, 0, 110));
+    window.draw(shadow);
+
+    // ── Panel body ────────────────────────────────────────────────────────────
+    sf::RectangleShape panel({ PANEL_W, PANEL_H });
+    panel.setPosition({ ppx, ppy });
+    panel.setFillColor(sf::Color(28, 22, 16));
+    panel.setOutlineThickness(2.f);
+    panel.setOutlineColor(sf::Color(120, 90, 50));
+    window.draw(panel);
+
+    // ── Header bar ────────────────────────────────────────────────────────────
+    sf::RectangleShape header({ PANEL_W, HEADER_H });
+    header.setPosition({ ppx, ppy });
+    header.setFillColor(sf::Color(60, 42, 22));
+    window.draw(header);
+    sf::RectangleShape hDiv({ PANEL_W, 2.f });
+    hDiv.setPosition({ ppx, ppy + HEADER_H });
+    hDiv.setFillColor(sf::Color(150, 110, 55));
+    window.draw(hDiv);
+
+    sf::Text title(uiFont, "Chest Storage", 20);
+    title.setStyle(sf::Text::Bold);
+    title.setFillColor(sf::Color(240, 200, 90));
+    title.setPosition({ ppx + 14.f, ppy + (HEADER_H - 24.f) / 2.f });
+    window.draw(title);
+
+    // ── Close button ──────────────────────────────────────────────────────────
+    sf::FloatRect closeBtnRect({ ppx + PANEL_W - 42.f, ppy + 6.f }, { 36.f, 36.f });
+    bool closeHov = closeBtnRect.contains(mpos);
+    sf::RectangleShape closeBtn({ 36.f, 36.f });
+    closeBtn.setPosition(closeBtnRect.position);
+    closeBtn.setFillColor(closeHov ? sf::Color(220, 60, 50) : sf::Color(160, 45, 35));
+    closeBtn.setOutlineThickness(1.f);
+    closeBtn.setOutlineColor(sf::Color(220, 100, 90));
+    window.draw(closeBtn);
+    sf::Text closeTxt(uiFont, "X", 16);
+    closeTxt.setStyle(sf::Text::Bold);
+    closeTxt.setFillColor(sf::Color::White);
+    auto ctb = closeTxt.getLocalBounds();
+    closeTxt.setPosition({ closeBtnRect.position.x + (36.f - ctb.size.x) / 2.f - 1.f,
+                           closeBtnRect.position.y + (36.f - ctb.size.y) / 2.f - 4.f });
+    window.draw(closeTxt);
+
+    // ── Vertical divider ──────────────────────────────────────────────────────
+    sf::RectangleShape vDiv({ DIV_W, PANEL_H - HEADER_H });
+    vDiv.setPosition({ ppx + LEFT_W, ppy + HEADER_H });
+    vDiv.setFillColor(sf::Color(100, 78, 45));
+    window.draw(vDiv);
+
+    // ── Section labels ────────────────────────────────────────────────────────
+    const float CONTENT_Y  = ppy + HEADER_H;
+    const float LEFT_GX    = ppx + PAD;
+    const float LEFT_GY    = CONTENT_Y + LABEL_H + GAP;
+    const float RIGHT_GX   = ppx + LEFT_W + DIV_W + COL_GAP + PAD;
+    const float RIGHT_GY   = LEFT_GY;
+
+    sf::Text invLabel(uiFont, "Your Inventory  (click item to select)", 12);
+    invLabel.setFillColor(sf::Color(180, 160, 100));
+    invLabel.setPosition({ LEFT_GX, CONTENT_Y + 3.f });
+    window.draw(invLabel);
+
+    int usedSlots = 0;
+    for (int i = 0; i < CHEST_SLOT_COUNT; i++)
+        if (chest.chestSlots[i].id != 0 && chest.chestSlots[i].count > 0) usedSlots++;
+    sf::Text chestLabel(uiFont,
+        "Chest Slots  (" + std::to_string(usedSlots) + "/" + std::to_string(CHEST_SLOT_COUNT) + " used)", 12);
+    chestLabel.setFillColor(sf::Color(180, 160, 100));
+    chestLabel.setPosition({ RIGHT_GX, CONTENT_Y + 3.f });
+    window.draw(chestLabel);
+
+    // ── LEFT PANEL: Inventory slots ───────────────────────────────────────────
+    int invSelectedSlot = inventory.getSelectedSlot();
+    // Effective selection: explicit chest selection overrides hotbar selection
+    int effectiveSrc = (chestSelectedInvSlot >= 0) ? chestSelectedInvSlot : invSelectedSlot;
+
+    for (int i = 0; i < 20 && i < CHEST_SLOT_COUNT; i++) {
+        int col = i % COLS, row = i / COLS;
+        float sx = LEFT_GX + col * (SLOT_S + GAP);
+        float sy = LEFT_GY + row * (SLOT_S + GAP);
+        sf::FloatRect slotBounds({ sx, sy }, { SLOT_S, SLOT_S });
+        bool hover    = slotBounds.contains(mpos);
+        bool selected = (i == effectiveSrc);
+        bool hasItem  = inventory.hasItem(i);
+
+        sf::RectangleShape slot({ SLOT_S, SLOT_S });
+        slot.setPosition({ sx, sy });
+        if (selected && hasItem)
+            slot.setFillColor(sf::Color(55, 90, 155));
+        else if (hover && hasItem)
+            slot.setFillColor(sf::Color(60, 55, 38));
+        else if (hasItem)
+            slot.setFillColor(sf::Color(42, 36, 22));
+        else
+            slot.setFillColor(sf::Color(28, 24, 16));
+        slot.setOutlineThickness(selected ? 2.5f : 1.5f);
+        slot.setOutlineColor(selected ? sf::Color(100, 160, 255) :
+                             hover ? sf::Color(200, 160, 60) :
+                             sf::Color(68, 55, 38));
+        window.draw(slot);
+
+        if (hasItem) {
+            const sf::Texture* tex = inventory.getItemTexture(i);
+            if (tex) {
+                sf::Sprite sp(*tex);
+                sf::Vector2u ts = tex->getSize();
+                float sc = (SLOT_S - 12.f) / (float)std::max(ts.x, ts.y);
+                sp.setScale({ sc, sc });
+                sp.setPosition({ sx + 6.f, sy + 6.f });
+                window.draw(sp);
+            }
+            int cnt = inventory.getItemCount(i);
+            if (cnt > 1) {
+                std::string qs = std::to_string(cnt);
+                sf::RectangleShape badge({ (float)(qs.size() * 8 + 4), 15.f });
+                badge.setFillColor(sf::Color(0, 0, 0, 190));
+                badge.setPosition({ sx + SLOT_S - badge.getSize().x - 2.f, sy + SLOT_S - 17.f });
+                window.draw(badge);
+                sf::Text ct(uiFont, qs, 11);
+                ct.setFillColor(sf::Color::White);
+                ct.setPosition({ badge.getPosition().x + 2.f, badge.getPosition().y + 1.f });
+                window.draw(ct);
+            }
+        }
+        // Slot number
+        sf::Text sn(uiFont, std::to_string(i + 1), 9);
+        sn.setFillColor(sf::Color(80, 70, 50));
+        sn.setPosition({ sx + 2.f, sy + 2.f });
+        window.draw(sn);
+    }
+
+    // ── RIGHT PANEL: Chest slots ──────────────────────────────────────────────
+    std::string tooltipText;
+    sf::Vector2f tooltipPos;
+
+    for (int i = 0; i < CHEST_SLOT_COUNT; i++) {
+        int col = i % COLS, row = i / COLS;
+        float sx = RIGHT_GX + col * (SLOT_S + GAP);
+        float sy = RIGHT_GY + row * (SLOT_S + GAP);
+        sf::FloatRect slotBounds({ sx, sy }, { SLOT_S, SLOT_S });
+        bool hover    = slotBounds.contains(mpos);
+        const ChestSlot& cs = chest.chestSlots[i];
+        bool occupied = (cs.id != 0 && cs.count > 0);
+
+        // Show store indicator if inv item selected and hovering
+        bool srcHasItem  = (effectiveSrc >= 0 && inventory.hasItem(effectiveSrc));
+        bool canStore    = srcHasItem && (!occupied ||
+                           (cs.id == inventory.getItemID(effectiveSrc)));
+
+        sf::RectangleShape slot({ SLOT_S, SLOT_S });
+        slot.setPosition({ sx, sy });
+        if (hover && canStore && !occupied)
+            slot.setFillColor(sf::Color(30, 70, 30));
+        else if (hover && occupied)
+            slot.setFillColor(sf::Color(80, 60, 35));
+        else if (hover)
+            slot.setFillColor(sf::Color(52, 46, 32));
+        else if (occupied)
+            slot.setFillColor(sf::Color(45, 38, 25));
+        else
+            slot.setFillColor(sf::Color(30, 25, 16));
+        slot.setOutlineThickness(2.f);
+        slot.setOutlineColor(hover && canStore ? sf::Color(80, 200, 80) :
+                             hover ? sf::Color(220, 180, 70) :
+                             occupied ? sf::Color(140, 110, 55) :
+                             sf::Color(65, 52, 35));
+        window.draw(slot);
+
+        if (occupied) {
+            const sf::Texture* tex = cs.tex ? cs.tex : (getItemTexture ? getItemTexture(cs.id) : nullptr);
+            if (tex) {
+                sf::Sprite sp(*tex);
+                sf::Vector2u ts = tex->getSize();
+                float sc = (SLOT_S - 12.f) / (float)std::max(ts.x, ts.y);
+                sp.setScale({ sc, sc });
+                sp.setPosition({ sx + 6.f, sy + 6.f });
+                window.draw(sp);
+            }
+            std::string qstr = std::to_string(cs.count);
+            sf::RectangleShape badge({ (float)(qstr.size() * 8 + 4), 15.f });
+            badge.setFillColor(sf::Color(0, 0, 0, 190));
+            badge.setPosition({ sx + SLOT_S - badge.getSize().x - 2.f, sy + SLOT_S - 17.f });
+            window.draw(badge);
+            sf::Text cnt(uiFont, qstr, 11);
+            cnt.setFillColor(sf::Color(255, 230, 120));
+            cnt.setPosition({ badge.getPosition().x + 2.f, badge.getPosition().y + 1.f });
+            window.draw(cnt);
+            if (hover) {
+                tooltipText = srcHasItem && canStore ?
+                    "Click to STORE into this slot" :
+                    "Click to RETRIEVE " + qstr + " item(s)";
+                tooltipPos = { sx, sy - 22.f };
+            }
+        } else if (hover) {
+            if (srcHasItem) {
+                sf::Text storeHint(uiFont, "\u25BC", 22);
+                storeHint.setFillColor(sf::Color(80, 200, 80, 200));
+                auto eb = storeHint.getLocalBounds();
+                storeHint.setPosition({ sx + (SLOT_S - eb.size.x) / 2.f,
+                                        sy + (SLOT_S - eb.size.y) / 2.f - 4.f });
+                window.draw(storeHint);
+                tooltipText = "Click to STORE here";
+                tooltipPos  = { sx, sy - 22.f };
+            } else {
+                sf::Text emptyHint(uiFont, "+", 26);
+                emptyHint.setFillColor(sf::Color(100, 85, 55, 140));
+                auto eb = emptyHint.getLocalBounds();
+                emptyHint.setPosition({ sx + (SLOT_S - eb.size.x) / 2.f - 2.f,
+                                        sy + (SLOT_S - eb.size.y) / 2.f - 5.f });
+                window.draw(emptyHint);
+            }
+        }
+    }
+
+    // ── Tooltip ───────────────────────────────────────────────────────────────
+    if (!tooltipText.empty()) {
+        sf::Text tip(uiFont, tooltipText, 12);
+        sf::FloatRect tipB = tip.getLocalBounds();
+        sf::RectangleShape tipBg({ tipB.size.x + 12.f, 22.f });
+        tipBg.setFillColor(sf::Color(20, 15, 10, 220));
+        tipBg.setOutlineThickness(1.f);
+        tipBg.setOutlineColor(sf::Color(150, 120, 60));
+        float tx = std::min(tooltipPos.x, ppx + PANEL_W - tipBg.getSize().x - 4.f);
+        float ty = tooltipPos.y - 4.f;
+        if (ty < ppy + HEADER_H + 2.f) ty = tooltipPos.y + SLOT_S + 4.f;
+        tipBg.setPosition({ tx, ty });
+        tip.setPosition({ tx + 6.f, ty + 3.f });
+        window.draw(tipBg);
+        window.draw(tip);
+    }
+
+    // ── Bottom hint bar ───────────────────────────────────────────────────────
+    float hintY = ppy + PANEL_H - HINT_H;
+    sf::RectangleShape hintBar({ PANEL_W, HINT_H });
+    hintBar.setPosition({ ppx, hintY });
+    hintBar.setFillColor(sf::Color(18, 14, 9));
+    window.draw(hintBar);
+    sf::Text hint(uiFont,
+        "  Select inv item \u25B6 click chest slot to STORE  |  Click chest slot to RETRIEVE  |  [ESC]/[X] Close", 11);
+    hint.setFillColor(sf::Color(130, 115, 80));
+    hint.setPosition({ ppx + 8.f, hintY + 6.f });
+    window.draw(hint);
 }
 
 void drawQuantityPrompt(
@@ -419,7 +797,10 @@ void drawQuantityPrompt(
     bool isCampfire,
     int campfireSlot,
     int maxAmount,
-    TextInput& quantityInput
+    TextInput& quantityInput,
+    bool isChest,
+    int chestSlotIdx,
+    bool isChestRetrieve
 ) {
     sf::View currentView = window.getView();
     window.setView(GetUIView(&window));
@@ -438,19 +819,23 @@ void drawQuantityPrompt(
     qTitle.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 25.f });
     window.draw(qTitle);
 
-    std::string labelText = "Enter quantity to put in trade";
-    if (isCampfire) {
-        if (campfireSlot == 1) {
-            labelText = "Enter quantity of fuel to place";
-        } else {
-            labelText = "Enter quantity of food to place";
-        }
+    std::string labelText;
+    if (isChest && isChestRetrieve) {
+        labelText = "Enter quantity to retrieve from chest";
+    } else if (isChest) {
+        labelText = "Enter quantity to store in chest";
+    } else if (isCampfire) {
+        labelText = (campfireSlot == 1) ? "Enter quantity of fuel to place" : "Enter quantity of food to place";
+    } else {
+        labelText = "Enter quantity to put in trade";
     }
     sf::Text qLabel(uiFont, labelText + " (Max: " + std::to_string(maxAmount) + "):", 12);
     qLabel.setFillColor(sf::Color(200, 200, 210));
     qLabel.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 65.f });
     window.draw(qLabel);
 
+    // Always keep focus so typing works immediately
+    quantityInput.setFocus(true);
     quantityInput.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 95.f });
     quantityInput.draw(window);
 
@@ -485,39 +870,95 @@ void drawQuantityPrompt(
     window.setView(currentView);
 }
 
+
 void drawTradeConfirmPopup(
     sf::RenderWindow& window,
     const sf::Font& uiFont,
     unsigned int width,
-    unsigned int height
+    unsigned int height,
+    const std::string& warningMessage
 ) {
-    sf::RectangleShape cBox({ 300.f, 150.f });
-    cBox.setPosition({ (width - 300.f) / 2.f, height / 2.f - 75.f });
-    cBox.setFillColor(sf::Color(20, 20, 20, 240));
-    cBox.setOutlineColor(sf::Color::White);
-    cBox.setOutlineThickness(2.f);
+    // Backdrop shadow to dim background and draw focus to confirmation
+    sf::RectangleShape backdrop({ static_cast<float>(width), static_cast<float>(height) });
+    backdrop.setFillColor(sf::Color(0, 0, 0, 160));
+    window.draw(backdrop);
+
+    float boxW = 560.f;
+    float boxH = 260.f;
+    float boxX = (static_cast<float>(width) - boxW) / 2.f;
+    float boxY = (static_cast<float>(height) - boxH) / 2.f;
+
+    sf::RectangleShape cBox({ boxW, boxH });
+    cBox.setPosition({ boxX, boxY });
+    cBox.setFillColor(sf::Color(22, 25, 34, 250));
+    cBox.setOutlineColor(warningMessage.empty() ? sf::Color(160, 160, 175) : sf::Color(255, 190, 40));
+    cBox.setOutlineThickness(3.f);
     window.draw(cBox);
 
-    sf::Text cTxt(uiFont, "Confirm Trade?", 20);
-    cTxt.setPosition({ cBox.getPosition().x + 70.f, cBox.getPosition().y + 20.f });
-    window.draw(cTxt);
+    // Title / Header
+    sf::Text titleTxt(uiFont, warningMessage.empty() ? "CONFIRM TRADE" : "! ECONOMIC TRADE ADVISORY !", 18);
+    titleTxt.setStyle(sf::Text::Bold);
+    titleTxt.setFillColor(warningMessage.empty() ? sf::Color::White : sf::Color(255, 205, 50));
+    titleTxt.setPosition({ boxX + 24.f, boxY + 16.f });
+    window.draw(titleTxt);
 
-    sf::RectangleShape yBtn({ 100.f, 40.f });
-    yBtn.setPosition({ (width - 250.f) / 2.f, height / 2.f });
-    yBtn.setFillColor(sf::Color::Green);
+    sf::RectangleShape divLine({ boxW - 48.f, 1.5f });
+    divLine.setPosition({ boxX + 24.f, boxY + 46.f });
+    divLine.setFillColor(sf::Color(70, 75, 90));
+    window.draw(divLine);
+
+    // Warning message with word wrapping
+    std::string textToDisplay = warningMessage.empty() ? "Are you sure you want to proceed with this trade?" : warningMessage;
+    std::vector<std::string> lines;
+    std::stringstream ss(textToDisplay);
+    std::string word;
+    std::string currentLine = "";
+    while (ss >> word) {
+        if (!currentLine.empty() && currentLine.length() + 1 + word.length() > 48) {
+            lines.push_back(currentLine);
+            currentLine = word;
+        } else {
+            if (!currentLine.empty()) currentLine += " ";
+            currentLine += word;
+        }
+    }
+    if (!currentLine.empty()) lines.push_back(currentLine);
+
+    float textY = boxY + 62.f;
+    for (const auto& line : lines) {
+        sf::Text lineTxt(uiFont, line, 16);
+        lineTxt.setFillColor(warningMessage.empty() ? sf::Color(220, 220, 230) : sf::Color(255, 240, 210));
+        lineTxt.setPosition({ boxX + 26.f, textY });
+        window.draw(lineTxt);
+        textY += 24.f;
+    }
+
+    // Accept button (Yes)
+    sf::RectangleShape yBtn({ 140.f, 42.f });
+    yBtn.setPosition({ boxX + 90.f, boxY + 195.f });
+    yBtn.setFillColor(sf::Color(38, 145, 65));
+    yBtn.setOutlineColor(sf::Color(75, 210, 110));
+    yBtn.setOutlineThickness(1.5f);
     window.draw(yBtn);
 
-    sf::Text yTxt(uiFont, "Yes", 18);
-    yTxt.setPosition({ yBtn.getPosition().x + 30.f, yBtn.getPosition().y + 10.f });
+    sf::Text yTxt(uiFont, "Accept Trade", 16);
+    yTxt.setStyle(sf::Text::Bold);
+    yTxt.setFillColor(sf::Color::White);
+    yTxt.setPosition({ yBtn.getPosition().x + 20.f, yBtn.getPosition().y + 10.f });
     window.draw(yTxt);
 
-    sf::RectangleShape nBtn({ 100.f, 40.f });
-    nBtn.setPosition({ (width + 50.f) / 2.f, height / 2.f });
-    nBtn.setFillColor(sf::Color::Red);
+    // Reject button (No)
+    sf::RectangleShape nBtn({ 140.f, 42.f });
+    nBtn.setPosition({ boxX + 330.f, boxY + 195.f });
+    nBtn.setFillColor(sf::Color(175, 45, 45));
+    nBtn.setOutlineColor(sf::Color(235, 80, 80));
+    nBtn.setOutlineThickness(1.5f);
     window.draw(nBtn);
 
-    sf::Text nTxt(uiFont, "No", 18);
-    nTxt.setPosition({ nBtn.getPosition().x + 35.f, nBtn.getPosition().y + 10.f });
+    sf::Text nTxt(uiFont, "Reject Trade", 16);
+    nTxt.setStyle(sf::Text::Bold);
+    nTxt.setFillColor(sf::Color::White);
+    nTxt.setPosition({ nBtn.getPosition().x + 22.f, nBtn.getPosition().y + 10.f });
     window.draw(nTxt);
 }
 
@@ -688,8 +1129,8 @@ bool handleStructurePlacementClicks(
             }
             PlacedCampfire pc;
             pc.position = placementPos;
-            pc.timeRemaining = 90.f;
-            pc.isCrafted = false;
+            pc.timeRemaining = 0.f;
+            pc.isCrafted = true;   // immediately usable — wrench works right away
             pc.currentFrame = 0;
             pc.frameTimer = 0.f;
             pc.owner = username;
@@ -698,16 +1139,13 @@ bool handleStructurePlacementClicks(
 
             if (!tutorialActive && qInfo.questID == 3 && qInfo.progress < 1) {
                 qInfo.progress++;
-                authManager.updateQuestProgress(username.c_str(), qInfo.progress, qInfo.isCompleted);
+                std::thread([&authManager, username, prog = qInfo.progress, comp = qInfo.isCompleted]() {
+                    try { authManager.updateQuestProgress(username.c_str(), prog, comp); } catch (...) {}
+                }).detach();
             }
             placementMode = false;
         }
         else {
-            if (placementFromInventorySlot != -1) {
-                inventory.consumeItem(placementFromInventorySlot);
-            }
-            bool structureRemoved = false;
-
             // ── Overlap guard for wall / door ─────────────────────────────────
             // Wall and door are mutually exclusive: never place one on top of the other.
             if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
@@ -721,12 +1159,69 @@ bool handleStructurePlacementClicks(
                 }
             }
 
+            // ── Guard for wooden stairs: must be placed on top of an existing wood tile ──
+            if (placementItemID == ITEM_WOOD_STAIRS) {
+                bool hasTileUnder = false;
+                for (const auto& it : structures) {
+                    if (it.id == ITEM_WOOD_TILE && it.sprite.has_value()) {
+                        if (std::abs(it.sprite->getPosition().x - placementPos.x) < 1.f &&
+                            std::abs(it.sprite->getPosition().y - placementPos.y) < 1.f) {
+                            hasTileUnder = true;
+                            break;
+                        }
+                    }
+                }
+                if (!hasTileUnder) {
+                    // Cannot place stairs without a wood tile underneath!
+                    return true;
+                }
+            }
+
+            // ── Second-floor wood tile logic ──────────────────────────────────
+            float targetFloor = 0.f;
+            if (placementItemID == ITEM_WOOD_TILE) {
+                bool hasStairsBuilt = false;
+                bool hasGroundTileAtPos = false;
+                bool hasSecondFloorTileAtPos = false;
+                for (const auto& s : structures) {
+                    if (s.id == ITEM_WOOD_STAIRS) hasStairsBuilt = true;
+                    if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
+                        if (std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
+                            std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
+                            if (s.shearY >= 1.f) hasSecondFloorTileAtPos = true;
+                            else hasGroundTileAtPos = true;
+                        }
+                    }
+                }
+                if (hasStairsBuilt && hasGroundTileAtPos) {
+                    if (hasSecondFloorTileAtPos) {
+                        // Both ground and second floor tiles already exist here
+                        return true;
+                    }
+                    targetFloor = 1.f;
+                }
+            }
+
+            if (placementFromInventorySlot != -1) {
+                inventory.consumeItem(placementFromInventorySlot);
+            }
+            bool structureRemoved = false;
+
             for (auto it = structures.begin(); it != structures.end(); ) {
                 if (it->sprite.has_value() && it->sprite->getPosition() == placementPos) {
                     bool shouldRemove = false;
                     if (placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_WALL) {
                         if (it->id == ITEM_WOOD_WALL || it->id == ITEM_WOOD_DOOR) {
                             shouldRemove = true;
+                        }
+                    } else if (placementItemID == ITEM_WOOD_TILE) {
+                        // Only remove tile on the same floor level
+                        if (it->id == ITEM_WOOD_TILE) {
+                            bool itIs2ndFloor = (it->shearY >= 1.f);
+                            bool targetIs2ndFloor = (targetFloor >= 1.f);
+                            if (itIs2ndFloor == targetIs2ndFloor) {
+                                shouldRemove = true;
+                            }
                         }
                     } else if (it->id == placementItemID) {
                         shouldRemove = true;
@@ -754,11 +1249,13 @@ bool handleStructurePlacementClicks(
             else if (placementItemID == ITEM_CHEST) structures.emplace_back(ITEM_CHEST, chestTex, placementRotation, false);
 
             auto& newS = structures.back();
+            newS.owner = username;
+            newS.shearY = targetFloor;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
-            // Wall and door: origin = bottom-left so the sprite's left edge
+            // Wall, door, and stairs: origin = bottom-left so the sprite's left edge
             // aligns precisely with the rhombus cell's BL corner (snapToGrid result).
             // All other structures: origin = bottom-center.
-            if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+            if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
@@ -820,20 +1317,15 @@ bool handleWorldInteractionClicks(
     int selSlot = inventory.getSelectedSlot();
     bool hasWrench = (selSlot != -1 && inventory.hasItem(selSlot) && inventory.getItemID(selSlot) == ITEM_WRENCH);
 
-    // Check Campfire Wrench click in world coordinates
+    // Check Campfire Wrench — wrench icon only, not campfire body click
     for (auto& fire : campfires) {
-        if (fire.isCrafted) {
-            sf::FloatRect wrenchBtnBounds({ fire.position.x - 20.5f, fire.position.y - 480.f - 20.5f }, { 41.f, 41.f });
-            sf::FloatRect fireBounds({ fire.position.x - 50.f, fire.position.y - 50.f }, { 100.f, 100.f });
-            if (wrenchBtnBounds.contains(worldPos) || fireBounds.contains(worldPos)) {
-                if (hasWrench) {
-                    for (auto& f : campfires) f.menuOpen = false;
-                    for (auto& s : structures) s.menuOpen = false;
-                    if (fire.owner.empty() || fire.owner == username)
-                        fire.menuOpen = true;
-                    return true;
-                }
-            }
+        sf::FloatRect wrenchBtnBounds({ fire.position.x - 25.f, fire.position.y - 100.f }, { 50.f, 50.f });
+        if (wrenchBtnBounds.contains(worldPos)) {
+            for (auto& f : campfires) f.menuOpen = false;
+            for (auto& s : structures) s.menuOpen = false;
+            chestMenuOpen = false;
+            fire.menuOpen = true;
+            return true;
         }
     }
 
@@ -841,10 +1333,10 @@ bool handleWorldInteractionClicks(
     for (auto& s : structures) {
         if (s.id == ITEM_BED && s.sprite.has_value()) {
             sf::Vector2f bPos = s.sprite->getPosition();
-            sf::FloatRect wrenchBtnBounds({ bPos.x - 25.f, bPos.y - 480.f - 25.f }, { 50.f, 50.f });
+            sf::FloatRect wrenchBtnBounds({ bPos.x - 25.f, bPos.y - 105.f }, { 50.f, 50.f });
             sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
             if (wrenchBtnBounds.contains(worldPos) || bedBounds.contains(worldPos)) {
-                if (hasWrench && !isSleeping) {
+                if (!isSleeping) {
                     isSleeping = true;
                     sleepFadeTimer = 0.f;
                     sleepTimeSkipped = false;
@@ -854,19 +1346,17 @@ bool handleWorldInteractionClicks(
         }
     }
 
-    // Check Furnace Wrench Click
+    // Check Furnace Wrench — wrench icon only, not furnace body click
     for (auto& s : structures) {
         if (s.id == ITEM_FURNACE && s.sprite.has_value()) {
             sf::Vector2f fPos = s.sprite->getPosition();
-            sf::FloatRect wrenchBtnBounds({ fPos.x - 25.f, fPos.y - 480.f - 25.f }, { 50.f, 50.f });
-            sf::FloatRect furnaceBounds({ fPos.x - 100.f, fPos.y - 120.f }, { 200.f, 120.f });
-            if (wrenchBtnBounds.contains(worldPos) || furnaceBounds.contains(worldPos)) {
-                if (hasWrench) {
-                    for (auto& f : campfires) f.menuOpen = false;
-                    for (auto& st : structures) st.menuOpen = false;
-                    s.menuOpen = true;
-                    return true;
-                }
+            sf::FloatRect wrenchBtnBounds({ fPos.x - 25.f, fPos.y - 175.f }, { 50.f, 50.f });
+            if (wrenchBtnBounds.contains(worldPos)) {
+                for (auto& f : campfires) f.menuOpen = false;
+                for (auto& st : structures) st.menuOpen = false;
+                chestMenuOpen = false;
+                s.menuOpen = true;
+                return true;
             }
         }
     }
@@ -986,7 +1476,10 @@ void updateCampfiresAndCooking(
                 if (s.timeRemaining <= 0.f) {
                     s.fuel--;
                     s.inputCount--;
-                    if (s.inputItem == ITEM_CHICKEN_MEAT) s.outputItem = ITEM_COOKED_CHICKEN;
+                    if (s.inputItem == ITEM_COPPER_ORE) s.outputItem = ITEM_COPPER_BAR;
+                    else if (s.inputItem == ITEM_IRON_ORE) s.outputItem = ITEM_IRON_BAR;
+                    else if (s.inputItem == ITEM_GOLD_ORE) s.outputItem = ITEM_GOLD_BAR;
+                    else if (s.inputItem == ITEM_CHICKEN_MEAT) s.outputItem = ITEM_COOKED_CHICKEN;
                     else if (s.inputItem == ITEM_PIG_MEAT) s.outputItem = ITEM_COOKED_PIG;
                     else if (s.inputItem == ITEM_SHEEP_MEAT) s.outputItem = ITEM_COOKED_SHEEP;
                     s.outputCount++;
@@ -1035,7 +1528,7 @@ void updateAndDrawPlacementPreview(
         }
     }
 
-    drawPlacementPreview(window, placementItemID, placementRotation, placementPos, campfireFrames, furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex, chestTex);
+    drawPlacementPreview(window, placementItemID, placementRotation, placementPos, campfireFrames, furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex, chestTex, structures);
 }
 
 

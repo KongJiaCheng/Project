@@ -1,79 +1,18 @@
 #include "PlayerController.h"
 #include "Game.h"
 #include "ItemID.h"
+#include "SpawnEntity.h"
 #include <cmath>
 #include <queue>
 #include <map>
 #include <algorithm>
 
 std::vector<TileFloor> computeElevatedTileFloors(const std::vector<PlacedStructure>& structures) {
-    const float TILE_CONNECT_DIST = 260.f;
     std::vector<TileFloor> elevatedTileFloors;
-
-    struct StairInfo { sf::Vector2f pos; };
-    std::vector<StairInfo> allStairs;
-    std::vector<sf::Vector2f> allTilePos;
     for (const auto& s : structures) {
         if (!s.sprite.has_value()) continue;
-        if (s.id == ITEM_WOOD_STAIRS) allStairs.push_back({ s.sprite->getPosition() });
-        if (s.id == ITEM_WOOD_TILE)   allTilePos.push_back(s.sprite->getPosition());
-    }
-    auto posKey = [](sf::Vector2f p) -> std::pair<int,int> {
-        return { (int)std::round(p.x / 200.f), (int)std::round(p.y / 100.f) };
-    };
-    std::map<std::pair<int,int>, int> tileLevelMap;
-    for (const auto& tp : allTilePos) tileLevelMap[posKey(tp)] = 0;
-
-    std::queue<std::pair<sf::Vector2f, int>> bfsQueue;
-    for (const auto& stair : allStairs) {
-        for (const auto& tp : allTilePos) {
-            float dx = tp.x - stair.pos.x, dy = tp.y - stair.pos.y;
-            if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
-                auto k = posKey(tp);
-                if (tileLevelMap[k] < 1) {
-                    tileLevelMap[k] = 1;
-                    bfsQueue.push({ tp, 1 });
-                }
-            }
-        }
-    }
-    while (!bfsQueue.empty()) {
-        auto [curPos, curLevel] = bfsQueue.front(); bfsQueue.pop();
-        for (const auto& tp : allTilePos) {
-            float dx = tp.x - curPos.x, dy = tp.y - curPos.y;
-            float dist = std::sqrt(dx*dx + dy*dy);
-            if (dist < TILE_CONNECT_DIST && dist > 1.f) {
-                auto k = posKey(tp);
-                if (tileLevelMap[k] < curLevel) {
-                    tileLevelMap[k] = curLevel;
-                    bfsQueue.push({ tp, curLevel });
-                }
-            }
-        }
-        for (const auto& stair : allStairs) {
-            float dx = stair.pos.x - curPos.x, dy = stair.pos.y - curPos.y;
-            if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
-                for (const auto& tp2 : allTilePos) {
-                    float dx2 = tp2.x - stair.pos.x, dy2 = tp2.y - stair.pos.y;
-                    if (std::sqrt(dx2*dx2 + dy2*dy2) < TILE_CONNECT_DIST && dy2 <= 0.f) {
-                        auto k2 = posKey(tp2);
-                        int nextLevel = curLevel + 1;
-                        if (tileLevelMap[k2] < nextLevel) {
-                            tileLevelMap[k2] = nextLevel;
-                            bfsQueue.push({ tp2, nextLevel });
-                        }
-                    }
-                }
-            }
-        }
-    }
-    for (const auto& [key, level] : tileLevelMap) {
-        if (level > 0) {
-            for (const auto& tp : allTilePos) {
-                if (posKey(tp) == key) {
-                    elevatedTileFloors.push_back({ tp, level });
-                }
-            }
+        if (s.id == ITEM_WOOD_TILE && s.shearY >= 1.f) {
+            elevatedTileFloors.push_back({ s.sprite->getPosition(), (int)s.shearY });
         }
     }
     return elevatedTileFloors;
@@ -91,29 +30,40 @@ bool isPositionBlocked(
     bool targetElevated = false;
     for (const auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
-            sf::FloatRect sb = s.sprite->getGlobalBounds();
-            sb.position.x -= 30.f; sb.size.x += 60.f;
-            sb.position.y -= 30.f; sb.size.y += 60.f;
-            if (sb.contains(targetFeet)) { targetElevated = true; break; }
+            sf::Vector2f sPos = s.sprite->getPosition();
+            const float margin = 150.f;
+            float zoneTop    = sPos.y - 250.f - margin;
+            float zoneBottom = sPos.y + margin;
+            float zoneLeft   = sPos.x - margin;
+            float zoneRight  = sPos.x + 500.f + margin;
+            if (targetPos.y >= zoneTop && targetPos.y <= zoneBottom &&
+                targetPos.x >= zoneLeft && targetPos.x <= zoneRight)
+            { targetElevated = true; break; }
         }
     }
     if (!targetElevated) {
         for (const auto& etf : elevatedTileFloors) {
-            float dx = targetFeet.x - etf.pos.x;
-            float dy = targetFeet.y - etf.pos.y;
-            if (std::sqrt(dx*dx + dy*dy) < TILE_CONNECT_DIST) {
-                targetElevated = true;
-                break;
+            if (targetFeet.y >= etf.pos.y - 250.f - 40.f && targetFeet.y <= etf.pos.y + 40.f) {
+                float xShift = etf.pos.y - targetFeet.y;
+                if (targetFeet.x >= etf.pos.x + xShift - 40.f && targetFeet.x <= etf.pos.x + 500.f + xShift + 40.f) {
+                    targetElevated = true;
+                    break;
+                }
             }
         }
     }
 
     // 1. Structures (Walls, Furnace, Bed, Door)
+    const float STRUCT_CULL_SQ = 600.f * 600.f;
     for (const auto& s : structures) {
         if (!s.sprite.has_value()) continue;
+        sf::Vector2f sPos = s.sprite->getPosition();
+        float sdx = sPos.x - targetPos.x;
+        float sdy = sPos.y - targetPos.y;
+        if (sdx * sdx + sdy * sdy > STRUCT_CULL_SQ) continue;
+
         if (s.id == ITEM_WOOD_WALL || (s.id == ITEM_WOOD_DOOR && !s.isOpen)) {
             if (targetElevated) continue;
-            sf::Vector2f sPos = s.sprite->getPosition();
             sf::Vector2f A = sPos;
             sf::Vector2f B = (s.rotation == 90.f)
                 ? sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f)
@@ -129,13 +79,8 @@ bool isPositionBlocked(
         }
     }
     // 2. Resources (Trees, Stones)
-    for (const auto& it : itemManager.getItems()) {
-        if (it.id == ITEM_TREE || it.id == ITEM_STONE) {
-            sf::FloatRect b = it.sprite.getGlobalBounds();
-            b.position.x += b.size.x * 0.3f; b.size.x *= 0.4f;
-            b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
-            if (b.contains(targetPos)) return true;
-        }
+    if (itemManager.isResourceBlocking(targetPos)) {
+        return true;
     }
     return false;
 }
@@ -157,11 +102,16 @@ bool isWorldPositionBlocked(
 
             if (structure.id == ITEM_WOOD_WALL || (structure.id == ITEM_WOOD_DOOR && !structure.isOpen)) {
                 sf::Vector2f sPos = structure.sprite->getPosition();
+                // Primary segment along the wall face
                 sf::Vector2f A = sPos;
                 sf::Vector2f B = (structure.rotation == 90.f)
                     ? sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f)
                     : sf::Vector2f(sPos.x + 500.f, sPos.y);
-                if (distanceToSegment(pos, A, B) < 40.f) return true;
+                // Secondary segment: wall has depth — block entities approaching from either side
+                sf::Vector2f A2(A.x, A.y - 80.f);
+                sf::Vector2f B2(B.x, B.y - 80.f);
+                if (distanceToSegment(pos, A, B) < 80.f ||
+                    distanceToSegment(pos, A2, B2) < 80.f) return true;
             }
             else if (structure.id == ITEM_FURNACE || structure.id == ITEM_BED) {
                 sf::FloatRect b = structure.sprite->getGlobalBounds();
@@ -208,13 +158,8 @@ void updateMonstersCombat(
     };
 
     for (auto& m : monsters) {
-        if (m->health > 0) {
-            float dx = m->sprite.getPosition().x - playerSprite.getPosition().x;
-            float dy = m->sprite.getPosition().y - playerSprite.getPosition().y;
-            if (dx * dx + dy * dy < 3000000.f) {
-                m->update(dt, playerSprite.getPosition(), isBlocked);
-            }
-        }
+        // NOTE: m->update() is called by updateNearbyEntities in Game.cpp — do NOT call it again here
+        // (double update caused doubled monster speed and CPU usage)
 
         if (m->health > 0) {
             sf::FloatRect z = m->sprite.getGlobalBounds();
@@ -274,7 +219,9 @@ void updateSaplings(
     std::vector<PlantedSapling>& plantedSaplings,
     ItemManager& itemManager,
     const sf::Texture& treeTex,
-    float dt
+    float dt,
+    const std::vector<PlacedStructure>& structures,
+    const std::vector<PlacedCampfire>& campfires
 ) {
     for (auto& s : plantedSaplings) {
         if (!s.grown) {
@@ -282,7 +229,10 @@ void updateSaplings(
             if (s.growTimer <= 0.f) {
                 s.growTimer = 0.f;
                 s.grown = true;
-                itemManager.addItem(ITEM_TREE, treeTex, s.position, 1);
+                // Don't grow a tree inside or next to any structure/campfire
+                if (!isPosNearStructureOrHouse(s.position, structures, campfires, 500.f)) {
+                    itemManager.addItem(ITEM_TREE, treeTex, s.position, 1);
+                }
             }
         }
     }
@@ -468,8 +418,6 @@ bool hydrateWorldAndPlayerData(
 
     // Apply Structures
     for (auto& s : loaded.structures) {
-        sf::Vector2f snapped = snapGridFunc({ s.x, s.y });
-        if (std::abs(s.x - snapped.x) > 1.f || std::abs(s.y - snapped.y) > 1.f) continue;
         const sf::Texture* tex = assets.getItemTexture(s.id);
         if (tex) {
             structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, username);
@@ -477,7 +425,7 @@ bool hydrateWorldAndPlayerData(
             newS.sprite->setPosition({ s.x, s.y });
             newS.health = s.health;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
-            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
@@ -488,8 +436,6 @@ bool hydrateWorldAndPlayerData(
 
     // Apply Other Players' Structures
     for (auto& s : loaded.otherStructures) {
-        sf::Vector2f snapped = snapGridFunc({ s.x, s.y });
-        if (std::abs(s.x - snapped.x) > 1.f || std::abs(s.y - snapped.y) > 1.f) continue;
         const sf::Texture* tex = assets.getItemTexture(s.id);
         if (tex) {
             structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, "other");
@@ -497,7 +443,7 @@ bool hydrateWorldAndPlayerData(
             newS.sprite->setPosition({ s.x, s.y });
             newS.health = s.health;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
-            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
@@ -606,6 +552,7 @@ void handlePlayerMovementAndCombat(
     sf::Vector2f& tutLastPos,
     bool& tutAttacked,
     int& tutWoodGathered,
+    int& tutStoneGathered,
     std::vector<std::unique_ptr<Animal>>& animals,
     ItemManager& itemManager,
     std::vector<std::unique_ptr<Monster>>& monsters,
@@ -708,93 +655,256 @@ void handlePlayerMovementAndCombat(
         float damage = swordEquipped ? 50.f : 25.f;
         bool hitSomething = false;
 
-        float attackRadius = swordEquipped ? 150.f : 30.f;
-        sf::FloatRect attackBox = sprite.getGlobalBounds();
-        attackBox.position.x -= attackRadius;
-        attackBox.position.y -= attackRadius;
-        attackBox.size.x += attackRadius * 2.f;
-        attackBox.size.y += attackRadius * 2.f;
+        sf::FloatRect attackBox;
+        sf::Vector2f playerPos = sprite.getPosition();
 
+        if (swordEquipped) {
+            // Sword sweep: generous 280x280 box centered on player (140px reach in all directions)
+            const float swordReach = 140.f;
+            attackBox = sf::FloatRect(
+                { playerPos.x - swordReach, playerPos.y - swordReach },
+                { swordReach * 2.f, swordReach * 2.f }
+            );
+        } else {
+            // Bare hands: tight directional reach right in front of player (must approach item)
+            const float forwardReach = 135.f;
+            const float sideHalfWidth = 65.f;
+            const float backPadding = 25.f; // Small overlap into player's center to avoid dead zones
+
+            switch (currentDir) {
+            case Dir::North: // Facing Up (-Y)
+                attackBox = sf::FloatRect(
+                    { playerPos.x - sideHalfWidth, playerPos.y - forwardReach },
+                    { sideHalfWidth * 2.f, forwardReach + backPadding }
+                );
+                break;
+            case Dir::South: // Facing Down (+Y)
+                attackBox = sf::FloatRect(
+                    { playerPos.x - sideHalfWidth, playerPos.y - backPadding },
+                    { sideHalfWidth * 2.f, forwardReach + backPadding }
+                );
+                break;
+            case Dir::East: // Facing Right (+X)
+                attackBox = sf::FloatRect(
+                    { playerPos.x - backPadding, playerPos.y - sideHalfWidth },
+                    { forwardReach + backPadding, sideHalfWidth * 2.f }
+                );
+                break;
+            case Dir::West: // Facing Left (-X)
+                attackBox = sf::FloatRect(
+                    { playerPos.x - forwardReach, playerPos.y - sideHalfWidth },
+                    { forwardReach + backPadding, sideHalfWidth * 2.f }
+                );
+                break;
+            }
+        }
+
+        auto checkOverlap = [&](const sf::FloatRect& b) {
+            return attackBox.position.x < b.position.x + b.size.x &&
+                   attackBox.position.x + attackBox.size.x > b.position.x &&
+                   attackBox.position.y < b.position.y + b.size.y &&
+                   attackBox.position.y + attackBox.size.y > b.position.y;
+        };
+
+        auto getDistSq = [&](sf::Vector2f targetPos) {
+            float dx = targetPos.x - playerPos.x;
+            float dy = targetPos.y - playerPos.y;
+            return dx * dx + dy * dy;
+        };
+
+        // For bare hands: track the single closest item/entity approached in front of the player
+        Animal* bestAnimal = nullptr;
+        Item* bestTree = nullptr;
+        Item* bestStone = nullptr;
+        Monster* bestMonster = nullptr;
+        PlacedStructure* bestStructure = nullptr;
+        float bestDist = 999999.f;
+
+        // 1. Animals
         for (auto& a : animals) {
+            if (a->health <= 0) continue;
             sf::FloatRect b = a->sprite.getGlobalBounds();
-            bool overlap =
-                attackBox.position.x < b.position.x + b.size.x &&
-                attackBox.position.x + attackBox.size.x > b.position.x &&
-                attackBox.position.y < b.position.y + b.size.y &&
-                attackBox.position.y + attackBox.size.y > b.position.y;
+            if (checkOverlap(b)) {
+                if (swordEquipped) {
+                    if (tutorialActive && tutorialStep == 5) tutAttacked = true;
+                    a->health -= damage;
+                    a->isHurt = true;
+                    a->hurtTimer = 0.15f;
+                    hitSomething = true;
+                    playerExp += 10;
 
-            if (overlap && a->health > 0) {
+                    sf::Vector2f dir = a->sprite.getPosition() - sprite.getPosition();
+                    float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+                    if (len != 0.f) dir /= len;
+                    a->sprite.move(dir * 40.f);
+                } else {
+                    float d = getDistSq(a->sprite.getPosition());
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestAnimal = a.get();
+                        bestTree = nullptr; bestStone = nullptr; bestMonster = nullptr; bestStructure = nullptr;
+                    }
+                }
+            }
+        }
+
+        // 2. Trees (checked by base trunk footprint on the ground)
+        for (auto& tree : itemManager.getItems()) {
+            if (tree.id != ITEM_TREE || tree.health <= 0) continue;
+
+            sf::FloatRect tb = tree.sprite.getGlobalBounds();
+            sf::FloatRect b(
+                { tb.position.x + tb.size.x * 0.25f, tb.position.y + tb.size.y * 0.65f },
+                { tb.size.x * 0.50f, tb.size.y * 0.35f }
+            );
+            sf::Vector2f treeCenter(b.position.x + b.size.x * 0.5f, b.position.y + b.size.y * 0.5f);
+
+            if (checkOverlap(b)) {
+                if (swordEquipped) {
+                    if (tutorialActive && tutorialStep == 4) tutWoodGathered++;
+                    tree.health -= damage;
+                    tree.isHurt = true;
+                    tree.hurtTimer = 0.15f;
+                    hitSomething = true;
+                    playerExp += 5;
+                } else {
+                    float d = getDistSq(treeCenter);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestTree = &tree;
+                        bestAnimal = nullptr; bestStone = nullptr; bestMonster = nullptr; bestStructure = nullptr;
+                    }
+                }
+            }
+        }
+
+        // 3. Stones (checked by physical rock footprint on the ground)
+        for (auto& stone : itemManager.getItems()) {
+            if (stone.id != ITEM_STONE || stone.health <= 0) continue;
+
+            sf::FloatRect sb = stone.sprite.getGlobalBounds();
+            sf::FloatRect b(
+                { sb.position.x - 15.f, sb.position.y - 15.f },
+                { sb.size.x + 30.f, sb.size.y + 30.f }
+            );
+            sf::Vector2f stoneCenter(sb.position.x + sb.size.x * 0.5f, sb.position.y + sb.size.y * 0.5f);
+
+            if (checkOverlap(b)) {
+                if (swordEquipped) {
+                    if (tutorialActive && tutorialStep == 4) tutStoneGathered++;
+                    stone.health -= damage;
+                    stone.isHurt = true;
+                    stone.hurtTimer = 0.15f;
+                    hitSomething = true;
+                    playerExp += 5;
+                } else {
+                    float d = getDistSq(stoneCenter);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestStone = &stone;
+                        bestAnimal = nullptr; bestTree = nullptr; bestMonster = nullptr; bestStructure = nullptr;
+                    }
+                }
+            }
+        }
+
+        // 4. Monsters
+        for (auto& a : monsters) {
+            if (a->health <= 0) continue;
+            sf::FloatRect b = a->sprite.getGlobalBounds();
+            if (checkOverlap(b)) {
+                if (swordEquipped) {
+                    if (tutorialActive && tutorialStep == 5) tutAttacked = true;
+                    a->health -= damage;
+                    a->isHurt = true;
+                    a->hurtTimer = 0.15f;
+                    hitSomething = true;
+                    playerExp += 20;
+
+                    sf::Vector2f dir = a->sprite.getPosition() - sprite.getPosition();
+                    float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+                    if (len != 0.f) dir /= len;
+                    a->sprite.move(dir * 40.f);
+                } else {
+                    float d = getDistSq(a->sprite.getPosition());
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestMonster = a.get();
+                        bestAnimal = nullptr; bestTree = nullptr; bestStone = nullptr; bestStructure = nullptr;
+                    }
+                }
+            }
+        }
+
+        // 5. Structures
+        for (auto& s : structures) {
+            if (s.id == ITEM_WOOD_TILE || s.health <= 0) continue;
+            sf::FloatRect b = s.sprite->getGlobalBounds();
+            if (checkOverlap(b)) {
+                if (swordEquipped) {
+                    s.health -= damage;
+                    s.isHurt = true;
+                    s.hurtTimer = 0.15f;
+                    hitSomething = true;
+                } else {
+                    float d = getDistSq(s.sprite->getPosition());
+                    if (d < bestDist) {
+                        bestDist = d;
+                        bestStructure = &s;
+                        bestAnimal = nullptr; bestTree = nullptr; bestStone = nullptr; bestMonster = nullptr;
+                    }
+                }
+            }
+        }
+
+        // Apply bare hands attack exclusively to the single closest approached item
+        if (!swordEquipped) {
+            if (bestAnimal) {
                 if (tutorialActive && tutorialStep == 5) tutAttacked = true;
-                a->health -= damage;
-                a->isHurt = true;
-                a->hurtTimer = 0.15f;
+                bestAnimal->health -= damage;
+                bestAnimal->isHurt = true;
+                bestAnimal->hurtTimer = 0.15f;
                 hitSomething = true;
                 playerExp += 10;
 
-                sf::Vector2f dir = a->sprite.getPosition() - sprite.getPosition();
+                sf::Vector2f dir = bestAnimal->sprite.getPosition() - sprite.getPosition();
                 float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
                 if (len != 0.f) dir /= len;
-                a->sprite.move(dir * 40.f);
+                bestAnimal->sprite.move(dir * 40.f);
             }
-        }
-
-        for (auto& tree : itemManager.getItems()) {
-            if (tree.id != ITEM_TREE) continue;
-
-            sf::FloatRect b = tree.sprite.getGlobalBounds();
-            bool overlap =
-                attackBox.position.x < b.position.x + b.size.x &&
-                attackBox.position.x + attackBox.size.x > b.position.x &&
-                attackBox.position.y < b.position.y + b.size.y &&
-                attackBox.position.y + attackBox.size.y > b.position.y;
-
-            if (overlap && tree.health > 0) {
+            else if (bestTree) {
                 if (tutorialActive && tutorialStep == 4) tutWoodGathered++;
-                tree.health -= damage;
-                tree.isHurt = true;
-                tree.hurtTimer = 0.15f;
+                bestTree->health -= damage;
+                bestTree->isHurt = true;
+                bestTree->hurtTimer = 0.15f;
                 hitSomething = true;
                 playerExp += 5;
             }
-        }
-
-        for (auto& a : monsters) {
-            sf::FloatRect b = a->sprite.getGlobalBounds();
-            bool overlap =
-                attackBox.position.x < b.position.x + b.size.x &&
-                attackBox.position.x + attackBox.size.x > b.position.x &&
-                attackBox.position.y < b.position.y + b.size.y &&
-                attackBox.position.y + attackBox.size.y > b.position.y;
-
-            if (overlap && a->health > 0) {
+            else if (bestStone) {
+                if (tutorialActive && tutorialStep == 4) tutStoneGathered++;
+                bestStone->health -= damage;
+                bestStone->isHurt = true;
+                bestStone->hurtTimer = 0.15f;
+                hitSomething = true;
+                playerExp += 5;
+            }
+            else if (bestMonster) {
                 if (tutorialActive && tutorialStep == 5) tutAttacked = true;
-                a->health -= damage;
-                a->isHurt = true;
-                a->hurtTimer = 0.15f;
+                bestMonster->health -= damage;
+                bestMonster->isHurt = true;
+                bestMonster->hurtTimer = 0.15f;
                 hitSomething = true;
                 playerExp += 20;
 
-                sf::Vector2f dir = a->sprite.getPosition() - sprite.getPosition();
+                sf::Vector2f dir = bestMonster->sprite.getPosition() - sprite.getPosition();
                 float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
                 if (len != 0.f) dir /= len;
-                a->sprite.move(dir * 40.f);
+                bestMonster->sprite.move(dir * 40.f);
             }
-        }
-
-        for (auto& s : structures) {
-            if (s.id == ITEM_WOOD_TILE) continue;
-
-            sf::FloatRect b = s.sprite->getGlobalBounds();
-            bool overlap =
-                attackBox.position.x < b.position.x + b.size.x &&
-                attackBox.position.x + attackBox.size.x > b.position.x &&
-                attackBox.position.y < b.position.y + b.size.y &&
-                attackBox.position.y + attackBox.size.y > b.position.y;
-
-            if (overlap && s.health > 0) {
-                s.health -= damage;
-                s.isHurt = true;
-                s.hurtTimer = 0.15f;
+            else if (bestStructure) {
+                bestStructure->health -= damage;
+                bestStructure->isHurt = true;
+                bestStructure->hurtTimer = 0.15f;
                 hitSomething = true;
             }
         }
@@ -828,6 +938,11 @@ void updateWorldEntitiesAndDrops(
     const sf::Texture& woodTex,
     const sf::Texture& saplingTex,
     const sf::Texture& stoneTex,
+    const sf::Texture& coalTex,
+    const sf::Texture& copperOreTex,
+    const sf::Texture& ironOreTex,
+    const sf::Texture& goldOreTex,
+    const sf::Texture& diamondTex,
     bool tutorialActive,
     int tutorialStep,
     int& tutStoneGathered,
@@ -849,14 +964,6 @@ void updateWorldEntitiesAndDrops(
     const int MAX_MULTIPLIER = 10;
 
     for (auto& a : animals) {
-        if (a->health > 0) {
-            float dx = a->sprite.getPosition().x - sprite.getPosition().x;
-            float dy = a->sprite.getPosition().y - sprite.getPosition().y;
-            if (dx * dx + dy * dy < 3000000.f) {
-                a->update(dt, sprite.getPosition(), isBlocked);
-            }
-        }
-
         sf::FloatRect bounds = a->sprite.getGlobalBounds();
         sf::Vector2f pos = a->sprite.getPosition();
 
@@ -895,28 +1002,158 @@ void updateWorldEntitiesAndDrops(
         }
     }
 
+    struct PendingDrop {
+        int id;
+        const sf::Texture* texture;
+        sf::Vector2f pos;
+        int quantity;
+    };
+
+    std::vector<PendingDrop> pendingDrops;
+
     auto& items = itemManager.getItems();
+
+    bool itemsChanged = false;
     for (auto it = items.begin(); it != items.end(); ) {
+
+        // TREE DESTROYED
         if (it->id == ITEM_TREE && it->health <= 0) {
             sf::Vector2f pos = it->sprite.getPosition();
-            it = items.erase(it);
 
-            itemManager.addItem(ITEM_WOOD, woodTex, pos, 1);
+            it = items.erase(it);
+            itemsChanged = true;
+
+            pendingDrops.push_back({
+                ITEM_WOOD,
+                &woodTex,
+                pos,
+                1
+                });
 
             if (!tutorialActive && qInfo.questID == 1 && qInfo.progress < 10) {
                 qInfo.progress++;
-                authManager.updateQuestProgress(username.c_str(), qInfo.progress, qInfo.isCompleted);
+                std::thread([&authManager, username, prog = qInfo.progress, comp = qInfo.isCompleted]() {
+                    try { authManager.updateQuestProgress(username.c_str(), prog, comp); } catch (...) {}
+                }).detach();
             }
 
             int chance = rand() % 100;
+
             if (chance < 80) {
-                itemManager.addItem(ITEM_SAPLING, saplingTex, pos, 1);
+                pendingDrops.push_back({
+                    ITEM_SAPLING,
+                    &saplingTex,
+                    pos,
+                    1
+                    });
+
                 std::cout << "Obtained Sapling!\n";
             }
+
+            continue;
         }
-        else {
-            ++it;
+
+        // STONE DESTROYED
+        if (it->id == ITEM_STONE && it->health <= 0) {
+            sf::Vector2f pos = it->sprite.getPosition();
+
+            it = items.erase(it);
+            itemsChanged = true;
+
+            if (tutorialActive && tutorialStep == 4) tutStoneGathered++;
+
+            if (!tutorialActive && qInfo.questID == 2 && qInfo.progress < 8) {
+                qInfo.progress++;
+                std::thread([&authManager, username, prog = qInfo.progress, comp = qInfo.isCompleted]() {
+                    try { authManager.updateQuestProgress(username.c_str(), prog, comp); } catch (...) {}
+                }).detach();
+            }
+
+            int chance = rand() % 100000;
+
+            if (chance < 10000) { // 10% Stone (drastically reduced from 40%)
+                pendingDrops.push_back({
+                    ITEM_DROP_STONE,
+                    &stoneTex,
+                    pos,
+                    1
+                    });
+
+                std::cout << "Obtained Stone!\n";
+            }
+            else if (chance < 45000) { // 35% Coal (increased from 30%)
+                pendingDrops.push_back({
+                    ITEM_COAL,
+                    &coalTex,
+                    pos,
+                    1
+                    });
+
+                std::cout << "Obtained Coal!\n";
+            }
+            else if (chance < 75000) { // 30% Copper Ore (increased from 20%)
+                pendingDrops.push_back({
+                    ITEM_COPPER_ORE,
+                    &copperOreTex,
+                    pos,
+                    1
+                    });
+
+                std::cout << "Obtained Copper Ore!\n";
+            }
+            else if (chance < 97000) { // 22% Iron Ore (more than doubled from 9.6%)
+                pendingDrops.push_back({
+                    ITEM_IRON_ORE,
+                    &ironOreTex,
+                    pos,
+                    1
+                    });
+
+                std::cout << "Obtained Iron Ore!\n";
+            }
+            else if (chance < 99000) { // 2.0% Gold Ore (increased from 0.3%)
+                pendingDrops.push_back({
+                    ITEM_GOLD_ORE,
+                    &goldOreTex,
+                    pos,
+                    1
+                    });
+
+                std::cout << "Obtained Gold Ore!\n";
+            }
+            else { // 1.0% Diamond (increased from 0.1%)
+                pendingDrops.push_back({
+                    ITEM_DIAMOND,
+                    &diamondTex,
+                    pos,
+                    1
+                    });
+
+                std::cout << "Obtained Diamond!\n";
+            }
+
+            continue;
         }
+
+        ++it;
+    }
+
+    // ADD ALL NEW DROPS AFTER FINISHING THE LOOP
+    if (!pendingDrops.empty()) {
+        for (const auto& drop : pendingDrops) {
+            itemManager.addItem(
+                drop.id,
+                *drop.texture,
+                drop.pos,
+                drop.quantity
+            );
+        }
+        itemsChanged = true;
+    }
+
+    // Rebuild indexes ONLY if items were actually destroyed or added
+    if (itemsChanged) {
+        itemManager.rebuildSpatialGrid();
     }
 
     bool structureDestroyed = false;
@@ -950,9 +1187,10 @@ void updateWorldEntitiesAndDrops(
         }
     }
 
-    float nearestDist = itemManager.getNearestDistance(sprite);
-    int nearestID = itemManager.getNearestItemID(sprite);
+    std::pair<float, int> nearestPickup = itemManager.getNearestPickupItem(sprite, 350.f);
+    float nearestDist = nearestPickup.first;
     const float RADIUS = 250.f;
+    int nearestID = nearestPickup.second;
 
     if (nearestDist < RADIUS) {
         sf::Text prompt(font, "Press E to pick up", 32);
@@ -970,12 +1208,16 @@ void updateWorldEntitiesAndDrops(
 
         if (!tutorialActive && nearestID == ITEM_STONE && nearestDist < 100.f && qInfo.questID == 2 && qInfo.progress < 8) {
             qInfo.progress++;
-            authManager.updateQuestProgress(username.c_str(), qInfo.progress, qInfo.isCompleted);
+            std::thread([&authManager, username, prog = qInfo.progress, comp = qInfo.isCompleted]() {
+                try { authManager.updateQuestProgress(username.c_str(), prog, comp); } catch (...) {}
+            }).detach();
         }
 
         if (!tutorialActive && (nearestID == ITEM_CHICKEN_MEAT || nearestID == ITEM_PIG_MEAT || nearestID == ITEM_ZOMBIE_FLESH) && nearestDist < 100.f && qInfo.questID == 4 && qInfo.progress < 5) {
             qInfo.progress++;
-            authManager.updateQuestProgress(username.c_str(), qInfo.progress, qInfo.isCompleted);
+            std::thread([&authManager, username, prog = qInfo.progress, comp = qInfo.isCompleted]() {
+                try { authManager.updateQuestProgress(username.c_str(), prog, comp); } catch (...) {}
+            }).detach();
         }
 
         itemManager.tryPickup(sprite, inventory);
@@ -1009,22 +1251,8 @@ void updateWorldEntitiesAndDrops(
                 sf::Vector2f p(randX(gen), randY(gen));
                 p = snapGridFunc(p);
 
-                bool nearPlaceable = false;
-                for (auto& s : structures) {
-                    if (s.sprite.has_value()) {
-                        sf::Vector2f sPos = s.sprite->getPosition();
-                        float dx = p.x - sPos.x, dy = p.y - sPos.y;
-                        if (std::sqrt(dx * dx + dy * dy) < 300.f) { nearPlaceable = true; break; }
-                    }
-                }
-                if (!nearPlaceable) {
-                    for (auto& c : campfires) {
-                        float dx = p.x - c.position.x, dy = p.y - c.position.y;
-                        if (std::sqrt(dx * dx + dy * dy) < 300.f) { nearPlaceable = true; break; }
-                    }
-                }
-
-                if (!nearPlaceable && itemManager.isAreaFreeExplicit(p, 300.f, &stoneTex)) {
+                if (!isPosNearStructureOrHouse(p, structures, campfires, 500.f) &&
+                    itemManager.isAreaFreeExplicit(p, 300.f, &stoneTex)) {
                     itemManager.addItem(ITEM_STONE, stoneTex, p, 1);
                     break;
                 }
@@ -1129,7 +1357,9 @@ void updateSurvivalStatsAndQuests(
         if (qInfo.progress >= goal && goal > 0) {
             qInfo.isCompleted = true;
             currency += 50;
-            authManager.updateQuestProgress(username.c_str(), qInfo.progress, true);
+            std::thread([&authManager, username, prog = qInfo.progress]() {
+                try { authManager.updateQuestProgress(username.c_str(), prog, true); } catch (...) {}
+            }).detach();
             latestPlayerMsg = "DAILY QUEST COMPLETED! +50 Gold Reward!";
             bubbleTimer = 5.0f;
         }

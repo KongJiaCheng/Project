@@ -8,6 +8,54 @@
 #include <algorithm>
 
 GameSettings globalSettings;
+sf::Music* currentActiveMusic = nullptr;
+
+void updateActiveMusicVolume()
+{
+    float vol = static_cast<float>(std::clamp(globalSettings.volume, 0, 100));
+    sf::Listener::setGlobalVolume(vol);
+    if (currentActiveMusic) {
+        currentActiveMusic->setVolume(vol);
+    }
+}
+
+void applyGlobalVolume(float volume)
+{
+    globalSettings.volume = static_cast<int>(std::clamp(volume, 0.f, 100.f));
+    updateActiveMusicVolume();
+}
+
+void saveSettingsToFile()
+{
+    try {
+        std::ofstream f("settings.cfg");
+        if (f.is_open()) {
+            f << "volume=" << globalSettings.volume << "\n";
+            f << "brightness=" << globalSettings.brightness << "\n";
+            f << "resolutionIndex=" << globalSettings.resolutionIndex << "\n";
+        }
+    } catch (...) {}
+}
+
+void loadSettingsFromFile()
+{
+    try {
+        std::ifstream f("settings.cfg");
+        if (!f.is_open()) return;
+        std::string line;
+        while (std::getline(f, line)) {
+            auto eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            std::string key = line.substr(0, eq);
+            std::string val = line.substr(eq + 1);
+            try {
+                if (key == "volume") globalSettings.volume = std::clamp(std::stoi(val), 0, 100);
+                else if (key == "brightness") globalSettings.brightness = std::clamp(std::stoi(val), 0, 100);
+                else if (key == "resolutionIndex") globalSettings.resolutionIndex = std::stoi(val);
+            } catch (...) {}
+        }
+    } catch (...) {}
+}
 
 bool isMouseInside(const sf::RectangleShape& box, sf::RenderWindow& window)
 {
@@ -177,8 +225,10 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
     {
         while (const std::optional event = window.pollEvent())
         {
-            if (event->is<sf::Event::Closed>())
+            if (event->is<sf::Event::Closed>()) {
+                saveSettingsToFile();
                 window.close();
+            }
 
             if (auto* key = event->getIf<sf::Event::KeyPressed>())
             {
@@ -191,8 +241,9 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
                 }
 
                 if (key->scancode == sf::Keyboard::Scancode::Escape) {
+                    saveSettingsToFile();
                     window.setView(oldView);
-                    return; // <-- Return to main menu
+                    return; // <-- Return to main menu or in-game
                 }
 
                 if (key->scancode == sf::Keyboard::Scancode::A || key->scancode == sf::Keyboard::Scancode::Left) {
@@ -221,11 +272,29 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
                         waitingForKeybind = -1;
                     }
 
-                    if (isMouseInside(volumeKnob, window) || isMouseInside(volumeBar, window))
-                        draggingVol = true;
+                    sf::Vector2f mClick = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+                    if (back.getGlobalBounds().contains(mClick)) {
+                        saveSettingsToFile();
+                        window.setView(oldView);
+                        return;
+                    }
 
-                    if (isMouseInside(brightnessKnob, window) || isMouseInside(brightnessBar, window))
+                    if (isMouseInside(volumeKnob, window) || isMouseInside(volumeBar, window)) {
+                        draggingVol = true;
+                        float newX = std::clamp(mClick.x - volumeBar.getPosition().x, 0.f, 500.f);
+                        volume = static_cast<int>((newX / 500.f) * 100.f);
+                        volumeKnob.setPosition({ volumeBar.getPosition().x + newX - 15.f, volumeKnob.getPosition().y });
+                        updateActiveMusicVolume();
+                    }
+
+                    if (isMouseInside(brightnessKnob, window) || isMouseInside(brightnessBar, window)) {
                         draggingBright = true;
+                        float newX = std::clamp(mClick.x - brightnessBar.getPosition().x, 0.f, 500.f);
+                        brightness = static_cast<int>((newX / 500.f) * 100.f);
+                        brightnessKnob.setPosition({ brightnessBar.getPosition().x + newX - 15.f, brightnessKnob.getPosition().y });
+                        float alpha = std::clamp(255.f - (brightness * 2.55f), 0.f, 255.f);
+                        brightnessOverlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(alpha)));
+                    }
 
                     for (size_t i = 0; i < binds.size(); ++i) {
                         if (isMouseInside(binds[i].box, window)) {
@@ -246,23 +315,18 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
             if (draggingVol)
             {
                 float newX = std::clamp(mouse.x - volumeBar.getPosition().x, 0.f, 500.f);
-
-                volume = (newX / 500.f) * 100.f;
-
+                volume = static_cast<int>((newX / 500.f) * 100.f);
                 volumeKnob.setPosition({ volumeBar.getPosition().x + newX - 15.f, volumeKnob.getPosition().y });
-
-                sf::Listener::setGlobalVolume(volume);  // works
+                updateActiveMusicVolume();
             }
 
             if (draggingBright)
             {
                 float newX = std::clamp(mouse.x - brightnessBar.getPosition().x, 0.f, 500.f);
-
-                brightness = (newX / 500.f) * 100.f;
-
+                brightness = static_cast<int>((newX / 500.f) * 100.f);
                 brightnessKnob.setPosition({ brightnessBar.getPosition().x + newX - 15.f, brightnessKnob.getPosition().y });
-
-                brightnessOverlay.setFillColor(sf::Color(0, 0, 0, 255 - brightness * 2.55f));
+                float alpha = std::clamp(255.f - (brightness * 2.55f), 0.f, 255.f);
+                brightnessOverlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(alpha)));
             }
         }
 
@@ -330,4 +394,6 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
 
         window.display();
     }
+    saveSettingsToFile();
+    window.setView(oldView);
 }

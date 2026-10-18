@@ -2,6 +2,7 @@
 #include <SFML/Graphics.hpp>
 #include <string>
 #include <vector>
+#include <map>
 #include <functional>
 
 class AuthManager;
@@ -15,6 +16,12 @@ struct StockItem {
     float predictedPrice;
     std::string trend;
     float volatility; // Volatility multiplier for price updates (e.g. 0.3 for low, 2.0 for high)
+    float quantity = 100.f;        // Simulated circulating supply (Qs)
+    float baseQuantity = 100.f;    // Baseline equilibrium supply (Qd)
+    int lifetimeVolume = 1000;     // Lifetime circulation/trade volume
+    float demand = 100.f;          // Qd: Market demand
+    float supply = 100.f;          // Qs: Market supply
+    float pFactor = 1.0f;          // p: Price adjustment factor
 };
 
 struct MarketTextures {
@@ -34,17 +41,34 @@ struct MarketTextures {
     const sf::Texture* woodRoofTex = nullptr;
     const sf::Texture* woodStairsTex = nullptr;
     const sf::Texture* bedTex = nullptr;
+    const sf::Texture* coalTex = nullptr;
+    const sf::Texture* ironOreTex = nullptr;
+    const sf::Texture* ironBarTex = nullptr;
+    const sf::Texture* goldOreTex = nullptr;
+    const sf::Texture* goldBarTex = nullptr;
+    const sf::Texture* copperOreTex = nullptr;
+    const sf::Texture* copperBarTex = nullptr;
+    const sf::Texture* diamondTex = nullptr;
 };
 
 std::vector<StockItem> createInitialStockMarket();
+void initStockMarket(std::vector<StockItem>& stockMarket, std::function<std::map<int, float>()> timedLoadAllPrices);
 void initStockMarket(std::vector<StockItem>& stockMarket, std::function<float(int, float)> timedLoadPrice);
 
 int getMarketItemPrice(int id, const std::vector<StockItem>& stockMarket);
 std::string getMarketItemName(int id, const std::vector<StockItem>& stockMarket);
 
 void adjustMarketItem(std::vector<StockItem>& stockMarket, int itemId, float percentChange, AuthManager& authManager);
+void adjustItemQuantitySupply(std::vector<StockItem>& stockMarket, int itemId, float deltaQty, AuthManager& authManager);
+void resetAllItemQuantities(std::vector<StockItem>& stockMarket, float targetQty, AuthManager& authManager);
 
 void updateStockMarketSimulation(std::vector<StockItem>& stockMarket, AuthManager& authManager);
+void runVirtualPlayerMarketGenerator(std::vector<StockItem>& stockMarket, AuthManager& authManager);
+float calculateMarketPrice(float Pold, float Qd, float Qs, float p);
+void applyDisasterFoodMarketImpact(std::vector<StockItem>& stockMarket, AuthManager& authManager);
+void restoreDisasterFoodMarketImpact(std::vector<StockItem>& stockMarket, AuthManager& authManager);
+void applyDroughtMarketImpact(std::vector<StockItem>& stockMarket, AuthManager& authManager);
+void restoreDroughtMarketImpact(std::vector<StockItem>& stockMarket, AuthManager& authManager);
 
 struct TradeRecord;
 
@@ -59,5 +83,26 @@ void drawStockMarketPage(
     sf::Clock& marketCursorBlink,
     int& marketScrollOffset,
     const MarketTextures& textures,
-    const std::vector<TradeRecord>& recentTrades
+    const std::vector<TradeRecord>& recentTrades,
+    bool isAdmin = false
+);
+
+void drawAdminQuantitySimulator(
+    sf::RenderWindow& window,
+    const sf::Font& uiFont,
+    unsigned int width,
+    unsigned int height,
+    const std::vector<StockItem>& stockMarket,
+    int scrollOffset,
+    const MarketTextures& textures
+);
+
+bool handleAdminQuantitySimulatorClicks(
+    sf::Vector2f uiPos,
+    unsigned int width,
+    unsigned int height,
+    std::vector<StockItem>& stockMarket,
+    int& scrollOffset,
+    bool& adminSimOpen,
+    AuthManager& authManager
 );

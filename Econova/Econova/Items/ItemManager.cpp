@@ -1,4 +1,4 @@
-﻿#include "ItemManager.h"
+#include "ItemManager.h"
 #include "ChickenMeat.h"
 #include "PigMeat.h"
 #include "ZombieFlesh.h"
@@ -140,45 +140,78 @@ void ItemManager::addItem(int id, const sf::Texture& texture, sf::Vector2f pos, 
     else if (id == ITEM_WOOL) {
         items.back().sprite.setScale({ 0.25f, 0.25f });
     }
+    else if (id == ITEM_COAL || id == ITEM_COPPER_ORE || id == ITEM_COPPER_BAR ||
+             id == ITEM_IRON_ORE || id == ITEM_IRON_BAR || id == ITEM_GOLD_ORE ||
+             id == ITEM_GOLD_BAR || id == ITEM_DIAMOND || id == ITEM_DROP_STONE) {
+        items.back().sprite.setScale({ 0.35f, 0.35f });
+    }
     gridInsert(idx, pos);
 }
 
 void ItemManager::draw(sf::RenderWindow& window)
 {
-    // A small delta time mock or just use fixed decrement per frame if we don't have dt here
-    // A better way is to pass dt to draw or update, but for now we just decrement it slightly each draw call
-    for (auto& i : items)
-    {
-        if (i.isHurt)
-        {
-            i.sprite.setColor(sf::Color(255, 100, 100));
-            i.hurtTimer -= 0.016f; // approximate 60fps
-            if (i.hurtTimer <= 0.f)
-            {
-                i.isHurt = false;
-                i.sprite.setColor(sf::Color::White);
+    // View frustum culling using spatial grid to only check on-screen cells
+    sf::View view = window.getView();
+    sf::Vector2f center = view.getCenter();
+    sf::Vector2f size = view.getSize();
+    const float margin = 450.f; // generous margin for tall trees & wide objects
+    float minX = center.x - size.x * 0.5f - margin;
+    float maxX = center.x + size.x * 0.5f + margin;
+    float minY = center.y - size.y * 0.5f - margin;
+    float maxY = center.y + size.y * 0.5f + margin;
+
+    int cxMin = static_cast<int>(std::floor(minX / GRID_CELL));
+    int cxMax = static_cast<int>(std::floor(maxX / GRID_CELL));
+    int cyMin = static_cast<int>(std::floor(minY / GRID_CELL));
+    int cyMax = static_cast<int>(std::floor(maxY / GRID_CELL));
+
+    for (int cx = cxMin; cx <= cxMax; ++cx) {
+        for (int cy = cyMin; cy <= cyMax; ++cy) {
+            auto it = spatialGrid.find(cellKey(cx, cy));
+            if (it == spatialGrid.end()) continue;
+
+            for (size_t idx : it->second) {
+                if (idx >= items.size()) continue;
+                auto& i = items[idx];
+
+                if (i.isHurt)
+                {
+                    i.hurtTimer -= 0.016f; // approximate 60fps
+                    if (i.hurtTimer <= 0.f)
+                    {
+                        i.isHurt = false;
+                        i.sprite.setColor(sf::Color::White);
+                    }
+                    else
+                    {
+                        i.sprite.setColor(sf::Color(255, 100, 100));
+                    }
+                }
+
+                sf::Vector2f pos = i.sprite.getPosition();
+                // Skip items that are off-screen
+                if (pos.x < minX || pos.x > maxX || pos.y < minY || pos.y > maxY)
+                {
+                    continue;
+                }
+
+                window.draw(i.sprite);
+
+                if ((i.id == ITEM_TREE || i.id == ITEM_STONE) && i.health < i.maxHealth)
+                {
+                    sf::FloatRect bounds = i.sprite.getGlobalBounds();
+                    sf::RectangleShape hpBg({ 40.f, 6.f });
+                    hpBg.setFillColor(sf::Color::Red);
+                    hpBg.setPosition({ bounds.position.x + bounds.size.x / 2.f - 20.f, bounds.position.y - 15.f });
+
+                    sf::RectangleShape hpFg({ 40.f * (std::max(0.f, i.health) / i.maxHealth), 6.f });
+                    hpFg.setFillColor(sf::Color::Green);
+                    hpFg.setPosition(hpBg.getPosition());
+
+                    window.draw(hpBg);
+                    window.draw(hpFg);
+                }
             }
-        }
-        else
-        {
-            i.sprite.setColor(sf::Color::White);
-        }
-
-        window.draw(i.sprite);
-
-        if (i.id == ITEM_TREE && i.health < i.maxHealth)
-        {
-            sf::FloatRect bounds = i.sprite.getGlobalBounds();
-            sf::RectangleShape hpBg({ 40.f, 6.f });
-            hpBg.setFillColor(sf::Color::Red);
-            hpBg.setPosition({ bounds.position.x + bounds.size.x / 2.f - 20.f, bounds.position.y - 15.f });
-
-            sf::RectangleShape hpFg({ 40.f * (std::max(0.f, i.health) / i.maxHealth), 6.f });
-            hpFg.setFillColor(sf::Color::Green);
-            hpFg.setPosition(hpBg.getPosition());
-
-            window.draw(hpBg);
-            window.draw(hpFg);
         }
     }
 }
@@ -186,6 +219,41 @@ void ItemManager::draw(sf::RenderWindow& window)
 // --------------------------------------------------
 // World logic
 // --------------------------------------------------
+
+bool ItemManager::isResourceBlocking(sf::Vector2f targetPos) const
+{
+    const float RES_CULL = 350.f;
+    const float RES_CULL_SQ = RES_CULL * RES_CULL;
+
+    int cxMin = static_cast<int>(std::floor((targetPos.x - RES_CULL) / GRID_CELL));
+    int cxMax = static_cast<int>(std::floor((targetPos.x + RES_CULL) / GRID_CELL));
+    int cyMin = static_cast<int>(std::floor((targetPos.y - RES_CULL) / GRID_CELL));
+    int cyMax = static_cast<int>(std::floor((targetPos.y + RES_CULL) / GRID_CELL));
+
+    for (int cx = cxMin; cx <= cxMax; ++cx) {
+        for (int cy = cyMin; cy <= cyMax; ++cy) {
+            auto it = spatialGrid.find(cellKey(cx, cy));
+            if (it == spatialGrid.end()) continue;
+
+            for (size_t idx : it->second) {
+                if (idx >= items.size()) continue;
+                const auto& item = items[idx];
+                if (item.id == ITEM_TREE || item.id == ITEM_STONE) {
+                    sf::Vector2f ipos = item.sprite.getPosition();
+                    float idxDist = ipos.x - targetPos.x;
+                    float idyDist = ipos.y - targetPos.y;
+                    if (idxDist * idxDist + idyDist * idyDist > RES_CULL_SQ) continue;
+
+                    sf::FloatRect b = item.sprite.getGlobalBounds();
+                    b.position.x += b.size.x * 0.3f; b.size.x *= 0.4f;
+                    b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
+                    if (b.contains(targetPos)) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
 
 std::vector<int> ItemManager::tryPickup(
     const sf::Sprite& player,
@@ -198,95 +266,122 @@ std::vector<int> ItemManager::tryPickup(
         return pickedIds;
 
     sf::Vector2f ppos = getSpriteCenterSafe(player);
+    float maxRadSq = maxRadius * maxRadius;
 
-    for (auto it = items.begin(); it != items.end(); )
-    {
-        if (it->id == ITEM_TREE)
-        {
-            ++it;
-            continue;
+    int cxMin = static_cast<int>(std::floor((ppos.x - maxRadius) / GRID_CELL));
+    int cxMax = static_cast<int>(std::floor((ppos.x + maxRadius) / GRID_CELL));
+    int cyMin = static_cast<int>(std::floor((ppos.y - maxRadius) / GRID_CELL));
+    int cyMax = static_cast<int>(std::floor((ppos.y + maxRadius) / GRID_CELL));
+
+    std::vector<size_t> candidateIndices;
+    for (int cx = cxMin; cx <= cxMax; ++cx) {
+        for (int cy = cyMin; cy <= cyMax; ++cy) {
+            auto it = spatialGrid.find(cellKey(cx, cy));
+            if (it == spatialGrid.end()) continue;
+            for (size_t idx : it->second) {
+                if (idx < items.size() && items[idx].id != ITEM_TREE && items[idx].id != ITEM_STONE) {
+                    candidateIndices.push_back(idx);
+                }
+            }
         }
+    }
 
-        sf::Vector2f ipos = getSpriteCenterSafe(it->sprite);
+    if (candidateIndices.empty()) return pickedIds;
+
+    std::sort(candidateIndices.begin(), candidateIndices.end());
+    candidateIndices.erase(std::unique(candidateIndices.begin(), candidateIndices.end()), candidateIndices.end());
+
+    std::vector<size_t> toErase;
+    for (size_t idx : candidateIndices) {
+        sf::Vector2f ipos = getSpriteCenterSafe(items[idx].sprite);
         float dx = ipos.x - ppos.x;
         float dy = ipos.y - ppos.y;
-        float dist = std::sqrt(dx * dx + dy * dy);
-
-        if (dist < maxRadius)
-        {
-            int pickedID = it->id;
-            inventory.addItem(
-                pickedID,
-                it->sprite.getTexture(),
-                it->count
-            );
-            pickedIds.push_back(pickedID);
-            it = items.erase(it);
-        }
-        else
-        {
-            ++it;
+        if (dx * dx + dy * dy < maxRadSq) {
+            int pickedID = items[idx].id;
+            int inventoryID = (pickedID == ITEM_DROP_STONE) ? ITEM_STONE : pickedID;
+            const sf::Texture* itTex = nullptr;
+            try {
+                itTex = &items[idx].sprite.getTexture();
+            } catch (...) {
+                itTex = nullptr;
+            }
+            if (itTex) {
+                inventory.addItem(
+                    inventoryID,
+                    *itTex,
+                    items[idx].count
+                );
+                pickedIds.push_back(pickedID);
+                toErase.push_back(idx);
+            }
         }
     }
 
-    if (!pickedIds.empty()) {
+    if (!toErase.empty()) {
+        std::sort(toErase.begin(), toErase.end(), std::greater<size_t>());
+        for (size_t idx : toErase) {
+            if (idx < items.size()) {
+                items.erase(items.begin() + idx);
+            }
+        }
         rebuildGrid();
     }
+
     return pickedIds;
+}
+
+std::pair<float, int> ItemManager::getNearestPickupItem(const sf::Sprite& player, float maxQueryRadius) const
+{
+    if (items.empty())
+        return { std::numeric_limits<float>::infinity(), -1 };
+
+    sf::Vector2f ppos = player.getPosition();
+    float maxDistSq = maxQueryRadius * maxQueryRadius;
+    float bestDistSq = maxDistSq;
+    int bestID = -1;
+
+    int cxMin = static_cast<int>(std::floor((ppos.x - maxQueryRadius) / GRID_CELL));
+    int cxMax = static_cast<int>(std::floor((ppos.x + maxQueryRadius) / GRID_CELL));
+    int cyMin = static_cast<int>(std::floor((ppos.y - maxQueryRadius) / GRID_CELL));
+    int cyMax = static_cast<int>(std::floor((ppos.y + maxQueryRadius) / GRID_CELL));
+
+    for (int cx = cxMin; cx <= cxMax; ++cx) {
+        for (int cy = cyMin; cy <= cyMax; ++cy) {
+            auto it = spatialGrid.find(cellKey(cx, cy));
+            if (it == spatialGrid.end()) continue;
+
+            for (size_t idx : it->second) {
+                if (idx >= items.size()) continue;
+                const auto& item = items[idx];
+                if (item.id == ITEM_TREE || item.id == ITEM_STONE) continue;
+
+                sf::Vector2f ipos = item.sprite.getPosition();
+                float dx = ipos.x - ppos.x;
+                float dy = ipos.y - ppos.y;
+                float distSq = dx * dx + dy * dy;
+
+                if (distSq < bestDistSq) {
+                    bestDistSq = distSq;
+                    bestID = (item.id == ITEM_DROP_STONE) ? ITEM_STONE : item.id;
+                }
+            }
+        }
+    }
+
+    if (bestID != -1) {
+        return { std::sqrt(bestDistSq), bestID };
+    }
+    return { std::numeric_limits<float>::infinity(), -1 };
 }
 
 float ItemManager::getNearestDistance(const sf::Sprite& player) const
 {
-    if (items.empty())
-        return std::numeric_limits<float>::infinity();
-
-    sf::Vector2f ppos = getSpriteCenterSafe(player);
-    float bestDist = std::numeric_limits<float>::max();
-
-    for (const auto& it : items)
-    {
-        if (it.id == ITEM_TREE) continue;
-
-        sf::Vector2f ipos = getSpriteCenterSafe(it.sprite);
-
-        float dx = ipos.x - ppos.x;
-        float dy = ipos.y - ppos.y;
-        float dist = std::sqrt(dx * dx + dy * dy);
-
-        if (dist < bestDist)
-            bestDist = dist;
-    }
-
-    return bestDist;
+    return getNearestPickupItem(player, 400.f).first;
 }
 
 int ItemManager::getNearestItemID(const sf::Sprite& player) const
 {
-    if (items.empty())
-        return -1;
-
-    sf::Vector2f ppos = getSpriteCenterSafe(player);
-    float bestDist = std::numeric_limits<float>::max();
-    int bestID = -1;
-
-    for (const auto& it : items)
-    {
-        if (it.id == ITEM_TREE) continue;
-
-        sf::Vector2f ipos = getSpriteCenterSafe(it.sprite);
-
-        float dx = ipos.x - ppos.x;
-        float dy = ipos.y - ppos.y;
-        float dist = std::sqrt(dx * dx + dy * dy);
-
-        if (dist < bestDist)
-        {
-            bestDist = dist;
-            bestID = it.id;
-        }
-    }
-
-    return bestID;
+    return getNearestPickupItem(player, 400.f).second;
 }
 
 bool ItemManager::isAreaFreeExplicit(
@@ -298,13 +393,20 @@ bool ItemManager::isAreaFreeExplicit(
     if (!newTex)
         return false;
 
-    float w = static_cast<float>(newTex->getSize().x);
-    float h = static_cast<float>(newTex->getSize().y);
+    // Use a realistic ground footprint (trees: ~80x80, stones: ~100x100)
+    // rather than using raw unscaled 960x960 texture bounds, which caused 64-cell spatial queries
+    // and false collision rejections.
+    float footW = 80.f;
+    float footH = 80.f;
+    if (newTex->getSize().x < 200 && newTex->getSize().y < 200) {
+        footW = static_cast<float>(newTex->getSize().x);
+        footH = static_cast<float>(newTex->getSize().y);
+    }
 
-    float newX = pos.x - minDistance;
-    float newY = pos.y - minDistance;
-    float newW = w + minDistance * 2.f;
-    float newH = h + minDistance * 2.f;
+    float newX = pos.x - footW * 0.5f - minDistance;
+    float newY = pos.y - footH * 0.5f - minDistance;
+    float newW = footW + minDistance * 2.f;
+    float newH = footH + minDistance * 2.f;
 
     // Determine which grid cells the query AABB overlaps
     int cxMin = static_cast<int>(std::floor(newX / GRID_CELL));
@@ -319,13 +421,14 @@ bool ItemManager::isAreaFreeExplicit(
 
             for (size_t idx : it->second) {
                 if (idx >= items.size()) continue;
-                RectF r = getSpriteBoundsExplicit(items[idx].sprite);
+                sf::Vector2f ipos = items[idx].sprite.getPosition();
+                float itemFoot = (items[idx].id == ITEM_TREE) ? 60.f : 80.f;
 
                 bool overlap =
-                    newX < r.x + r.w &&
-                    newX + newW > r.x &&
-                    newY < r.y + r.h &&
-                    newY + newH > r.y;
+                    newX < (ipos.x + itemFoot * 0.5f) &&
+                    (newX + newW) > (ipos.x - itemFoot * 0.5f) &&
+                    newY < (ipos.y + itemFoot * 0.5f) &&
+                    (newY + newH) > (ipos.y - itemFoot * 0.5f);
 
                 if (overlap)
                     return false;

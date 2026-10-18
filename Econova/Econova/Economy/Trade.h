@@ -61,6 +61,51 @@ class AuthManager;
 struct StockItem;
 class TextInput;
 
+std::string evaluateEconomicTradeWarning(
+    bool isP2P,
+    bool isSelling,
+    int playerGoldCost,
+    int playerGoldGained,
+    int currentCurrency,
+    const std::vector<std::pair<int, int>>& playerGivingItems,
+    const std::vector<std::pair<int, int>>& playerReceivingItems,
+    bool disasterActive,
+    const std::string& currentDisasterType,
+    const std::vector<StockItem>& stockMarket
+);
+
+void executeDirectNPCTrade(
+    TradeSlot playerTradeSlots[4],
+    TradeSlot npcTradeSlots[4],
+    bool isSellingToNPC,
+    int& npcTradeGold,
+    std::string& npcGoldInput,
+    int& playerTradeGold,
+    std::string& playerGoldInput,
+    bool& hasBargained,
+    bool& bargainAccepted,
+    std::string& bargainStatus,
+    int& currency,
+    bool& tradeMenuOpen,
+    std::string& latestPlayerMsg,
+    float& bubbleTimer,
+    const std::string& username,
+    float elapsedGameTime,
+    int level,
+    int exp,
+    int hungerMultiplier,
+    int thirstMultiplier,
+    float hunger,
+    float thirst,
+    Inventory& inventory,
+    AuthManager& authManager,
+    std::function<int(int id)> getItemPrice,
+    std::function<std::string(int id)> getItemName,
+    std::function<void(int id, float percentChange)> adjustMarketItem,
+    bool disasterActive = false,
+    const std::string& currentDisasterType = ""
+);
+
 bool handleP2PTradeClick(
     sf::Vector2f uiPos,
     sf::Vector2i mousePixelPos,
@@ -89,7 +134,14 @@ bool handleP2PTradeClick(
     int& quantityPromptSourceSlot,
     bool& quantityPromptIsP2P,
     TextInput& quantityInput,
-    sf::RenderWindow& window
+    sf::RenderWindow& window,
+    bool& tradeConfirmOpen,
+    std::string& tradeConfirmMessage,
+    bool& tradeConfirmIsP2P,
+    int currency,
+    bool disasterActive,
+    const std::string& currentDisasterType,
+    const std::vector<StockItem>& stockMarket
 );
 
 bool handleNPCTradeClick(
@@ -134,7 +186,12 @@ bool handleNPCTradeClick(
     int& quantityPromptSourceSlot,
     bool& quantityPromptIsP2P,
     TextInput& quantityInput,
-    sf::RenderWindow& window
+    sf::RenderWindow& window,
+    bool& tradeConfirmOpen,
+    std::string& tradeConfirmMessage,
+    bool& tradeConfirmIsP2P,
+    bool disasterActive,
+    const std::string& currentDisasterType
 );
 
 bool executeNPCTradeConfirm(
@@ -187,12 +244,17 @@ bool handleNPCTradeConfirmClicks(
     unsigned int width,
     unsigned int height,
     bool& tradeConfirmOpen,
+    std::string& tradeConfirmMessage,
+    bool& tradeConfirmIsP2P,
     bool& tradeMenuOpen,
     bool& tradeBoxesTicked,
     TradeSlot playerTradeSlots[4],
     TradeSlot npcTradeSlots[4],
+    bool& isSellingToNPC,
     int& playerTradeGold,
+    std::string& playerGoldInput,
     int& npcTradeGold,
+    std::string& npcGoldInput,
     bool& hasBargained,
     bool& bargainAccepted,
     std::string& bargainStatus,
@@ -208,7 +270,22 @@ bool handleNPCTradeConfirmClicks(
     float thirst,
     Inventory& inventory,
     AuthManager& authManager,
-    std::vector<StockItem>& stockMarket
+    std::vector<StockItem>& stockMarket,
+    std::function<int(int id)> getItemPrice,
+    std::function<std::string(int id)> getItemName,
+    std::function<void(int id, float percentChange)> adjustMarketItem,
+    std::string& latestPlayerMsg,
+    float& bubbleTimer,
+    int p2pTradeID = -1,
+    TradeSlot myP2PSlots[4] = nullptr,
+    int myP2PGold = 0,
+    bool* p2pOfferDirty = nullptr,
+    bool* p2pMyReady = nullptr,
+    bool p2pPartnerReady = false,
+    std::string* p2pStatusMsg = nullptr,
+    const std::string& p2pPartner = "",
+    bool disasterActive = false,
+    const std::string& currentDisasterType = ""
 );
 
 void pollAndSyncP2PTrade(
@@ -245,7 +322,9 @@ void pollAndSyncP2PTrade(
     int hungerMultiplier,
     int thirstMultiplier,
     bool& p2pOfferDirty,
-    AuthManager& authManager
+    AuthManager& authManager,
+    bool disasterActive = false,
+    const std::string& currentDisasterType = ""
 );
 
 

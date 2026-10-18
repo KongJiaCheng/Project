@@ -8,6 +8,7 @@
 #include <tuple>
 #include <mutex>
 #include <atomic>
+#include <map>
 
 struct PlayerStats {
     float hunger;
@@ -88,6 +89,16 @@ struct P2PTradeState {
     bool targetReady = false;
 };
 
+// ── Scheduled disaster from admin panel ──────────────────────────────────────
+struct DisasterEvent {
+    int  eventID     = -1;
+    std::string type = "";          // "diarrhea" | "drought"
+    long long scheduledAt = 0;      // Unix epoch seconds (UTC)
+    int  durationSeconds  = 600;    // default 10 min
+    std::string status    = "";     // pending / active / completed / cancelled
+    std::string createdBy = "";
+};
+
 class AuthManager {
 public:
     AuthManager() : driver(nullptr), con(nullptr) {}
@@ -95,6 +106,8 @@ public:
 
     void saveMarketPrice(int itemID, float price);
     float loadMarketPrice(int itemID);
+    void saveAllMarketPrices(const std::vector<std::pair<int, float>>& prices);
+    std::map<int, float> loadAllMarketPrices();
 
     void shutdownDB();
     void savePlayerStats(const sql::SQLString& username, float hunger, float thirst, int currency, int level, int exp, float elapsedTime, int hungerMultiplier, int thirstMultiplier);
@@ -111,12 +124,21 @@ public:
     OnlinePlayer getSelfOnlineInfo(const sql::SQLString& username);
     void sendCommand(const sql::SQLString& fromUser, const sql::SQLString& toUser, const sql::SQLString& cmd);
     void clearPull(const sql::SQLString& username);
+    void setPlayerOffline(const sql::SQLString& username);
 
     bool sendChatMessage(const sql::SQLString& username, const sql::SQLString& message, std::string& outError);
     std::vector<std::pair<std::string, std::string>> fetchChatMessages(int limit = 10, int sinceMsgId = 0);
     int getMaxMessageID();
+    void clearPlayerChatMessages(const sql::SQLString& username);
+    void cleanupInactiveChatMessages();
+    void clearAllChatMessages();
 
-    bool initDB();
+    bool initDB(bool forceLocal = false);
+    bool isConnected() const;
+    bool isOfflineMode() const;
+    void setOfflineMode(bool offline);
+    std::string getDBHost() const;
+    static bool isTargetedAdmin(const std::string& username, const std::string& email = "");
     bool registerUser(const sql::SQLString& username, const sql::SQLString& password, const sql::SQLString& email);
     bool loginUser(const sql::SQLString& username, const sql::SQLString& password, std::string& errMessage);
 
@@ -161,9 +183,29 @@ public:
     int       getOrCreateWorldSeed();
     long long getServerEpochSeconds();
 
+    // ── Disaster scheduling (admin panel) ────────────────────────────────────
+    int  scheduleDisaster(const std::string& type, long long scheduledAtEpoch,
+                          int durationSeconds, const std::string& createdBy);
+    DisasterEvent fetchPendingDisaster();          // returns first due-now pending event; empty if none
+    void markDisasterActive(int eventID);
+    void markDisasterCompleted(int eventID);
+    void cancelDisasterEvent(int eventID);
+    std::vector<DisasterEvent> getDisasterHistory(int limit = 20);
+
+    // Background chat notifications
+    void setPendingChatNotification(const std::string& notif);
+    std::string getAndClearChatNotification();
+
+    // Death / Permadeath
+    void clearPlayerData(const sql::SQLString& username); // wipes inventory, structures, campfires, chests, resets stats
+
 private:
     void ensureCampfireColumns();
     sql::mysql::MySQL_Driver* driver = nullptr;
     sql::Connection* con = nullptr;
     std::recursive_mutex dbMutex;
+    std::atomic<bool> isLocalModeActive{ false };
+    std::string currentConnectedHost = "";
+    std::mutex chatNotifMutex;
+    std::string pendingChatNotification = "";
 };

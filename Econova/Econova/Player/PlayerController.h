@@ -54,7 +54,9 @@ void updateSaplings(
     std::vector<PlantedSapling>& plantedSaplings,
     ItemManager& itemManager,
     const sf::Texture& treeTex,
-    float dt
+    float dt,
+    const std::vector<PlacedStructure>& structures = {},
+    const std::vector<PlacedCampfire>& campfires = {}
 );
 
 struct DailyQuest;
@@ -175,6 +177,7 @@ void handlePlayerMovementAndCombat(
     sf::Vector2f& tutLastPos,
     bool& tutAttacked,
     int& tutWoodGathered,
+    int& tutStoneGathered,
     std::vector<std::unique_ptr<Animal>>& animals,
     ItemManager& itemManager,
     std::vector<std::unique_ptr<Monster>>& monsters,
@@ -197,6 +200,11 @@ void updateWorldEntitiesAndDrops(
     const sf::Texture& woodTex,
     const sf::Texture& saplingTex,
     const sf::Texture& stoneTex,
+    const sf::Texture& coalTex,
+    const sf::Texture& copperOreTex,
+    const sf::Texture& ironOreTex,
+    const sf::Texture& goldOreTex,
+    const sf::Texture& diamondTex,
     bool tutorialActive,
     int tutorialStep,
     int& tutStoneGathered,

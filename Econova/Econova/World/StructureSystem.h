@@ -20,6 +20,25 @@ struct PlacedCampfire {
     int outputCount = 0;
     bool menuOpen = false;
     std::string owner = "";
+    float health, maxHealth;
+    bool isHurt = false;
+    float hurtTimer = 0.f;
+    std::optional < sf::Sprite> sprite;
+    int id;
+    PlacedCampfire()
+        : id(0), owner(""),
+          fuel(0), inputItem(0), inputCount(0), outputItem(0), outputCount(0),
+          timeRemaining(0.f), menuOpen(false), health(100.f), maxHealth(100.f) {}
+
+    PlacedCampfire(int i, const sf::Texture& tex, float rot = 0.f, bool open = false, float sh = 0.f, const std::string& own = "")
+        : id(i), owner(own),
+        fuel(0), inputItem(0), inputCount(0), outputItem(0), outputCount(0), timeRemaining(0.f), menuOpen(false) {
+        sprite.emplace(tex);
+        maxHealth = 100.f;
+        if (id == ITEM_CAMPFIRE) maxHealth = 150.f;
+        health = maxHealth;
+    }
+
 };
 
 struct PlantedSapling {
@@ -28,6 +47,16 @@ struct PlantedSapling {
     bool grown = false;
     float rotation = 0.f;
 };
+
+
+// A single slot in a placed chest
+struct ChestSlot {
+    int id = 0;
+    int count = 0;
+    const sf::Texture* tex = nullptr;  // non-owning pointer; valid as long as game assets live
+};
+
+static constexpr int CHEST_SLOT_COUNT = 20;
 
 struct PlacedStructure {
     int id;
@@ -47,6 +76,8 @@ struct PlacedStructure {
     int outputCount = 0;
     float timeRemaining = 0.f;
     bool menuOpen = false;
+    sf::Vector2f position;
+    ChestSlot chestSlots[CHEST_SLOT_COUNT] = {};   // chest storage slots
 
     PlacedStructure(int i, const sf::Texture& tex, float rot = 0.f, bool open = false, float sh = 0.f, const std::string& own = "")
         : id(i), rotation(rot), isOpen(open), shearY(sh), owner(own),
@@ -58,6 +89,7 @@ struct PlacedStructure {
         else if (id == ITEM_BED) maxHealth = 120.f;
         else if (id == ITEM_CHEST) maxHealth = 150.f;
         health = maxHealth;
+        for (auto& slot : chestSlots) { slot.id = 0; slot.count = 0; slot.tex = nullptr; }
     }
 };
 
@@ -95,7 +127,21 @@ void drawFurnaceMenu(
     const sf::Texture& woodTex,
     const sf::Texture& cookedChickenTex,
     const sf::Texture& cookedPigTex,
-    const sf::Texture& cookedSheepTex
+    const sf::Texture& cookedSheepTex,
+    std::function<const sf::Texture*(int id)> getItemTexture = nullptr
+);
+
+class Inventory;
+
+void drawChestMenu(
+    sf::RenderWindow& window,
+    const sf::Font& uiFont,
+    unsigned int width,
+    unsigned int height,
+    PlacedStructure& chest,
+    Inventory& inventory,
+    int chestSelectedInvSlot,
+    std::function<const sf::Texture*(int id)> getItemTexture
 );
 
 void drawQuantityPrompt(
@@ -106,14 +152,18 @@ void drawQuantityPrompt(
     bool isCampfire,
     int campfireSlot,
     int maxAmount,
-    TextInput& quantityInput
+    TextInput& quantityInput,
+    bool isChest = false,
+    int chestSlotIdx = -1,
+    bool isChestRetrieve = false
 );
 
 void drawTradeConfirmPopup(
     sf::RenderWindow& window,
     const sf::Font& uiFont,
     unsigned int width,
-    unsigned int height
+    unsigned int height,
+    const std::string& warningMessage = ""
 );
 
 void applyStructureScale(
@@ -124,7 +174,6 @@ void applyStructureScale(
     float& outShearY
 );
 
-class Inventory;
 struct QuestInfo;
 
 bool handleSaplingPlacementClicks(

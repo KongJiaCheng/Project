@@ -391,9 +391,19 @@ void drawNPCTrade(
                 totalCost += (int)(getItemPrice(npcTradeSlots[i].id) * npcTradeSlots[i].count * priceMul);
         }
         if (totalCost > 0) {
-            std::string msg = "Cost: " + std::to_string(totalCost) + " G" + (bargainAccepted ? "  [10% OFF!]" : "");
+            int playerTradeGold = 0;
+            try {
+                if (!playerGoldInput.empty()) playerTradeGold = std::stoi(playerGoldInput);
+            } catch (...) { playerTradeGold = 0; }
+            int effectiveCost = (playerTradeGold > 0) ? playerTradeGold : totalCost;
+            std::string msg;
+            if (playerTradeGold > 0) {
+                msg = "Price: " + std::to_string(totalCost) + " G  |  Your Offer: " + std::to_string(playerTradeGold) + " G";
+            } else {
+                msg = "Cost: " + std::to_string(totalCost) + " G" + (bargainAccepted ? "  [10% OFF!]" : "");
+            }
             sf::Text stTxt(uiFont, msg, 15);
-            stTxt.setFillColor(totalCost <= currency ? sf::Color(100, 220, 100) : sf::Color(220, 80, 80));
+            stTxt.setFillColor(effectiveCost <= currency ? sf::Color(100, 220, 100) : sf::Color(220, 80, 80));
             stTxt.setPosition({ tBoxRect.position.x + 20.f, tBoxRect.position.y + 310.f });
             window.draw(stTxt);
         } else {
@@ -459,6 +469,366 @@ void drawNPCTrade(
 #include "ItemID.h"
 #include <cmath>
 
+std::string evaluateEconomicTradeWarning(
+    bool isP2P,
+    bool isSelling,
+    int playerGoldCost,
+    int playerGoldGained,
+    int currentCurrency,
+    const std::vector<std::pair<int, int>>& playerGivingItems,
+    const std::vector<std::pair<int, int>>& playerReceivingItems,
+    bool disasterActive,
+    const std::string& currentDisasterType,
+    const std::vector<StockItem>& stockMarket
+) {
+    auto findStock = [&](int id) -> const StockItem* {
+        for (const auto& item : stockMarket) {
+            if (item.id == id) return &item;
+        }
+        return nullptr;
+    };
+
+    float givingCurrentValue = 0.f;
+    float givingBaseValue = 0.f;
+    for (const auto& p : playerGivingItems) {
+        int id = p.first;
+        int qty = p.second;
+        if (qty <= 0) continue;
+        const StockItem* s = findStock(id);
+        float cp = s ? s->currentPrice : 10.f;
+        float bp = s ? s->basePrice : 10.f;
+        givingCurrentValue += cp * qty;
+        givingBaseValue += bp * qty;
+    }
+
+    float receivingCurrentValue = 0.f;
+    float receivingBaseValue = 0.f;
+    for (const auto& p : playerReceivingItems) {
+        int id = p.first;
+        int qty = p.second;
+        if (qty <= 0) continue;
+        const StockItem* s = findStock(id);
+        float cp = s ? s->currentPrice : 10.f;
+        float bp = s ? s->basePrice : 10.f;
+        receivingCurrentValue += cp * qty;
+        receivingBaseValue += bp * qty;
+    }
+
+    // 1. Low budget / survival risk:
+    // When the player only have nearly enough budget to buy an item, alert the player with:
+    // "Are you sure you want to make this trade? You will unable to buy essential products like food in order to survive!!"
+    if (playerGoldCost > 0 && (currentCurrency - playerGoldCost) < 50) {
+        return "Are you sure you want to make this trade? You will unable to buy essential products like food in order to survive!!";
+    }
+
+    // 2. Selling related disaster products for cheap during disaster event:
+    // "Are you sure you going to sell this item for cheap during disaster event? It will rise back after the disaster!"
+    if (disasterActive && !playerGivingItems.empty()) {
+        for (const auto& p : playerGivingItems) {
+            int id = p.first;
+            int qty = p.second;
+            if (qty <= 0) continue;
+            const StockItem* s = findStock(id);
+            float bp = s ? s->basePrice : 10.f;
+            float cp = s ? s->currentPrice : 10.f;
+
+            bool isRawFood = (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_SHEEP_MEAT || id == ITEM_ZOMBIE_FLESH);
+            if ((currentDisasterType == "diarrhea" && isRawFood) || (cp < bp * 0.9f)) {
+                return "Are you sure you going to sell this item for cheap during disaster event? It will rise back after the disaster!";
+            }
+        }
+    }
+
+    // 3. Buying item for expensive during disaster event:
+    // "Are you sure you going to buy item for expensive during disaster event? it will drop back after the disaster!"
+    if (disasterActive && !playerReceivingItems.empty()) {
+        for (const auto& p : playerReceivingItems) {
+            int id = p.first;
+            int qty = p.second;
+            if (qty <= 0) continue;
+            const StockItem* s = findStock(id);
+            float bp = s ? s->basePrice : 10.f;
+            float cp = s ? s->currentPrice : 10.f;
+
+            bool isCookedFood = (id == ITEM_COOKED_CHICKEN || id == ITEM_COOKED_PIG || id == ITEM_COOKED_SHEEP);
+            bool isDroughtItem = (id == ITEM_WOOD || id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_SHEEP_MEAT ||
+                                  id == ITEM_COOKED_CHICKEN || id == ITEM_COOKED_PIG || id == ITEM_COOKED_SHEEP);
+
+            if ((currentDisasterType == "diarrhea" && isCookedFood) ||
+                (currentDisasterType == "drought" && isDroughtItem) ||
+                (cp > bp * 1.15f)) {
+                return "Are you sure you going to buy item for expensive during disaster event? it will drop back after the disaster!";
+            }
+        }
+    }
+
+    // 4. Irrational trading (Buying or Selling for so expensive / cheap):
+    // "Are you sure you going to buy/sell items for so expensive/cheap? You will regret after you doing this kind of action!"
+    if (isP2P) {
+        float totalOfferedValue = static_cast<float>(playerGoldCost) + givingCurrentValue;
+        float totalRequestedValue = static_cast<float>(playerGoldGained) + receivingCurrentValue;
+
+        if (totalRequestedValue > 0.f && totalOfferedValue > totalRequestedValue * 1.6f) {
+            return "Are you sure you going to buy items for so expensive? You will regret after you doing this kind of action!";
+        }
+        if (totalOfferedValue > 0.f && totalRequestedValue < totalOfferedValue * 0.55f) {
+            return "Are you sure you going to sell items for so cheap? You will regret after you doing this kind of action!";
+        }
+        if (totalRequestedValue > 30.f && totalOfferedValue < totalRequestedValue * 0.4f) {
+            return "Are you sure you going to buy items for so cheap? You will regret after you doing this kind of action!";
+        }
+    } else {
+        if (isSelling) {
+            // Player offering gold while selling items is completely unreasonable
+            if (playerGoldCost > 0) {
+                return "Are you sure you want to offer gold while selling items? This is an unreasonable offer! You will regret after doing this kind of action!";
+            }
+            float refValue = givingBaseValue > 0.f ? givingBaseValue : givingCurrentValue;
+            if (refValue > 10.f && static_cast<float>(playerGoldGained) < refValue * 0.65f) {
+                return "Are you sure you going to sell items for so cheap? This price is unreasonably low! You will regret after doing this kind of action!";
+            }
+            if (refValue > 10.f && static_cast<float>(playerGoldGained) > refValue * 1.45f) {
+                return "Are you sure you going to sell items for so expensive? This price is unreasonably high! You will regret after doing this kind of action!";
+            }
+        } else {
+            // Buying from NPC
+            float refValue = receivingBaseValue > 0.f ? receivingBaseValue : receivingCurrentValue;
+            if (refValue > 0.f && static_cast<float>(playerGoldCost) > refValue * 1.35f) {
+                return "Are you sure you going to buy items for so expensive? You are offering an unreasonable price! You will regret after doing this kind of action!";
+            }
+            if (refValue > 10.f && static_cast<float>(playerGoldCost) < refValue * 0.65f) {
+                return "Are you sure you going to buy items for so cheap? You are offering an unreasonably low price! You will regret after doing this kind of action!";
+            }
+        }
+    }
+
+    return "";
+}
+
+void executeDirectNPCTrade(
+    TradeSlot playerTradeSlots[4],
+    TradeSlot npcTradeSlots[4],
+    bool isSellingToNPC,
+    int& npcTradeGold,
+    std::string& npcGoldInput,
+    int& playerTradeGold,
+    std::string& playerGoldInput,
+    bool& hasBargained,
+    bool& bargainAccepted,
+    std::string& bargainStatus,
+    int& currency,
+    bool& tradeMenuOpen,
+    std::string& latestPlayerMsg,
+    float& bubbleTimer,
+    const std::string& username,
+    float elapsedGameTime,
+    int level,
+    int exp,
+    int hungerMultiplier,
+    int thirstMultiplier,
+    float hunger,
+    float thirst,
+    Inventory& inventory,
+    AuthManager& authManager,
+    std::function<int(int id)> getItemPrice,
+    std::function<std::string(int id)> getItemName,
+    std::function<void(int id, float percentChange)> adjustMarketItem,
+    bool disasterActive,
+    const std::string& currentDisasterType
+) {
+    if (isSellingToNPC) {
+        bool hasItems = false;
+        int totalQty = 0;
+        float totalRefVal = 0.f;
+        for (int i = 0; i < 4; i++) {
+            if (playerTradeSlots[i].tex && playerTradeSlots[i].count > 0) {
+                hasItems = true;
+                int uPrice = getItemPrice(playerTradeSlots[i].id);
+                totalRefVal += static_cast<float>(uPrice * playerTradeSlots[i].count);
+                totalQty += playerTradeSlots[i].count;
+            }
+        }
+        if (hasItems && (npcTradeGold > 0 || playerTradeGold > 0)) {
+            int netGold = npcTradeGold - playerTradeGold;
+            currency += npcTradeGold;
+            if (playerTradeGold > 0) currency -= playerTradeGold;
+
+            float ratio = (totalRefVal > 0.f) ? (static_cast<float>(netGold) / totalRefVal) : 1.0f;
+            int unreasonableType = 0; // 0=normal, 1=dump_loss, 2=dump_cheap, 3=gouging_expensive, 4=disaster_panic_sell
+
+            if (playerTradeGold > 0 || netGold <= 0) {
+                unreasonableType = 1; // Offering gold while selling or paying net gold
+            } else if (totalRefVal > 10.f && ratio < 0.65f) {
+                unreasonableType = 2; // Sold for unreasonably cheap
+            } else if (totalRefVal > 10.f && ratio > 1.45f) {
+                unreasonableType = 3; // Sold for unreasonably high price
+            } else if (disasterActive) {
+                for (int i = 0; i < 4; i++) {
+                    if (playerTradeSlots[i].tex && playerTradeSlots[i].count > 0) {
+                        int id = playerTradeSlots[i].id;
+                        bool isRawFood = (id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_SHEEP_MEAT || id == ITEM_ZOMBIE_FLESH);
+                        if ((currentDisasterType == "diarrhea" && isRawFood) || ratio < 0.9f) {
+                            unreasonableType = 4;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < 4; i++) {
+                if (playerTradeSlots[i].tex && playerTradeSlots[i].count > 0) {
+                    int item_id = playerTradeSlots[i].id;
+                    int item_qty = playerTradeSlots[i].count;
+                    std::string name = getItemName(item_id);
+                    int uPrice = getItemPrice(item_id);
+
+                    float percentChange = -0.005f * item_qty;
+                    if (unreasonableType == 1) {
+                        // Extreme loss dump: market price severely collapses
+                        float dropFactor = 0.30f + 0.05f * std::min(4, item_qty);
+                        percentChange = -std::clamp(dropFactor, 0.25f, 0.60f);
+                    } else if (unreasonableType == 2) {
+                        // Unreasonably cheap: price crashes proportionally
+                        float dropScale = (0.65f - std::max(0.f, ratio)) / 0.65f;
+                        float dropFactor = 0.18f + 0.30f * dropScale;
+                        percentChange = -std::clamp(dropFactor * (1.0f + 0.05f * (item_qty - 1)), 0.15f, 0.60f);
+                    } else if (unreasonableType == 3) {
+                        // Unreasonably expensive: market price spikes upwards
+                        float surgeScale = std::min(2.5f, ratio - 1.45f);
+                        float surgeFactor = 0.18f + 0.22f * surgeScale;
+                        percentChange = +std::clamp(surgeFactor * (1.0f + 0.05f * (item_qty - 1)), 0.15f, 0.75f);
+                    } else if (unreasonableType == 4) {
+                        // Disaster panic sell
+                        percentChange = -std::clamp(0.20f + 0.04f * item_qty, 0.18f, 0.50f);
+                    }
+
+                    adjustMarketItem(item_id, percentChange);
+
+                    int actualUnitPrice = (totalQty > 0 && netGold > 0) ? (int)std::round(static_cast<float>(netGold) / totalQty) : uPrice;
+                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty);
+                    playerTradeSlots[i] = {};
+                }
+            }
+
+            if (unreasonableType == 1 || unreasonableType == 2) {
+                latestPlayerMsg = "Sold items! Market prices plunged from dumping!";
+            } else if (unreasonableType == 3) {
+                latestPlayerMsg = "Sold items! Market prices surged from your high valuation!";
+            } else if (unreasonableType == 4) {
+                latestPlayerMsg = "Sold during disaster! Market prices dropped from panic selling!";
+            } else {
+                if (netGold >= 0) {
+                    latestPlayerMsg = "Sold! Received " + std::to_string(netGold) + " Gold.";
+                } else {
+                    latestPlayerMsg = "Trade complete. Paid " + std::to_string(-netGold) + " Gold.";
+                }
+            }
+            bubbleTimer = 4.5f;
+            tradeMenuOpen = false;
+            npcTradeGold = 0;
+            npcGoldInput = "0";
+            playerTradeGold = 0;
+            playerGoldInput = "0";
+            bargainAccepted = false;
+            hasBargained = false;
+            bargainStatus = "";
+            authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
+        }
+    } else {
+        float priceMul = bargainAccepted ? 1.08f : 1.20f;
+        int standardCost = 0;
+        float totalRefVal = 0.f;
+        int totalQty = 0;
+        bool anySelected = false;
+        for (int i = 0; i < 4; i++) {
+            if (npcTradeSlots[i].originalSlot == 1 && npcTradeSlots[i].tex) {
+                anySelected = true;
+                int uPrice = getItemPrice(npcTradeSlots[i].id);
+                standardCost += static_cast<int>(uPrice * npcTradeSlots[i].count * priceMul);
+                totalRefVal += static_cast<float>(uPrice * npcTradeSlots[i].count);
+                totalQty += npcTradeSlots[i].count;
+            }
+        }
+        int finalCost = (playerTradeGold > 0) ? playerTradeGold : standardCost;
+        if (anySelected && finalCost <= currency) {
+            currency -= finalCost;
+
+            float ratio = (totalRefVal > 0.f) ? (static_cast<float>(finalCost) / totalRefVal) : 1.0f;
+            int unreasonableType = 0; // 0=normal, 1=expensive_markup, 2=cheap_steal, 3=disaster_panic_buy
+
+            if (totalRefVal > 0.f && ratio > 1.35f) {
+                unreasonableType = 1; // Bought for unreasonably high price / overpaid
+            } else if (totalRefVal > 10.f && ratio < 0.65f) {
+                unreasonableType = 2; // Bought for unreasonably low price / underpaid
+            } else if (disasterActive) {
+                for (int i = 0; i < 4; i++) {
+                    if (npcTradeSlots[i].originalSlot == 1 && npcTradeSlots[i].tex) {
+                        int id = npcTradeSlots[i].id;
+                        bool isCookedFood = (id == ITEM_COOKED_CHICKEN || id == ITEM_COOKED_PIG || id == ITEM_COOKED_SHEEP);
+                        bool isDroughtItem = (id == ITEM_WOOD || isCookedFood || id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_SHEEP_MEAT);
+                        if ((currentDisasterType == "diarrhea" && isCookedFood) || (currentDisasterType == "drought" && isDroughtItem) || ratio > 1.15f) {
+                            unreasonableType = 3;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < 4; i++) {
+                if (npcTradeSlots[i].originalSlot == 1 && npcTradeSlots[i].tex) {
+                    inventory.addItem(npcTradeSlots[i].id, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
+                    int item_id = npcTradeSlots[i].id;
+                    int item_qty = npcTradeSlots[i].count;
+                    std::string name = getItemName(item_id);
+                    int uPrice = getItemPrice(item_id);
+
+                    float percentChange = 0.005f * item_qty;
+                    if (unreasonableType == 1) {
+                        // Unreasonably high price: market price spikes upwards
+                        float surgeScale = std::min(2.5f, ratio - 1.35f);
+                        float surgeFactor = 0.18f + 0.25f * surgeScale;
+                        percentChange = +std::clamp(surgeFactor * (1.0f + 0.05f * (item_qty - 1)), 0.15f, 0.80f);
+                    } else if (unreasonableType == 2) {
+                        // Unreasonably cheap steal: market price collapses
+                        float dropScale = (0.65f - std::max(0.f, ratio)) / 0.65f;
+                        float dropFactor = 0.18f + 0.30f * dropScale;
+                        percentChange = -std::clamp(dropFactor * (1.0f + 0.05f * (item_qty - 1)), 0.15f, 0.60f);
+                    } else if (unreasonableType == 3) {
+                        // Disaster panic buy
+                        percentChange = +std::clamp(0.22f + 0.05f * item_qty, 0.20f, 0.65f);
+                    }
+
+                    adjustMarketItem(item_id, percentChange);
+
+                    int actualUnitPrice = (totalQty > 0) ? (int)std::round(static_cast<float>(finalCost) / totalQty) : uPrice;
+                    authManager.addTradeRecord(username.c_str(), "BUY", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty);
+                    npcTradeSlots[i] = {};
+                }
+            }
+
+            if (unreasonableType == 1) {
+                latestPlayerMsg = "Bought items! Market prices surged due to your high offer!";
+            } else if (unreasonableType == 2) {
+                latestPlayerMsg = "Bought items for cheap! Market prices dropped!";
+            } else if (unreasonableType == 3) {
+                latestPlayerMsg = "Bought during disaster! Market prices surged from panic buying!";
+            } else {
+                latestPlayerMsg = "Bought items for " + std::to_string(finalCost) + " Gold.";
+            }
+            bubbleTimer = 4.5f;
+            tradeMenuOpen = false;
+            playerTradeGold = 0;
+            playerGoldInput = "0";
+            npcTradeGold = 0;
+            npcGoldInput = "0";
+            bargainAccepted = false;
+            hasBargained = false;
+            bargainStatus = "";
+            authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
+        }
+    }
+}
+
 bool handleP2PTradeClick(
     sf::Vector2f uiPos,
     sf::Vector2i mousePixelPos,
@@ -487,7 +857,14 @@ bool handleP2PTradeClick(
     int& quantityPromptSourceSlot,
     bool& quantityPromptIsP2P,
     TextInput& quantityInput,
-    sf::RenderWindow& window
+    sf::RenderWindow& window,
+    bool& tradeConfirmOpen,
+    std::string& tradeConfirmMessage,
+    bool& tradeConfirmIsP2P,
+    int currency,
+    bool disasterActive,
+    const std::string& currentDisasterType,
+    const std::vector<StockItem>& stockMarket
 ) {
     float tW = 700.f, tH = 440.f;
     sf::FloatRect tR({ (width - tW) / 2.f, (height - tH) / 2.f }, { tW, tH });
@@ -496,9 +873,14 @@ bool handleP2PTradeClick(
     for (int i = 0; i < 4; i++) {
         sf::FloatRect sr({ tR.position.x + 20.f + i * 74.f, tR.position.y + 80.f }, { 64.f, 64.f });
         if (sr.contains(uiPos)) {
+            if (p2pMyReady) {
+                p2pMyReady = false;
+                authManager.setP2PReady(p2pTradeID, username, false);
+            }
             if (myP2PSlots[i].tex) {
                 inventory.addItem(myP2PSlots[i].id, *myP2PSlots[i].tex, myP2PSlots[i].count);
                 myP2PSlots[i] = {};
+                p2pOfferDirty = true;
             } else {
                 int sel = inventory.getSelectedSlot();
                 if (sel != -1 && inventory.hasItem(sel)) {
@@ -522,6 +904,7 @@ bool handleP2PTradeClick(
                             inventory.clearSlot(sel);
                             p2pOfferDirty = true;
                             p2pMyReady = false;
+                            authManager.setP2PReady(p2pTradeID, username, false);
                         }
                     }
                 }
@@ -533,40 +916,74 @@ bool handleP2PTradeClick(
     // My gold input
     sf::FloatRect goldBox({ tR.position.x + 20.f, tR.position.y + 165.f }, { 100.f, 34.f });
     if (goldBox.contains(uiPos)) {
+        if (p2pMyReady) {
+            p2pMyReady = false;
+            authManager.setP2PReady(p2pTradeID, username, false);
+        }
         p2pGoldTyping = true;
         playerGoldTyping = false;
         return true;
     }
 
-    // Ready button
-    sf::FloatRect readyBtn({ tR.position.x + 20.f, tR.position.y + 380.f }, { 120.f, 40.f });
-    if (readyBtn.contains(uiPos) && !p2pMyReady) {
-        p2pMyReady = true;
-        authManager.setP2PReady(p2pTradeID, username, true);
-        std::string myCSV;
-        for (int i = 0; i < 4; i++) {
-            if (myP2PSlots[i].tex) {
-                if (!myCSV.empty()) myCSV += ",";
-                myCSV += std::to_string(myP2PSlots[i].id) + ":" + std::to_string(myP2PSlots[i].count);
-            }
-        }
-        authManager.updateP2POffer(p2pTradeID, username, myCSV, myP2PGold);
-        p2pStatusMsg = "You are ready! Waiting for " + p2pPartner + "...";
-        return true;
-    }
+    // Action buttons matching drawP2PTrade coordinates
+    float btnY = tR.position.y + 360.f;
 
-    // Unready button
-    sf::FloatRect unreadyBtn({ tR.position.x + 155.f, tR.position.y + 380.f }, { 120.f, 40.f });
-    if (unreadyBtn.contains(uiPos) && p2pMyReady) {
-        p2pMyReady = false;
-        authManager.setP2PReady(p2pTradeID, username, false);
-        p2pStatusMsg = "Not ready. Adjust your offer.";
+    // READY / UNREADY toggle button
+    sf::FloatRect readyBtn({ tR.position.x + 20.f, btnY }, { 130.f, 44.f });
+    if (readyBtn.contains(uiPos)) {
+        p2pGoldTyping = false;
+        if (!p2pMyReady) {
+            std::vector<std::pair<int, int>> playerGiving;
+            for (int i = 0; i < 4; i++) {
+                if (myP2PSlots[i].tex && myP2PSlots[i].count > 0) {
+                    playerGiving.push_back({ myP2PSlots[i].id, myP2PSlots[i].count });
+                }
+            }
+            std::vector<std::pair<int, int>> playerReceiving;
+            for (const auto& item : partnerItems) {
+                if (item.count > 0) {
+                    playerReceiving.push_back({ item.id, item.count });
+                }
+            }
+            std::string warn = evaluateEconomicTradeWarning(
+                true, false, myP2PGold, partnerGold, currency,
+                playerGiving, playerReceiving, disasterActive, currentDisasterType, stockMarket
+            );
+            if (!warn.empty()) {
+                tradeConfirmOpen = true;
+                tradeConfirmMessage = warn;
+                tradeConfirmIsP2P = true;
+                return true;
+            }
+
+            std::string myCSV;
+            for (int i = 0; i < 4; i++) {
+                if (myP2PSlots[i].tex) {
+                    if (!myCSV.empty()) myCSV += ",";
+                    myCSV += std::to_string(myP2PSlots[i].id) + ":" + std::to_string(myP2PSlots[i].count);
+                }
+            }
+            authManager.updateP2POffer(p2pTradeID, username, myCSV, myP2PGold);
+            p2pOfferDirty = false;
+            p2pMyReady = true;
+            authManager.setP2PReady(p2pTradeID, username, true);
+            if (p2pPartnerReady) {
+                p2pStatusMsg = "Both players ready! Completing trade...";
+            } else {
+                p2pStatusMsg = "You are ready! Waiting for " + p2pPartner + "...";
+            }
+        } else {
+            p2pMyReady = false;
+            authManager.setP2PReady(p2pTradeID, username, false);
+            p2pStatusMsg = "Not ready. Adjust your offer.";
+        }
         return true;
     }
 
     // Cancel button
-    sf::FloatRect cancelBtn({ tR.position.x + tW - 130.f, tR.position.y + 380.f }, { 120.f, 40.f });
+    sf::FloatRect cancelBtn({ tR.position.x + tW - 140.f, btnY }, { 120.f, 44.f });
     if (cancelBtn.contains(uiPos)) {
+        p2pGoldTyping = false;
         authManager.cancelP2PTrade(p2pTradeID);
         for (int i = 0; i < 4; i++) {
             if (myP2PSlots[i].tex) {
@@ -574,11 +991,14 @@ bool handleP2PTradeClick(
                 myP2PSlots[i] = {};
             }
         }
+        myP2PGold = 0;
+        myP2PGoldInput = "0";
         p2pTradeOpen = false;
         p2pTradeID = -1;
         p2pPartner = "";
         p2pMyReady = false;
         p2pPartnerReady = false;
+        p2pStatusMsg = "";
         partnerItems.clear();
         partnerGold = 0;
         return true;
@@ -631,7 +1051,12 @@ bool handleNPCTradeClick(
     int& quantityPromptSourceSlot,
     bool& quantityPromptIsP2P,
     TextInput& quantityInput,
-    sf::RenderWindow& window
+    sf::RenderWindow& window,
+    bool& tradeConfirmOpen,
+    std::string& tradeConfirmMessage,
+    bool& tradeConfirmIsP2P,
+    bool disasterActive,
+    const std::string& currentDisasterType
 ) {
     sf::FloatRect tBoxRect({ (width - 640.f) / 2.f, (height - 420.f) / 2.f }, { 640.f, 420.f });
 
@@ -710,9 +1135,12 @@ bool handleNPCTradeClick(
         }
     }
 
-    // Player Gold box
-    sf::FloatRect playerGoldBox({ tBoxRect.position.x + 360.f, tBoxRect.position.y + 85.f }, { 120.f, 35.f });
-    if (playerGoldBox.contains(uiPos)) {
+    // Player Gold box ("Your Gold Offer:", editable)
+    // pGoldBox is drawn at rx, ry + 90.f = tBoxRect.x + 360.f, tBoxRect.y + 150.f, size {120.f, 34.f}
+    sf::FloatRect playerGoldBox({ tBoxRect.position.x + 360.f, tBoxRect.position.y + 145.f }, { 130.f, 44.f });
+    sf::FloatRect playerGoldLabel({ tBoxRect.position.x + 360.f, tBoxRect.position.y + 125.f }, { 130.f, 24.f });
+    sf::FloatRect npcGoldBox({ tBoxRect.position.x + 360.f, tBoxRect.position.y + 75.f }, { 130.f, 45.f });
+    if (playerGoldBox.contains(uiPos) || playerGoldLabel.contains(uiPos) || npcGoldBox.contains(uiPos)) {
         playerGoldTyping = true;
         return true;
     }
@@ -764,29 +1192,31 @@ bool handleNPCTradeClick(
         if (isSellingToNPC) {
             bool hasItems = false;
             for (int i = 0; i < 4; i++) if (playerTradeSlots[i].tex) hasItems = true;
-            if (hasItems && npcTradeGold > 0) {
-                currency += npcTradeGold;
+            if (hasItems && (npcTradeGold > 0 || playerTradeGold > 0)) {
+                std::vector<std::pair<int, int>> playerGiving;
                 for (int i = 0; i < 4; i++) {
-                    if (playerTradeSlots[i].tex) {
-                        int item_id = playerTradeSlots[i].id;
-                        int item_qty = playerTradeSlots[i].count;
-                        std::string name = getItemName(item_id);
-                        int uPrice = getItemPrice(item_id);
-                        int totalVal = item_qty * uPrice;
-                        float percentChange = -0.005f * item_qty;
-                        adjustMarketItem(item_id, percentChange);
-                        authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, uPrice, totalVal);
-                        playerTradeSlots[i] = {};
+                    if (playerTradeSlots[i].tex && playerTradeSlots[i].count > 0) {
+                        playerGiving.push_back({ playerTradeSlots[i].id, playerTradeSlots[i].count });
                     }
                 }
-                latestPlayerMsg = "Sold! Received " + std::to_string(npcTradeGold) + " Gold.";
-                bubbleTimer = 4.f;
-                tradeMenuOpen = false;
-                isSellingToNPC = false;
-                npcTradeGold = 0; npcGoldInput = "0";
-                playerTradeGold = 0; playerGoldInput = "0";
-                bargainAccepted = false; hasBargained = false; bargainStatus = "";
-                authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
+                std::string warn = evaluateEconomicTradeWarning(
+                    false, true, playerTradeGold, npcTradeGold, currency,
+                    playerGiving, {}, disasterActive, currentDisasterType, stockMarket
+                );
+                if (!warn.empty()) {
+                    tradeConfirmOpen = true;
+                    tradeConfirmMessage = warn;
+                    tradeConfirmIsP2P = false;
+                    return true;
+                }
+                executeDirectNPCTrade(
+                    playerTradeSlots, npcTradeSlots, true, npcTradeGold, npcGoldInput,
+                    playerTradeGold, playerGoldInput, hasBargained, bargainAccepted, bargainStatus,
+                    currency, tradeMenuOpen, latestPlayerMsg, bubbleTimer, username,
+                    elapsedGameTime, level, exp, hungerMultiplier, thirstMultiplier,
+                    hunger, thirst, inventory, authManager, getItemPrice, getItemName, adjustMarketItem,
+                    disasterActive, currentDisasterType
+                );
             } else {
                 bargainStatus = "Add items to your trade slots first!";
                 bargainColor = sf::Color::Red;
@@ -795,42 +1225,40 @@ bool handleNPCTradeClick(
             float priceMul = bargainAccepted ? 1.08f : 1.20f;
             int totalCost = 0;
             bool anySelected = false;
+            std::vector<std::pair<int, int>> playerReceiving;
             for (int i = 0; i < 4; i++) {
                 if (npcTradeSlots[i].originalSlot == 1 && npcTradeSlots[i].tex) {
                     anySelected = true;
-                    totalCost += (int)(getItemPrice(npcTradeSlots[i].id) * npcTradeSlots[i].count * priceMul);
+                    totalCost += static_cast<int>(getItemPrice(npcTradeSlots[i].id) * npcTradeSlots[i].count * priceMul);
+                    playerReceiving.push_back({ npcTradeSlots[i].id, npcTradeSlots[i].count });
                 }
             }
+            int effectiveCost = (playerTradeGold > 0) ? playerTradeGold : totalCost;
             if (!anySelected) {
                 bargainStatus = "Select NPC items to buy first!";
                 bargainColor = sf::Color::Red;
-            } else if (totalCost > currency) {
-                bargainStatus = "Not enough gold! Need " + std::to_string(totalCost) + " G.";
+            } else if (effectiveCost > currency) {
+                bargainStatus = "Not enough gold! Need " + std::to_string(effectiveCost) + " G.";
                 bargainColor = sf::Color::Red;
             } else {
-                currency -= totalCost;
-                for (int i = 0; i < 4; i++) {
-                    if (npcTradeSlots[i].originalSlot == 1 && npcTradeSlots[i].tex) {
-                        inventory.addItem(npcTradeSlots[i].id, *npcTradeSlots[i].tex, npcTradeSlots[i].count);
-                        int item_id = npcTradeSlots[i].id;
-                        int item_qty = npcTradeSlots[i].count;
-                        std::string name = getItemName(item_id);
-                        int uPrice = getItemPrice(item_id);
-                        int totalVal = item_qty * uPrice;
-                        float percentChange = 0.005f * item_qty;
-                        adjustMarketItem(item_id, percentChange);
-                        authManager.addTradeRecord(username.c_str(), "BUY", name, item_qty, uPrice, totalVal);
-                        npcTradeSlots[i] = {};
-                    }
+                std::string warn = evaluateEconomicTradeWarning(
+                    false, false, effectiveCost, 0, currency,
+                    {}, playerReceiving, disasterActive, currentDisasterType, stockMarket
+                );
+                if (!warn.empty()) {
+                    tradeConfirmOpen = true;
+                    tradeConfirmMessage = warn;
+                    tradeConfirmIsP2P = false;
+                    return true;
                 }
-                latestPlayerMsg = "Bought items for " + std::to_string(totalCost) + " Gold.";
-                bubbleTimer = 4.f;
-                tradeMenuOpen = false;
-                isSellingToNPC = false;
-                playerTradeGold = 0; playerGoldInput = "0";
-                npcTradeGold = 0; npcGoldInput = "0";
-                bargainAccepted = false; hasBargained = false; bargainStatus = "";
-                authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
+                executeDirectNPCTrade(
+                    playerTradeSlots, npcTradeSlots, false, npcTradeGold, npcGoldInput,
+                    playerTradeGold, playerGoldInput, hasBargained, bargainAccepted, bargainStatus,
+                    currency, tradeMenuOpen, latestPlayerMsg, bubbleTimer, username,
+                    elapsedGameTime, level, exp, hungerMultiplier, thirstMultiplier,
+                    hunger, thirst, inventory, authManager, getItemPrice, getItemName, adjustMarketItem,
+                    disasterActive, currentDisasterType
+                );
             }
         }
         return true;
@@ -1048,12 +1476,17 @@ bool handleNPCTradeConfirmClicks(
     unsigned int width,
     unsigned int height,
     bool& tradeConfirmOpen,
+    std::string& tradeConfirmMessage,
+    bool& tradeConfirmIsP2P,
     bool& tradeMenuOpen,
     bool& tradeBoxesTicked,
     TradeSlot playerTradeSlots[4],
     TradeSlot npcTradeSlots[4],
+    bool& isSellingToNPC,
     int& playerTradeGold,
+    std::string& playerGoldInput,
     int& npcTradeGold,
+    std::string& npcGoldInput,
     bool& hasBargained,
     bool& bargainAccepted,
     std::string& bargainStatus,
@@ -1069,70 +1502,91 @@ bool handleNPCTradeConfirmClicks(
     float thirst,
     Inventory& inventory,
     AuthManager& authManager,
-    std::vector<StockItem>& stockMarket
+    std::vector<StockItem>& stockMarket,
+    std::function<int(int id)> getItemPrice,
+    std::function<std::string(int id)> getItemName,
+    std::function<void(int id, float percentChange)> adjustMarketItem,
+    std::string& latestPlayerMsg,
+    float& bubbleTimer,
+    int p2pTradeID,
+    TradeSlot myP2PSlots[4],
+    int myP2PGold,
+    bool* p2pOfferDirty,
+    bool* p2pMyReady,
+    bool p2pPartnerReady,
+    std::string* p2pStatusMsg,
+    const std::string& p2pPartner,
+    bool disasterActive,
+    const std::string& currentDisasterType
 ) {
-    sf::FloatRect yesRect({ (width - 250.f) / 2.f, height / 2.f }, { 100.f, 40.f });
-    sf::FloatRect noRect({ (width + 50.f) / 2.f, height / 2.f }, { 100.f, 40.f });
+    float boxW = 560.f;
+    float boxH = 260.f;
+    float boxX = (static_cast<float>(width) - boxW) / 2.f;
+    float boxY = (static_cast<float>(height) - boxH) / 2.f;
+
+    sf::FloatRect yesRect({ boxX + 90.f, boxY + 195.f }, { 140.f, 42.f });
+    sf::FloatRect noRect({ boxX + 330.f, boxY + 195.f }, { 140.f, 42.f });
 
     if (yesRect.contains(uiPos)) {
         tradeConfirmOpen = false;
-        tradeMenuOpen = false;
+        tradeConfirmMessage = "";
         tradeBoxesTicked = false;
-        executeNPCTradeConfirm(
-            true,
-            playerTradeSlots,
-            npcTradeSlots,
-            playerTradeGold,
-            npcTradeGold,
-            hasBargained,
-            bargainAccepted,
-            bargainStatus,
-            bargainColor,
-            currency,
-            username,
-            elapsedGameTime,
-            level,
-            exp,
-            hungerMultiplier,
-            thirstMultiplier,
-            hunger,
-            thirst,
-            inventory,
-            authManager,
-            stockMarket
-        );
+        if (tradeConfirmIsP2P) {
+            // Confirm P2P Ready
+            if (p2pMyReady && myP2PSlots) {
+                std::string myCSV;
+                for (int i = 0; i < 4; i++) {
+                    if (myP2PSlots[i].tex) {
+                        if (!myCSV.empty()) myCSV += ",";
+                        myCSV += std::to_string(myP2PSlots[i].id) + ":" + std::to_string(myP2PSlots[i].count);
+                    }
+                }
+                authManager.updateP2POffer(p2pTradeID, username, myCSV, myP2PGold);
+                if (p2pOfferDirty) *p2pOfferDirty = false;
+                *p2pMyReady = true;
+                authManager.setP2PReady(p2pTradeID, username, true);
+                if (p2pStatusMsg) {
+                    if (p2pPartnerReady) {
+                        *p2pStatusMsg = "Both players ready! Completing trade...";
+                    } else {
+                        *p2pStatusMsg = "You are ready! Waiting for " + p2pPartner + "...";
+                    }
+                }
+            }
+        } else {
+            // Confirm NPC Trade
+            executeDirectNPCTrade(
+                playerTradeSlots, npcTradeSlots, isSellingToNPC, npcTradeGold, npcGoldInput,
+                playerTradeGold, playerGoldInput, hasBargained, bargainAccepted, bargainStatus,
+                currency, tradeMenuOpen, latestPlayerMsg, bubbleTimer, username,
+                elapsedGameTime, level, exp, hungerMultiplier, thirstMultiplier,
+                hunger, thirst, inventory, authManager, getItemPrice, getItemName, adjustMarketItem,
+                disasterActive, currentDisasterType
+            );
+        }
         return true;
     }
     else if (noRect.contains(uiPos)) {
         tradeConfirmOpen = false;
-        tradeMenuOpen = false;
+        tradeConfirmMessage = "";
         tradeBoxesTicked = false;
-        executeNPCTradeConfirm(
-            false,
-            playerTradeSlots,
-            npcTradeSlots,
-            playerTradeGold,
-            npcTradeGold,
-            hasBargained,
-            bargainAccepted,
-            bargainStatus,
-            bargainColor,
-            currency,
-            username,
-            elapsedGameTime,
-            level,
-            exp,
-            hungerMultiplier,
-            thirstMultiplier,
-            hunger,
-            thirst,
-            inventory,
-            authManager,
-            stockMarket
-        );
+        if (tradeConfirmIsP2P) {
+            if (p2pMyReady) {
+                *p2pMyReady = false;
+                authManager.setP2PReady(p2pTradeID, username, false);
+            }
+            if (p2pStatusMsg) {
+                *p2pStatusMsg = "Trade reconsidered. Adjust your offer.";
+            }
+        } else {
+            bargainStatus = "Trade rejected. You can modify your offer.";
+            bargainColor = sf::Color(255, 120, 120);
+        }
         return true;
     }
-    return false;
+
+    // Modal absorbs click anywhere on screen
+    return true;
 }
 
 #include <sstream>
@@ -1171,21 +1625,38 @@ void pollAndSyncP2PTrade(
     int hungerMultiplier,
     int thirstMultiplier,
     bool& p2pOfferDirty,
-    AuthManager& authManager
+    AuthManager& authManager,
+    bool disasterActive,
+    const std::string& currentDisasterType
 ) {
     if (p2pTradeID <= 0) return;
 
     p2pPollTimer -= dt;
     p2pOfferPushTimer -= dt;
+
+    if (p2pOfferDirty && p2pTradeID > 0 && p2pOfferPushTimer <= 0.f) {
+        std::string myCSV;
+        for (int i = 0; i < 4; i++) {
+            if (myP2PSlots[i].tex) {
+                if (!myCSV.empty()) myCSV += ",";
+                myCSV += std::to_string(myP2PSlots[i].id) + ":" + std::to_string(myP2PSlots[i].count);
+            }
+        }
+        authManager.updateP2POffer(p2pTradeID, username, myCSV, myP2PGold);
+        p2pOfferDirty = false;
+        p2pOfferPushTimer = 0.2f;
+    }
+
     if (p2pPollTimer <= 0.f) {
-        p2pPollTimer = 1.0f;
+        p2pPollTimer = 0.35f;
         p2pState = authManager.getP2PTradeState(p2pTradeID);
 
-        bool amI = p2pAmInitiator;
+        bool amI = (!p2pState.initiator.empty()) ? (p2pState.initiator == username) : p2pAmInitiator;
         std::string theirCSV = amI ? p2pState.targetItems : p2pState.initiatorItems;
         partnerGold = amI ? p2pState.targetGold : p2pState.initiatorGold;
         p2pPartnerReady = amI ? p2pState.targetReady : p2pState.initiatorReady;
         p2pMyReady      = amI ? p2pState.initiatorReady : p2pState.targetReady;
+        p2pPartner      = amI ? p2pState.target : p2pState.initiator;
 
         partnerItems.clear();
         if (!theirCSV.empty()) {
@@ -1209,19 +1680,89 @@ void pollAndSyncP2PTrade(
         else if (p2pState.status == "accepted") {
             p2pTradeOpen   = true;
             p2pInvitePopup = false;
-            if (p2pStatusMsg.find("Waiting") != std::string::npos)
-                p2pStatusMsg = "Trade open! Add items and gold, then press Ready.";
+            if (p2pState.initiatorReady && p2pState.targetReady) {
+                p2pStatusMsg = "Both players ready! Completing trade...";
+                authManager.completeP2PTrade(p2pTradeID);
+                p2pState.status = "completed";
+            } else if (p2pMyReady && !p2pPartnerReady) {
+                p2pStatusMsg = "You are ready! Waiting for " + p2pPartner + "...";
+            } else if (!p2pMyReady && p2pPartnerReady) {
+                p2pStatusMsg = p2pPartner + " is ready! Review offer and press Ready.";
+            } else if (!p2pMyReady && !p2pPartnerReady) {
+                if (p2pStatusMsg.find("Waiting") != std::string::npos || p2pStatusMsg.empty())
+                    p2pStatusMsg = "Trade open! Add items and gold, then press Ready.";
+            }
         }
-        else if (p2pState.status == "completed") {
+
+        if (p2pState.status == "completed") {
+            // Calculate valuations of both sides to determine if trade was unreasonable
+            float myItemsVal = 0.f;
+            int myItemsQty = 0;
+            for (int i = 0; i < 4; i++) {
+                if (myP2PSlots[i].tex && myP2PSlots[i].count > 0) {
+                    int pr = getItemPrice ? getItemPrice(myP2PSlots[i].id) : 10;
+                    myItemsVal += static_cast<float>(pr * myP2PSlots[i].count);
+                    myItemsQty += myP2PSlots[i].count;
+                }
+            }
+
+            float partnerItemsVal = 0.f;
+            int partnerItemsQty = 0;
+            for (const auto& d : partnerItems) {
+                if (d.count > 0) {
+                    int pr = getItemPrice ? getItemPrice(d.id) : 10;
+                    partnerItemsVal += static_cast<float>(pr * d.count);
+                    partnerItemsQty += d.count;
+                }
+            }
+
+            float totalMyOffer = static_cast<float>(myP2PGold) + myItemsVal;
+            float totalPartnerOffer = static_cast<float>(partnerGold) + partnerItemsVal;
+
+            bool isUnreasonable = false;
+            float partnerItemsDelta = 0.004f;
+            float myItemsDelta = -0.004f;
+
+            if (totalPartnerOffer > 0.f && totalMyOffer > totalPartnerOffer * 1.6f) {
+                // Local player overpaid drastically (paying huge premium for partner's items, or giving away value)
+                isUnreasonable = true;
+                float ratio = totalMyOffer / totalPartnerOffer;
+                // Partner items surged in demand/price
+                partnerItemsDelta = +std::clamp(0.18f + 0.15f * (ratio - 1.6f), 0.18f, 0.75f);
+                // My items dumped for cheap if partner gave little
+                if (totalPartnerOffer < totalMyOffer * 0.55f) {
+                    myItemsDelta = -std::clamp(0.18f + 0.20f * (1.0f - 1.0f / ratio), 0.18f, 0.60f);
+                }
+            } else if (totalPartnerOffer > 0.f && totalMyOffer < totalPartnerOffer * 0.55f) {
+                // Local player paid way too little (partner gave items away or local player charged huge premium)
+                isUnreasonable = true;
+                float ratio = totalMyOffer / totalPartnerOffer;
+                // Partner items dropped in price (cheap dump)
+                partnerItemsDelta = -std::clamp(0.18f + 0.25f * (0.55f - ratio) / 0.55f, 0.18f, 0.60f);
+                // My items surged in value
+                myItemsDelta = +std::clamp(0.18f + 0.15f * (1.0f / std::max(0.1f, ratio) - 1.6f), 0.18f, 0.75f);
+            } else if (totalMyOffer == 0.f && totalPartnerOffer > 0.f) {
+                // Pure free gift from partner: items dumped
+                isUnreasonable = true;
+                partnerItemsDelta = -0.30f;
+            } else if (totalPartnerOffer == 0.f && totalMyOffer > 0.f) {
+                // Pure free gift to partner: items dumped
+                isUnreasonable = true;
+                myItemsDelta = -0.30f;
+            }
+
             for (auto& d : partnerItems) {
                 const sf::Texture* tex = getItemTexture(d.id);
                 if (tex) inventory.addItem(d.id, *tex, d.count);
-                if (adjustMarketItem) adjustMarketItem(d.id, 0.004f * d.count);
+                if (adjustMarketItem) {
+                    float delta = isUnreasonable ? partnerItemsDelta : (0.004f * d.count);
+                    adjustMarketItem(d.id, delta);
+                }
 
                 std::string name = getItemName ? getItemName(d.id) : "";
                 int uPrice = getItemPrice ? getItemPrice(d.id) : 0;
-                int totalVal = d.count * uPrice;
-                authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, uPrice, totalVal);
+                int actualUnitPrice = (partnerItemsQty > 0 && totalMyOffer > 0.f) ? (int)std::round(totalMyOffer / partnerItemsQty) : uPrice;
+                authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, actualUnitPrice, actualUnitPrice * d.count);
             }
             currency += partnerGold;
 
@@ -1231,16 +1772,24 @@ void pollAndSyncP2PTrade(
                     int item_qty = myP2PSlots[i].count;
                     std::string name = getItemName ? getItemName(item_id) : "";
                     int uPrice = getItemPrice ? getItemPrice(item_id) : 0;
-                    int totalVal = item_qty * uPrice;
-                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, uPrice, totalVal);
+                    if (adjustMarketItem) {
+                        float delta = isUnreasonable ? myItemsDelta : (-0.004f * item_qty);
+                        adjustMarketItem(item_id, delta);
+                    }
+                    int actualUnitPrice = (myItemsQty > 0 && totalPartnerOffer > 0.f) ? (int)std::round(totalPartnerOffer / myItemsQty) : uPrice;
+                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty);
                 }
             }
 
             for (int i = 0; i < 4; i++) myP2PSlots[i] = {};
             currency -= myP2PGold;
             myP2PGold = 0;
-            latestPlayerMsg = "P2P trade completed with " + p2pPartner + "!";
-            bubbleTimer = 4.f;
+            if (isUnreasonable) {
+                latestPlayerMsg = "P2P trade complete! Market stats shifted from the unbalanced trade!";
+            } else {
+                latestPlayerMsg = "P2P trade completed with " + p2pPartner + "!";
+            }
+            bubbleTimer = 4.5f;
             authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
             p2pTradeOpen = false; p2pTradeID = -1; p2pPartner = "";
             p2pMyReady = false; p2pPartnerReady = false; p2pStatusMsg = "";
@@ -1253,33 +1802,11 @@ void pollAndSyncP2PTrade(
                     myP2PSlots[i] = {};
                 }
             }
-            currency += myP2PGold; myP2PGold = 0;
+            myP2PGold = 0;
             p2pTradeOpen = false; p2pInvitePopup = false; p2pTradeID = -1;
             p2pPartner = ""; p2pStatusMsg = "Trade cancelled.";
             latestPlayerMsg = "P2P trade cancelled."; bubbleTimer = 3.f;
         }
-
-        if (p2pOfferDirty && p2pTradeID > 0 && p2pOfferPushTimer <= 0.f) {
-            std::string myCSV;
-            for (int i = 0; i < 4; i++) {
-                if (myP2PSlots[i].tex) {
-                    if (!myCSV.empty()) myCSV += ",";
-                    myCSV += std::to_string(myP2PSlots[i].id) + ":" + std::to_string(myP2PSlots[i].count);
-                }
-            }
-            authManager.updateP2POffer(p2pTradeID, username, myCSV, myP2PGold);
-            for (int i = 0; i < 4; i++) {
-                if (myP2PSlots[i].tex && adjustMarketItem) {
-                    adjustMarketItem(myP2PSlots[i].id, -0.003f * myP2PSlots[i].count);
-                }
-            }
-            p2pOfferDirty = false;
-            p2pOfferPushTimer = 1.f;
-        }
-
-        if (p2pState.initiatorReady && p2pState.targetReady && p2pState.status == "accepted") {
-            authManager.completeP2PTrade(p2pTradeID);
-        }
     }
 }
-
+

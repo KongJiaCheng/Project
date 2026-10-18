@@ -12,6 +12,7 @@ public:
     void setFocus(bool focus);
     bool hasFocus() const;
     void clear();
+    void setText(const std::string& text);
     void setPosition(sf::Vector2f position);
 
 private:

@@ -5,6 +5,8 @@
 #include <functional>
 #include "Animal.h"
 #include "Monster.h"
+#include "ItemManager.h"
+#include "StructureSystem.h"
 
 inline bool isInWater(const sf::Vector2f& pos, const std::vector<sf::FloatRect>& waters)
 {
@@ -17,8 +19,8 @@ inline bool isInWater(const sf::Vector2f& pos, const std::vector<sf::FloatRect>&
 void despawnFarEntities(
     std::vector<std::unique_ptr<Animal>>& animals,
     std::vector<std::unique_ptr<Monster>>& monsters,
-    sf::Vector2f playerPos,
-    float despawnRadius
+    const sf::FloatRect& cameraBounds,
+    float margin = 600.f
 );
 
 void spawnNearbyAnimals(
@@ -26,9 +28,11 @@ void spawnNearbyAnimals(
     sf::Vector2f playerPos,
     sf::Clock& mobSpawnClock,
     int maxAnimals,
-    float spawnRadius,
+    const sf::FloatRect& cameraBounds,
     int mapWidth,
-    int mapHeight
+    int mapHeight,
+    const std::vector<PlacedStructure>& structures = {},
+    const std::vector<PlacedCampfire>& campfires = {}
 );
 
 void spawnNightZombies(
@@ -36,10 +40,12 @@ void spawnNightZombies(
     sf::Vector2f playerPos,
     sf::Clock& monsterSpawnClock,
     int maxMonsters,
-    float spawnRadius,
+    const sf::FloatRect& cameraBounds,
     int mapWidth,
     int mapHeight,
-    bool isNight
+    bool isNight,
+    const std::vector<PlacedStructure>& structures = {},
+    const std::vector<PlacedCampfire>& campfires = {}
 );
 
 void updateNearbyEntities(
@@ -48,12 +54,84 @@ void updateNearbyEntities(
     sf::Vector2f playerPos,
     float dt,
     std::function<bool(sf::Vector2f)> isBlocked,
-    float updateRadius
+    const sf::FloatRect& cameraBounds
 );
 
-#include "ItemManager.h"
-#include "StructureSystem.h"
 #include <random>
+#include <algorithm>
+
+inline bool isPosNearStructureOrHouse(
+    sf::Vector2f p,
+    const std::vector<PlacedStructure>& structures,
+    const std::vector<PlacedCampfire>& campfires,
+    float buffer = 500.f
+) {
+    for (const auto& s : structures) {
+        if (!s.sprite.has_value()) continue;
+        sf::Vector2f sPos = s.sprite->getPosition();
+        // Envelope covering any orientation and origin (BL corner, center, sheared)
+        float minX = sPos.x - 250.f;
+        float maxX = sPos.x + 750.f;
+        float minY = sPos.y - 500.f;
+        float maxY = sPos.y + 100.f;
+
+        float dx = 0.f;
+        if (p.x < minX) dx = minX - p.x;
+        else if (p.x > maxX) dx = p.x - maxX;
+
+        float dy = 0.f;
+        if (p.y < minY) dy = minY - p.y;
+        else if (p.y > maxY) dy = p.y - maxY;
+
+        if (dx * dx + dy * dy < buffer * buffer) {
+            return true;
+        }
+    }
+
+    for (const auto& c : campfires) {
+        float minX = c.position.x - 250.f;
+        float maxX = c.position.x + 250.f;
+        float minY = c.position.y - 250.f;
+        float maxY = c.position.y + 250.f;
+
+        float dx = 0.f;
+        if (p.x < minX) dx = minX - p.x;
+        else if (p.x > maxX) dx = p.x - maxX;
+
+        float dy = 0.f;
+        if (p.y < minY) dy = minY - p.y;
+        else if (p.y > maxY) dy = p.y - maxY;
+
+        if (dx * dx + dy * dy < buffer * buffer) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline void clearItemsNearStructures(
+    ItemManager& itemManager,
+    const std::vector<PlacedStructure>& structures,
+    const std::vector<PlacedCampfire>& campfires,
+    float buffer = 500.f
+) {
+    if (structures.empty() && campfires.empty()) return;
+    auto& items = itemManager.getItems();
+    size_t originalCount = items.size();
+    items.erase(
+        std::remove_if(items.begin(), items.end(), [&](const Item& it) {
+            if (it.id == ITEM_TREE || it.id == ITEM_STONE) {
+                return isPosNearStructureOrHouse(it.sprite.getPosition(), structures, campfires, buffer);
+            }
+            return false;
+        }),
+        items.end()
+    );
+    if (items.size() != originalCount) {
+        itemManager.rebuildSpatialGrid();
+    }
+}
 
 struct SpawnPlan {
     bool active = false;
@@ -70,14 +148,14 @@ struct SpawnPlan {
     int globalTreesDone = 0;
     int globalStonesDone = 0;
 
-    // mobs
-    int localChickensTotal = 15;
-    int localPigsTotal = 10;
-    int localSheepsTotal = 10;
-    int localZombiesTotal = 5;
-    int globalChickensTotal = 200;
-    int globalPigsTotal = 100;
-    int globalSheepsTotal = 100;
+    // mobs: capped to 6 or less total animals at spawn point, 2 or less monsters
+    int localChickensTotal = 2;
+    int localPigsTotal = 2;
+    int localSheepsTotal = 2;
+    int localZombiesTotal = 2;
+    int globalChickensTotal = 0;
+    int globalPigsTotal = 0;
+    int globalSheepsTotal = 0;
 
     int localChickensDone = 0;
     int localPigsDone = 0;

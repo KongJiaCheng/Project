@@ -9,6 +9,7 @@
 TimedGetMaxMessageID timedGetMaxMessageID = nullptr;
 TimedGetQuestInfo timedGetQuestInfo = nullptr;
 TimedLoadMarketPrice timedLoadMarketPrice = nullptr;
+TimedLoadAllMarketPrices timedLoadAllMarketPrices = nullptr;
 
 PlayerStats constructServer(AuthManager &authManager, bool dbStartupEnabled, const std::string& username, float STARTUP_DB_TIMEOUT_SECS) {
     auto timedLoadPlayerStats = [&](const std::string& uname) -> PlayerStats {
@@ -127,6 +128,37 @@ PlayerStats constructServer(AuthManager &authManager, bool dbStartupEnabled, con
         return state->value;
     };
 
+    timedLoadAllMarketPrices = [&authManager, dbStartupEnabled, STARTUP_DB_TIMEOUT_SECS]() -> std::map<int, float> {
+        if (!dbStartupEnabled) {
+            return {};
+        }
+        struct SharedState {
+            std::map<int, float> prices;
+            std::atomic<bool> done{ false };
+            std::mutex mutex;
+        };
+        auto state = std::make_shared<SharedState>();
+        std::thread([&authManager, state]() {
+            auto p = authManager.loadAllMarketPrices();
+            {
+                std::lock_guard<std::mutex> lk(state->mutex);
+                state->prices = std::move(p);
+            }
+            state->done = true;
+            }).detach();
+
+        sf::Clock waitClock;
+        while (!state->done.load() && waitClock.getElapsedTime().asSeconds() < 2.0f) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        if (!state->done.load()) {
+            std::cerr << "[WARN] loadAllMarketPrices timed out. Using default market prices.\n";
+            return {};
+        }
+        std::lock_guard<std::mutex> lk(state->mutex);
+        return state->prices;
+    };
+
     return timedLoadPlayerStats(username);
 }
 
@@ -159,6 +191,7 @@ void syncAndRenderOnlinePlayers(
     const sf::Texture& woodRoofTex,
     const sf::Texture& woodStairsTex,
     const sf::Texture& bedTex,
+    const sf::Texture& chestTex,
     const sf::Font& uiFont,
     std::string& latestPlayerMsg,
     float& bubbleTimer,
@@ -174,7 +207,7 @@ void syncAndRenderOnlinePlayers(
     if (!dbStartupEnabled) return;
 
     static sf::Clock syncClock;
-    if (!syncInFlight && syncClock.getElapsedTime().asSeconds() > 0.25f) {
+    if (!syncInFlight && syncClock.getElapsedTime().asSeconds() > 0.4f) {
         syncInFlight = true;
 
         float px = sprite.getPosition().x;
@@ -184,6 +217,16 @@ void syncAndRenderOnlinePlayers(
         syncFuture = std::async(std::launch::async, [&authManager, uname, px, py]() -> SyncResult {
             SyncResult result;
             authManager.updateOnlineStatus(uname.c_str(), px, py);
+
+            // Rate-limit chat cleanup: only every 75 ticks (~30 seconds at 0.4s/tick)
+            // Previously ran every 0.4s — a slow correlated DELETE on the cloud DB.
+            static int chatCleanupTick = 0;
+            ++chatCleanupTick;
+            if (chatCleanupTick >= 75) {
+                authManager.cleanupInactiveChatMessages();
+                chatCleanupTick = 0;
+            }
+
             result.players = authManager.getOnlinePlayers(uname.c_str());
             OnlinePlayer self = authManager.getSelfOnlineInfo(uname.c_str());
 
@@ -203,11 +246,13 @@ void syncAndRenderOnlinePlayers(
 
             static int structSyncTick = 0;
             ++structSyncTick;
-            if (structSyncTick >= 20) {
+            // Fetch immediately on first tick (structSyncTick == 1), and then every 10 ticks (~4s)
+            // BUG FIX: was resetting to 1 (not 0), causing structures to reload every ~0.8s instead of every ~4s
+            if (structSyncTick == 1 || structSyncTick >= 10) {
                 result.otherStructures = authManager.loadOtherStructures(uname.c_str());
                 result.otherCampfires = authManager.loadOtherCampfires(uname.c_str());
                 result.structuresUpdated = true;
-                structSyncTick = 0;
+                structSyncTick = 0;  // FIX: reset to 0 so next fire is at tick 10 (~4s), not tick 1 (~0.4s)
             }
 
             result.pendingTradeID = authManager.getPendingP2PTradeFor(uname);
@@ -217,8 +262,6 @@ void syncAndRenderOnlinePlayers(
 
             return result;
         });
-
-        syncClock.restart();
     }
 
     if (syncInFlight && syncFuture.valid()) {
@@ -233,14 +276,10 @@ void syncAndRenderOnlinePlayers(
                     structures.erase(
                         std::remove_if(structures.begin(), structures.end(),
                             [&](const PlacedStructure& s) {
-                                return !s.owner.empty() && s.owner != username;
+                                return s.owner != username;
                             }),
                         structures.end());
                     for (auto& s : res.otherStructures) {
-                        sf::Vector2f snapped = snapGridFunc({ s.x, s.y });
-                        if (std::abs(s.x - snapped.x) > 1.f || std::abs(s.y - snapped.y) > 1.f) {
-                            continue;
-                        }
                         const sf::Texture* tex = nullptr;
                         if      (s.id == ITEM_FURNACE)     tex = &furnaceTex;
                         else if (s.id == ITEM_WOOD_TILE)   tex = &woodTileTex;
@@ -249,13 +288,14 @@ void syncAndRenderOnlinePlayers(
                         else if (s.id == ITEM_WOOD_ROOF)   tex = &woodRoofTex;
                         else if (s.id == ITEM_WOOD_STAIRS) tex = &woodStairsTex;
                         else if (s.id == ITEM_BED)         tex = &bedTex;
+                        else if (s.id == ITEM_CHEST)       tex = &chestTex;
                         if (tex) {
                             structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, "other");
                             auto& ns = structures.back();
                             ns.sprite->setPosition({ s.x, s.y });
                             ns.health = s.health;
                             sf::Vector2u ts = ns.sprite->getTexture().getSize();
-                            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                            if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                                 ns.sprite->setOrigin({ 0.f, (float)ts.y });
                             } else {
                                 ns.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
@@ -266,7 +306,7 @@ void syncAndRenderOnlinePlayers(
                     campfires.erase(
                         std::remove_if(campfires.begin(), campfires.end(),
                             [&](const PlacedCampfire& c) {
-                                return !c.owner.empty() && c.owner != username;
+                                return c.owner != username;
                             }),
                         campfires.end());
                     for (auto& c : res.otherCampfires) {
@@ -315,15 +355,18 @@ void syncAndRenderOnlinePlayers(
                 }
 
                 syncInFlight = false;
+                syncClock.restart();
             }
         }
         catch (const std::exception& e) {
             std::cerr << "[ERROR] Asynchronous sync failure: " << e.what() << "\n";
             syncInFlight = false;
+            syncClock.restart();
         }
         catch (...) {
             std::cerr << "[ERROR] Asynchronous sync unknown failure\n";
             syncInFlight = false;
+            syncClock.restart();
         }
     }
 
@@ -346,6 +389,10 @@ void syncAndRenderOnlinePlayers(
         sf::Vector2f renderPos = (dispIt != onlinePlayerDisplayPos.end())
             ? dispIt->second
             : sf::Vector2f(op.x, op.y);
+
+        float dx = renderPos.x - sprite.getPosition().x;
+        float dy = renderPos.y - sprite.getPosition().y;
+        if (dx * dx + dy * dy >= 3000000.f) continue;
 
         sf::Sprite opSprite(op.gender == 2 ? texFemaleOnline : texMaleOnline);
         sf::Vector2u ts_init = opSprite.getTexture().getSize();
@@ -377,8 +424,7 @@ void syncAndRenderOnlinePlayers(
     }
 }
 
-void saveAllGameDataAndClose(
-    sf::RenderWindow& window,
+void saveAllGameData(
     AuthManager& authManager,
     const std::string& username,
     TradeSlot playerTradeSlots[4],
@@ -426,7 +472,7 @@ void saveAllGameDataAndClose(
 
     std::vector<StoredStructure> structData;
     for (auto& s : structures) {
-        if (s.sprite.has_value() && (s.owner == username || s.owner == "")) {
+        if (s.sprite.has_value() && s.owner == username) {
             structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY });
         }
     }
@@ -434,94 +480,7 @@ void saveAllGameDataAndClose(
 
     std::vector<StoredCampfire> campData;
     for (auto& c : campfires) {
-        campData.push_back({
-            c.position.x,
-            c.position.y,
-            c.timeRemaining,
-            c.isCrafted,
-            c.fuel,
-            c.inputItem,
-            c.inputCount,
-            c.outputItem,
-            c.outputCount
-        });
-    }
-    authManager.saveCampfires(username.c_str(), campData);
-
-    std::cout << "Saved!\n";
-    window.close();
-}
-
-void checkAndPerformPeriodicAutoSave(
-    const sf::Sprite& sprite,
-    sf::Vector2f& lastSaveCameraPos,
-    sf::Clock& saveCooldownClock,
-    Inventory& inventory,
-    AuthManager& authManager,
-    const std::string& username,
-    float hunger,
-    float thirst,
-    int currency,
-    int level,
-    int exp,
-    float elapsedGameTime,
-    int hungerMultiplier,
-    int thirstMultiplier,
-    const std::vector<PlacedStructure>& structures,
-    const std::vector<PlacedCampfire>& campfires
-) {
-    const float SAVE_DISTANCE = 2000.f;
-
-    float dx = sprite.getPosition().x - lastSaveCameraPos.x;
-    float dy = sprite.getPosition().y - lastSaveCameraPos.y;
-
-    float distanceMoved = std::sqrt(dx * dx + dy * dy);
-
-    if (distanceMoved >= SAVE_DISTANCE && saveCooldownClock.getElapsedTime().asSeconds() > 10.f)
-    {
-        std::vector<std::pair<int, int>> items(20, { 0, 0 });
-        for (int i = 0; i < 20; i++) {
-            if (inventory.hasItem(i)) {
-                items[i] = { inventory.getItemID(i), inventory.getItemCount(i) };
-            }
-        }
-        authManager.saveInventory(username.c_str(), items);
-
-        float currentElapsed = elapsedGameTime;
-
-        authManager.savePlayerStats(
-            username.c_str(),
-            hunger,
-            thirst,
-            currency,
-            level,
-            exp,
-            currentElapsed,
-            hungerMultiplier,
-            thirstMultiplier
-        );
-
-        std::vector<StoredStructure> structData;
-        for (const auto& s : structures)
-        {
-            if (s.sprite.has_value() && (s.owner == username || s.owner == ""))
-            {
-                structData.push_back({
-                    s.id,
-                    s.sprite->getPosition().x,
-                    s.sprite->getPosition().y,
-                    s.health,
-                    s.rotation,
-                    s.isOpen,
-                    s.shearY
-                });
-            }
-        }
-        authManager.saveStructures(username.c_str(), structData);
-
-        std::vector<StoredCampfire> campData;
-        for (const auto& c : campfires)
-        {
+        if (c.owner == username) {
             campData.push_back({
                 c.position.x,
                 c.position.y,
@@ -534,12 +493,56 @@ void checkAndPerformPeriodicAutoSave(
                 c.outputCount
             });
         }
-        authManager.saveCampfires(username.c_str(), campData);
-
-        lastSaveCameraPos = sprite.getPosition();
-        saveCooldownClock.restart();
-
-        std::cout << "[CAMERA AUTO SAVE]\n";
     }
+    authManager.saveCampfires(username.c_str(), campData);
+
+    // When the player leaves, do not save their chat messages/history in the server/online database
+    authManager.clearPlayerChatMessages(username.c_str());
+
+    // Mark player as offline in server database
+    authManager.setPlayerOffline(username.c_str());
+
+    std::cout << "Saved!\n";
 }
+
+void saveAllGameDataAndClose(
+    sf::RenderWindow& window,
+    AuthManager& authManager,
+    const std::string& username,
+    TradeSlot playerTradeSlots[4],
+    TradeSlot myP2PSlots[4],
+    int p2pTradeID,
+    Inventory& inventory,
+    float hunger,
+    float thirst,
+    int currency,
+    int level,
+    int exp,
+    float elapsedGameTime,
+    int hungerMultiplier,
+    int thirstMultiplier,
+    const std::vector<PlacedStructure>& structures,
+    const std::vector<PlacedCampfire>& campfires
+) {
+    saveAllGameData(
+        authManager,
+        username,
+        playerTradeSlots,
+        myP2PSlots,
+        p2pTradeID,
+        inventory,
+        hunger,
+        thirst,
+        currency,
+        level,
+        exp,
+        elapsedGameTime,
+        hungerMultiplier,
+        thirstMultiplier,
+        structures,
+        campfires
+    );
+    window.close();
+}
+
 

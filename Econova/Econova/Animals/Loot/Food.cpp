@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <iostream>
 
-bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float maxHunger, int maxMultiplier, float& hp) {
+bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float maxHunger, int maxMultiplier, float& hp, bool disasterActive) {
     if (itemID == ITEM_CHICKEN_MEAT) {
         float foodRestore = 20.f;
         hunger -= foodRestore;
@@ -11,6 +11,10 @@ bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float max
             hungerMultiplier++;
         }
         hunger = (std::max)(0.f, hunger);
+        if (disasterActive) {
+            // Raw meat is poisoned during disaster epidemic! Decreases HP
+            hp = (std::max)(0.f, hp - 25.f);
+        }
         return true;
     }
     else if (itemID == ITEM_PIG_MEAT) {
@@ -21,6 +25,10 @@ bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float max
             hungerMultiplier++;
         }
         hunger = (std::max)(0.f, hunger);
+        if (disasterActive) {
+            // Raw meat is poisoned during disaster epidemic! Decreases HP
+            hp = (std::max)(0.f, hp - 30.f);
+        }
         return true;
     }
     else if (itemID == ITEM_SHEEP_MEAT) {
@@ -31,6 +39,10 @@ bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float max
             hungerMultiplier++;
         }
         hunger = (std::max)(0.f, hunger);
+        if (disasterActive) {
+            // Raw meat is poisoned during disaster epidemic! Decreases HP
+            hp = (std::max)(0.f, hp - 30.f);
+        }
         return true;
     }
     else if (itemID == ITEM_ZOMBIE_FLESH) {
@@ -41,7 +53,8 @@ bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float max
             hungerMultiplier++;
         }
         hunger = (std::max)(0.f, hunger);
-        hp = (std::max)(0.f, hp - 10.f);
+        float damage = disasterActive ? 35.f : 10.f;
+        hp = (std::max)(0.f, hp - damage);
         return true;
     }
     else if (itemID == ITEM_COOKED_CHICKEN) {

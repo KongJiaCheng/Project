@@ -91,7 +91,8 @@ void updateHUDVitalsLayoutAndTexts(
 void drawTopRightButtons(
     sf::RenderWindow& window,
     const sf::Font& uiFont,
-    unsigned int width
+    unsigned int width,
+    bool isAdmin = false
 );
 
 void drawGoldCurrency(
@@ -158,6 +159,17 @@ void drawSleepOverlay(
     unsigned int height,
     float sleepFadeTimer,
     float sleepFadeDuration
+);
+
+void drawDisasterNotification(
+    sf::RenderWindow& window,
+    const sf::Font& font,
+    unsigned int width,
+    bool disasterActive,
+    float disasterRemaining,
+    float bannerTimer,
+    const std::string& bannerMessage,
+    const std::string& currentDisasterType = "diarrhea"
 );
 
 bool handleIntroAndTutorialClicks(
@@ -255,6 +267,7 @@ void renderAllGameUIs(
     const std::string& bargainStatus,
     sf::Color bargainColor,
     bool tradeConfirmOpen,
+    const std::string& tradeConfirmMessage,
     bool stockPageOpen,
     bool dbStartupEnabled,
     bool& recentTradesFetchInFlight,
@@ -292,11 +305,20 @@ void renderAllGameUIs(
     float tutMoveDist, bool tutSprinted, bool tutInvOpened, int tutWoodGathered, int tutStoneGathered, bool tutAttacked, bool tutChatted,
     bool spawnOverlayActive, int spawnOverlayDone, int spawnOverlayTotal,
     bool chestMenuOpen,
+    PlacedStructure* activeChest,
+    int chestSelectedInvSlot,
     std::vector<PlacedCampfire>& campfires,
     std::vector<PlacedStructure>& structures,
     bool quantityPromptOpen, bool quantityPromptIsCampfire, int quantityPromptCampfireSlot, int quantityPromptMax, TextInput& quantityInput,
+    bool quantityPromptIsChest, int quantityPromptChestSlot, int quantityPromptSourceSlot,
     bool isSleeping, float sleepFadeTimer, float sleepFadeDuration,
     std::function<const sf::Texture* (int id)> getItemTexture,
     std::function<std::string(int id)> getItemName,
-    std::function<int(int id)> getItemPrice
+    std::function<int(int id)> getItemPrice,
+    bool disasterActive = false,
+    float disasterRemaining = 0.f,
+    float disasterBannerTimer = 0.f,
+    const std::string& disasterBannerMessage = "",
+    bool isAdmin = false,
+    const std::string& currentDisasterType = "diarrhea"
 );

@@ -6,8 +6,11 @@
 
 Inventory::Inventory()
 {
-    // Load font first
-    if (!font.openFromFile("C:/Windows/Fonts/arial.ttf")) {
+    // Load font with fallbacks
+    bool fontLoaded = font.openFromFile("C:/Windows/Fonts/arial.ttf");
+    if (!fontLoaded) fontLoaded = font.openFromFile("C:/Windows/Fonts/calibri.ttf");
+    if (!fontLoaded) fontLoaded = font.openFromFile("C:/Windows/Fonts/segoeui.ttf");
+    if (!fontLoaded) {
         std::cerr << "Warning: failed to load font\n";
     }
 
@@ -16,9 +19,20 @@ Inventory::Inventory()
     countText->setFillColor(sf::Color::White);
 
     // initialize slot boxes and positions
+    float totalWidth = 10 * (boxW + 4.f);
+    float xStart = (1920.f - totalWidth) / 2.f;
+    float totalHeight = 2 * (boxH + 4.f);
+    float yStart = 1080.f - (totalHeight + 40.f);
+
     for (int i = 0; i < SLOT_COUNT; ++i)
     {
+        int row = i / 10;
+        int col = i % 10;
+        float px = xStart + col * (boxW + 4.f);
+        float py = yStart + row * (boxH + 4.f);
+
         slotBox[i].setSize({ boxW, boxH });
+        slotBox[i].setPosition({ px, py });
         slotBox[i].setFillColor(sf::Color(50, 50, 50, 200));
         slotBox[i].setOutlineThickness(2.f);
         slotBox[i].setOutlineColor(sf::Color::Black);
@@ -126,11 +140,29 @@ void Inventory::draw(sf::RenderWindow& window)
         }
     }
 
-    // ---- Tooltip for hovered slot ----
-    if (hoveredSlot >= 0 && hoveredSlot < SLOT_COUNT &&
-        slots[hoveredSlot].occupied)
+    // Automatically update hovered slot directly each frame
+    sf::Vector2i mousePixel = sf::Mouse::getPosition(window);
+    sf::Vector2f uiMouse = window.mapPixelToCoords(mousePixel, GetUIView(&window));
+    hoveredSlot = getSlotAt(uiMouse);
+
+    // ---- Tooltip for hovered slot (or selected slot if not hovering another slot) ----
+    int tipSlot = hoveredSlot;
+    if ((tipSlot < 0 || tipSlot >= SLOT_COUNT || !slots[tipSlot].occupied) &&
+        (selectedSlot >= 0 && selectedSlot < SLOT_COUNT && slots[selectedSlot].occupied))
     {
-        std::string name = getItemName(slots[hoveredSlot].id);
+        tipSlot = selectedSlot;
+    }
+
+    if (tipSlot >= 0 && tipSlot < SLOT_COUNT && slots[tipSlot].occupied)
+    {
+        std::string name = getItemName(slots[tipSlot].id);
+        if (slots[tipSlot].count > 1) {
+            name += " (x" + std::to_string(slots[tipSlot].count) + ")";
+        }
+        if (slots[tipSlot].id == 4 || slots[tipSlot].id == 6) {
+            name += " [" + std::to_string(slotDurability[tipSlot]) + "/" + std::to_string(slotMaxDurability[tipSlot]) + "]";
+        }
+
         if (!name.empty())
         {
             sf::Text tipText(font, name, 22);
@@ -140,29 +172,31 @@ void Inventory::draw(sf::RenderWindow& window)
             sf::FloatRect tb = tipText.getLocalBounds();
             const float padX = 18.f, padY = 10.f;
             float tw = tb.size.x + padX * 2.f;
-            float th = 34.f;
+            float th = 36.f;
 
-            sf::Vector2f slotPos = slotBox[hoveredSlot].getPosition();
-            float tx = slotPos.x + boxW / 2.f - tw / 2.f;
-            float ty = slotPos.y - th - 10.f;
+            // Position tooltip above the column containing the slot so it never covers any slot
+            int col = tipSlot % 10;
+            float colX = xStart + col * (boxW + 4.f);
+            float tx = colX + boxW / 2.f - tw / 2.f;
+            float ty = yStart - th - 12.f;
 
             // Clamp to screen edges
             float screenW = 1920.f;
-            if (tx < 4.f) tx = 4.f;
-            if (tx + tw > screenW - 4.f) tx = screenW - 4.f - tw;
+            if (tx < 10.f) tx = 10.f;
+            if (tx + tw > screenW - 10.f) tx = screenW - 10.f - tw;
 
             // Background pill
             sf::RectangleShape tipBg({ tw, th });
             tipBg.setPosition({ tx, ty });
-            tipBg.setFillColor(sf::Color(20, 20, 30, 220));
+            tipBg.setFillColor(sf::Color(20, 20, 30, 230));
             tipBg.setOutlineThickness(2.f);
-            tipBg.setOutlineColor(sf::Color(120, 200, 255, 200));
+            tipBg.setOutlineColor(sf::Color(120, 200, 255, 220));
             window.draw(tipBg);
 
             // Accent bar on left edge
             sf::RectangleShape accent({ 4.f, th });
             accent.setPosition({ tx, ty });
-            accent.setFillColor(sf::Color(100, 200, 255, 230));
+            accent.setFillColor(sf::Color(100, 200, 255, 240));
             window.draw(accent);
 
             // Text centred in pill
@@ -177,6 +211,75 @@ void Inventory::draw(sf::RenderWindow& window)
     window.setView(old);
 }
 
+void Inventory::setSelectedSlot(int slot)
+{
+    if (slot >= -1 && slot < SLOT_COUNT) {
+        selectedSlot = slot;
+        if (slot >= 0 && slots[slot].occupied) {
+            bannerText = getItemName(slots[slot].id);
+            if (slots[slot].count > 1) {
+                bannerText += " (x" + std::to_string(slots[slot].count) + ")";
+            }
+            if (slots[slot].id == 4 || slots[slot].id == 6) {
+                bannerText += " [" + std::to_string(slotDurability[slot]) + "/" + std::to_string(slotMaxDurability[slot]) + "]";
+            }
+            bannerTimer = 2.5f;
+            bannerClock.restart();
+        } else {
+            bannerText = "";
+            bannerTimer = 0.f;
+        }
+    }
+}
+
+void Inventory::drawItemBanner(sf::RenderWindow& window)
+{
+    if (bannerTimer <= 0.f || bannerText.empty()) return;
+
+    float dt = bannerClock.restart().asSeconds();
+    bannerTimer -= dt;
+    if (bannerTimer <= 0.f) return;
+
+    sf::View old = window.getView();
+    window.setView(GetUIView(&window));
+
+    sf::Text bText(font, bannerText, 24);
+    bText.setStyle(sf::Text::Bold);
+    sf::FloatRect tb = bText.getLocalBounds();
+
+    const float padX = 24.f;
+    float bw = tb.size.x + padX * 2.f;
+    float bh = 44.f;
+    float bx = (1920.f - bw) / 2.f;
+    float by = 1080.f - 160.f;
+
+    float alpha = 240.f;
+    if (bannerTimer < 0.5f) {
+        alpha = (bannerTimer / 0.5f) * 240.f;
+    }
+    std::uint8_t a = static_cast<std::uint8_t>(std::clamp(alpha, 0.f, 255.f));
+
+    sf::RectangleShape bg({ bw, bh });
+    bg.setPosition({ bx, by });
+    bg.setFillColor(sf::Color(18, 22, 32, a));
+    bg.setOutlineThickness(2.f);
+    bg.setOutlineColor(sf::Color(100, 200, 255, a));
+    window.draw(bg);
+
+    sf::RectangleShape acc({ 4.f, bh });
+    acc.setPosition({ bx, by });
+    acc.setFillColor(sf::Color(120, 220, 255, a));
+    window.draw(acc);
+
+    bText.setFillColor(sf::Color(255, 255, 255, a));
+    bText.setPosition({
+        bx + padX,
+        by + (bh - tb.size.y) / 2.f - tb.position.y
+    });
+    window.draw(bText);
+
+    window.setView(old);
+}
 
 void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& window)
 {
@@ -186,9 +289,9 @@ void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& wind
     if (slot != -1)
     {
         if (selectedSlot == slot && doubleClickClock.getElapsedTime().asSeconds() > 0.5f) {
-            selectedSlot = -1;
+            setSelectedSlot(-1);
         } else {
-            selectedSlot = slot;
+            setSelectedSlot(slot);
         }
 
         // check double click
@@ -214,7 +317,6 @@ void Inventory::handleClick(const sf::Vector2i& mousePos, sf::RenderWindow& wind
     }
 }
 
-
 int Inventory::getSlotAt(sf::Vector2f mousePos)
 {
     // Loop through all slot boxes
@@ -234,6 +336,7 @@ void Inventory::updateHover(const sf::Vector2i& mousePos, sf::RenderWindow& wind
     sf::Vector2f uiPos = window.mapPixelToCoords(mousePos, GetUIView(&window));
     hoveredSlot = getSlotAt(uiPos);
 }
+
 // Item display name lookup
 std::string Inventory::getItemName(int id)
 {
@@ -242,6 +345,7 @@ std::string Inventory::getItemName(int id)
     case ITEM_NONE:          return "";
     case ITEM_TREE:          return "Tree";
     case ITEM_STONE:         return "Stone";
+    case ITEM_DROP_STONE:    return "Stone";
     case ITEM_WOOD:          return "Wood";
     case ITEM_WOODEN_SWORD:  return "Wooden Sword";
     case ITEM_SAPLING:       return "Sapling";
@@ -254,6 +358,7 @@ std::string Inventory::getItemName(int id)
     case ITEM_WOOD_STAIRS:   return "Wood Stairs";
     case ITEM_BED:           return "Bed";
     case ITEM_WRENCH:        return "Wrench";
+    case ITEM_CHEST:         return "Chest";
     case ITEM_CHICKEN_MEAT:  return "Chicken Meat";
     case ITEM_PIG_MEAT:      return "Pig Meat";
     case ITEM_ZOMBIE_FLESH:  return "Zombie Flesh";
@@ -262,6 +367,14 @@ std::string Inventory::getItemName(int id)
     case ITEM_SHEEP_MEAT:    return "Sheep Meat";
     case ITEM_COOKED_SHEEP:  return "Cooked Lamb";
     case ITEM_WOOL:          return "Wool";
+    case ITEM_COAL:          return "Coal";
+    case ITEM_COPPER_ORE:    return "Copper Ore";
+    case ITEM_COPPER_BAR:    return "Copper Bar";
+    case ITEM_IRON_ORE:      return "Iron Ore";
+    case ITEM_IRON_BAR:      return "Iron Bar";
+    case ITEM_GOLD_ORE:      return "Gold Ore";
+    case ITEM_GOLD_BAR:      return "Gold Bar";
+    case ITEM_DIAMOND:       return "Diamond";
     default:                 return "Unknown Item";
     }
 }
@@ -380,7 +493,11 @@ bool handleInventoryInteractionClick(
     int& hungerMultiplier,
     float maxHunger,
     int MAX_MULTIPLIER,
-    float& hp
+    float& hp,
+    bool disasterActive,
+    bool furnaceMenuOpen,
+    bool chestMenuOpen,
+    bool quantityPromptOpen
 ) {
     if (!inventoryOpen) return false;
 
@@ -400,7 +517,10 @@ bool handleInventoryInteractionClick(
                 }
             }
 
-            if (!tradeMenuOpen && !p2pTradeOpen && !campfireOpen)
+            bool isInteractingWithMenu = tradeMenuOpen || p2pTradeOpen || campfireOpen
+                                       || furnaceMenuOpen || chestMenuOpen || quantityPromptOpen;
+
+            if (!isInteractingWithMenu)
             {
                 if (tex == &saplingTex)
                 {
@@ -413,16 +533,19 @@ bool handleInventoryInteractionClick(
                 }
 
                 int itemId = inventory.getItemID(clickedSlot);
-                if ((itemId >= ITEM_FURNACE && itemId <= ITEM_BED) || (itemId == ITEM_NONE && tex == &campfireFrames[0])) {
+                if ((itemId >= ITEM_FURNACE && itemId <= ITEM_BED) || itemId == ITEM_CHEST || (itemId == ITEM_NONE && tex == &campfireFrames[0])) {
                     inventoryOpen = false;
                     placementMode = true;
-                    placementFollowingCursor = false;
+                    placementFollowingCursor = true;   // preview follows cursor immediately
                     placementItemID = itemId;
                     placementFromInventorySlot = clickedSlot;
                     return true;
                 }
 
-                if (consumeFoodItem(itemId, hunger, hungerMultiplier, maxHunger, MAX_MULTIPLIER, hp)) {
+                if (consumeFoodItem(itemId, hunger, hungerMultiplier, maxHunger, MAX_MULTIPLIER, hp, disasterActive)) {
+                    if (disasterActive && (itemId == ITEM_CHICKEN_MEAT || itemId == ITEM_PIG_MEAT || itemId == ITEM_SHEEP_MEAT || itemId == ITEM_ZOMBIE_FLESH)) {
+                        inventory.showBanner("POISONED! Consuming raw meat during diarrhea epidemic damages HP!");
+                    }
                     inventory.consumeItem(clickedSlot);
                     return true;
                 }

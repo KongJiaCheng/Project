@@ -24,7 +24,7 @@ bool handleQuantityPromptEvent(
     sf::RenderWindow& window,
     bool& quantityPromptOpen,
     TextInput& quantityInput,
-    bool quantityPromptIsCampfire,
+    bool& quantityPromptIsCampfire,
     int quantityPromptCampfireSlot,
     int quantityPromptSourceSlot,
     int quantityPromptTargetSlot,
@@ -41,7 +41,12 @@ bool handleQuantityPromptEvent(
     std::string& npcGoldInput,
     bool& bargainAccepted,
     bool& saplingPlacementMode,
-    std::function<void()> syncSaveCallback
+    std::function<void()> syncSaveCallback,
+    std::vector<PlacedStructure>* structures,
+    bool& quantityPromptIsChest,
+    int quantityPromptChestSlot,
+    PlacedStructure* activeChest,
+    int quantityPromptMax
 );
 
 bool handleCampfireMenuClicks(
@@ -87,7 +92,8 @@ bool handleFurnaceMenuClicks(
     int& quantityPromptCampfireSlot,
     TextInput& quantityInput,
     bool& saplingPlacementMode,
-    std::function<void()> syncSaveCallback
+    std::function<void()> syncSaveCallback,
+    std::function<const sf::Texture* (int id)> getItemTexture = nullptr
 );
 
 bool handleChatCommandsAndInput(
@@ -99,7 +105,8 @@ bool handleChatCommandsAndInput(
     float& bubbleTimer,
     bool tutorialActive,
     int tutorialStep,
-    bool& tutChatted
+    bool& tutChatted,
+    std::function<bool(const std::string& cmd, const std::string& args, std::string& feedback)> customCommandHandler = nullptr
 );
 bool handleWrenchMenuClicks(
     sf::Vector2f uiPos,
@@ -181,7 +188,8 @@ bool handleKeyAndTextInputs(
     bool& p2pOfferDirty,
     float& p2pOfferPushTimer,
     bool& p2pMyReady,
-    bool& npcGoldTyping
+    bool& npcGoldTyping,
+    std::function<bool(const std::string& cmd, const std::string& args, std::string& feedback)> customCommandHandler = nullptr
 );
 
 void handleMouseDragAndScroll(
@@ -202,7 +210,10 @@ void handleMouseDragAndScroll(
     std::vector<PlacedStructure>& structures,
     bool& isSleeping,
     float& sleepFadeTimer,
-    bool& sleepTimeSkipped
+    bool& sleepTimeSkipped,
+    bool placementMode,
+    bool& chestMenuOpen,
+    PlacedStructure*& activeChest
 );
 
 bool handleTopBarAndWrenchClicks(
@@ -227,7 +238,8 @@ bool handleTopBarAndWrenchClicks(
     const std::map<std::string, sf::FloatRect>& onlinePlayerWrenchBounds,
     const sf::Sprite& playerWrenchBtn,
     const NPC& npcFemale,
-    const NPC& npcMale
+    const NPC& npcMale,
+    std::function<void()> logoutCallback
 );
 
 void handleAllGameMouseButtonPressed(
@@ -244,6 +256,8 @@ void handleAllGameMouseButtonPressed(
     bool& placementMode,
     bool& tradeMenuOpen,
     bool& tradeConfirmOpen,
+    std::string& tradeConfirmMessage,
+    bool& tradeConfirmIsP2P,
     bool& p2pTradeOpen,
     bool& isTargetNPC,
     std::string& wrenchTargetPlayer,
@@ -331,11 +345,16 @@ void handleAllGameMouseButtonPressed(
     bool& quantityPromptIsP2P,
     bool& quantityPromptIsCampfire,
     int& quantityPromptCampfireSlot,
+    bool& quantityPromptIsChest,
+    int& quantityPromptChestSlot,
     TextInput& quantityInput,
     QuestInfo& qInfo,
     const std::vector<DailyQuest>& availableQuests,
     float& p2pPollTimer,
     const GameAssets& assets,
+    bool& chestMenuOpen,
+    PlacedStructure*& activeChest,
+    int& chestSelectedInvSlot,
     bool& saplingPlacementMode,
     sf::Vector2f& saplingPlacementPos,
     float& saplingRotation,
@@ -371,7 +390,11 @@ void handleAllGameMouseButtonPressed(
     const sf::Texture campfireFrames[8],
     float maxHunger,
     const int MAX_MULTIPLIER,
-    float& hp
+    float& hp,
+    bool disasterActive = false,
+    const std::string& currentDisasterType = "diarrhea",
+    bool* isLoggingOutPtr = nullptr,
+    bool* logoutCloseWindowPtr = nullptr
 );
 
 bool handleGlobalKeyEvents(
@@ -402,7 +425,11 @@ bool handleGlobalKeyEvents(
     int hungerMultiplier,
     int thirstMultiplier,
     std::vector<PlacedStructure>& structures,
-    std::vector<PlacedCampfire>& campfires
+    std::vector<PlacedCampfire>& campfires,
+    bool& chestMenuOpen,
+    PlacedStructure*& activeChest,
+    bool* isLoggingOutPtr = nullptr,
+    bool* logoutCloseWindowPtr = nullptr
 );
 
 

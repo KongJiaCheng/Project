@@ -1,9 +1,10 @@
 #pragma once
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 
 struct GameSettings {
     int volume = 50;
-    int brightness = 50;
+    int brightness = 80;
     int resolutionIndex = 1;
     sf::Keyboard::Scancode keyUp = sf::Keyboard::Scancode::W;
     sf::Keyboard::Scancode keyDown = sf::Keyboard::Scancode::S;
@@ -18,5 +19,10 @@ struct GameSettings {
 };
 
 extern GameSettings globalSettings;
+extern sf::Music* currentActiveMusic;
 
+void updateActiveMusicVolume();
+void applyGlobalVolume(float volume);
 void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned int& height);
+void saveSettingsToFile();
+void loadSettingsFromFile();

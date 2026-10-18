@@ -82,6 +82,8 @@ public:
         float maxRadius = 350.f
     );
 
+    bool isResourceBlocking(sf::Vector2f targetPos) const;
+    std::pair<float, int> getNearestPickupItem(const sf::Sprite& player, float maxQueryRadius = 400.f) const;
     float getNearestDistance(const sf::Sprite& player) const;
     int getNearestItemID(const sf::Sprite& player) const;
 

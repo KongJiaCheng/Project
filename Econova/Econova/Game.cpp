@@ -186,6 +186,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     float sleepFadeTimer = 0.f;
     const float sleepFadeDuration = 1.5f;
     bool sleepTimeSkipped = false;
+    bool justFinishedSleeping = false;
 
     // rates (per second)
     const float HUNGER_RATE = 1.f;
@@ -233,6 +234,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool p2pGoldTyping = false;
     bool npcGoldTyping = false;
     bool tradeConfirmOpen = false;
+    std::string tradeConfirmMessage = "";
+    bool tradeConfirmIsP2P = false;
     bool hasBargained = false;
     bool bargainAccepted = false;
     std::string bargainStatus = "";
@@ -242,6 +245,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool placementMode = false;
     float placementRotation = 0.f; // 0: Vertical, 90: Horizontal
     int playerFloorLevel = 0;
+    float stairOffset = 0.f;  // set each frame by renderWorldDepthScene; used to offset collision probe
     bool placementFollowingCursor = true;
 
     int placementItemID = 0;
@@ -282,6 +286,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::vector<PlacedStructure> structures;
     bool chestMenuOpen = false;
     PlacedStructure* activeChest = nullptr;
+    int chestSelectedInvSlot = -1;    // -1 = none; set when player clicks an inv slot in chest menu
     bool amountPopupOpen = false;
     int amountPopupSlot = -1;
     int amountSelected = 1;
@@ -303,6 +308,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool marketSearchActive = false;
     sf::Clock marketCursorBlink;
     int marketScrollOffset = 0;
+    bool adminSimOpen = false;
+    int adminSimScrollOffset = 0;
     bool iapPageOpen = false;
     bool iapVerifyingOpen = false;
     int iapVerifyingGold = 0;
@@ -310,8 +317,26 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::string iapVerifyingTier = "";
     sf::Clock stockUpdateClock;
 
+    // Natural Disaster system (e.g. Diarrhea Outbreak, Drought)
+    sf::Clock disasterCycleClock;
+    bool disasterActive = false;
+    float disasterRemaining = 0.f;
+    float disasterBannerTimer = 0.f;
+    std::string disasterBannerMessage = "";
+    std::string currentDisasterType = "diarrhea";
+
+    // DB-scheduled disaster polling
+    sf::Clock disasterPollClock;          // polls DB every 15 s
+    int  activeScheduledEventID = -1;     // event_id from disaster_events currently running (-1 = none)
+    const float DISASTER_POLL_INTERVAL = 15.f;
+
     std::vector<StockItem> stockMarket;
-    initStockMarket(stockMarket, timedLoadMarketPrice);
+    initStockMarket(stockMarket, timedLoadAllMarketPrices);
+
+    std::string userRole = authManager.getUserRole(username.c_str());
+    std::string lowerRole = userRole;
+    for (char& c : lowerRole) c = (char)::tolower((unsigned char)c);
+    bool isAdmin = (lowerRole == "admin" || lowerRole == "administrator" || AuthManager::isTargetedAdmin(username, ""));
 
     auto getItemPrice = [&](int id) -> int {
         return getMarketItemPrice(id, stockMarket);
@@ -323,6 +348,97 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
     auto adjustMarketItem = [&](int itemId, float percentChange) {
         ::adjustMarketItem(stockMarket, itemId, percentChange, authManager);
+    };
+
+    auto customCommandHandler = [&](const std::string& cmd, const std::string& args, std::string& feedback) -> bool {
+        if (cmd == "disaster") {
+            std::string lowerArg = args;
+            for (char& c : lowerArg) c = (char)::tolower((unsigned char)c);
+            if (lowerArg == "diarrhea" || lowerArg == "start diarrhea") {
+                currentDisasterType = "diarrhea";
+                disasterActive = true;
+                disasterRemaining = 600.f; // 10 minutes
+                disasterBannerTimer = 7.f;
+                disasterBannerMessage = "[STAFF TRIGGER] NATURAL DISASTER: Acute Diarrhea strikes! Raw meat POISONED! Cooked food prices surging!";
+                applyDisasterFoodMarketImpact(stockMarket, authManager);
+                inventory.showBanner("[STAFF] Natural Disaster ACTIVATED! Raw food is now poisonous! (10m)");
+                feedback = "[STAFF] Acute Diarrhea Outbreak started (10 min). Raw meat is poisoned!";
+                std::cout << "[DISASTER CMD] Diarrhea activated by " << username << " (" << userRole << "). Duration: 600s\n";
+                return true;
+            }
+            else if (lowerArg == "drought" || lowerArg == "start drought") {
+                currentDisasterType = "drought";
+                disasterActive = true;
+                disasterRemaining = 600.f; // 10 minutes
+                disasterBannerTimer = 7.f;
+                disasterBannerMessage = "[STAFF TRIGGER] NATURAL DISASTER: Severe Drought strikes! Ponds dried up! Trees & Wildlife dying! Wood & Meat prices surging!";
+
+                // 1. Cull 65% of trees
+                auto& items = itemManager.getItems();
+                std::vector<Item> keptItems;
+                keptItems.reserve(items.size());
+                for (auto& it : items) {
+                    if (it.id == ITEM_TREE) {
+                        if ((rand() % 100) < 65) continue; // withered away
+                    }
+                    keptItems.push_back(std::move(it));
+                }
+                items = std::move(keptItems);
+                itemManager.rebuildSpatialGrid();
+
+                // 2. Cull 70% of animals
+                std::vector<std::unique_ptr<Animal>> keptAnimals;
+                keptAnimals.reserve(animals.size());
+                for (auto& a : animals) {
+                    if ((rand() % 100) < 70) continue; // perished from dehydration
+                }
+                animals = std::move(keptAnimals);
+
+                // 3. Apply market impact: Wood and all meat prices (raw & cooked) surge
+                applyDroughtMarketImpact(stockMarket, authManager);
+                inventory.showBanner("[STAFF] Severe Drought ACTIVATED! Ponds dried up! Wood & Meat prices surged! (10m)");
+                feedback = "[STAFF] Severe Drought Outbreak started (10 min). Ponds dried up, wood & meat prices surging!";
+                std::cout << "[DISASTER CMD] Severe Drought activated by " << username << " (" << userRole << "). Duration: 600s\n";
+                return true;
+            }
+            else if (lowerArg == "stop" || lowerArg == "clear" || lowerArg == "end") {
+                if (!disasterActive) {
+                    feedback = "No natural disaster is currently active.";
+                    return true;
+                }
+                if (currentDisasterType == "drought") {
+                    restoreDroughtMarketImpact(stockMarket, authManager);
+                    inventory.showBanner("[STAFF] Severe Drought STOPPED! Ponds restored, wood & meat prices normalized.");
+                    feedback = "[STAFF] Severe Drought stopped. Ponds restored, food and wood prices normalized.";
+                }
+                else {
+                    restoreDisasterFoodMarketImpact(stockMarket, authManager);
+                    inventory.showBanner("[STAFF] Natural Disaster STOPPED! Meat prices normalized.");
+                    feedback = "[STAFF] Natural Disaster stopped. Food prices restored to normal.";
+                }
+                disasterActive = false;
+                disasterRemaining = 0.f;
+                disasterBannerTimer = 5.f;
+                disasterBannerMessage = "[STAFF TRIGGER] Natural Disaster ended manually. Environment and prices restored.";
+                std::cout << "[DISASTER CMD] Disaster '" << currentDisasterType << "' stopped manually by " << username << " (" << userRole << ").\n";
+                // If this was a DB-scheduled event, mark it completed/cancelled
+                if (activeScheduledEventID >= 0) {
+                    authManager.markDisasterCompleted(activeScheduledEventID);
+                    activeScheduledEventID = -1;
+                }
+                return true;
+            }
+            else {
+                feedback = "Unknown disaster: '" + args + "'. Available: diarrhea, drought, stop. (Future: blizzard)";
+                return false;
+            }
+        }
+        else if (cmd == "sim") {
+            adminSimOpen = !adminSimOpen;
+            feedback = adminSimOpen ? "Admin Quantity Simulator opened." : "Admin Quantity Simulator closed.";
+            return true;
+        }
+        return false;
     };
 
     sf::Sprite playerWrenchBtn(wrenchTex);
@@ -366,7 +482,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     sf::Texture& cookedPigTex = assets.cookedPigTex;
     sf::Texture& cookedSheepTex = assets.cookedSheepTex;
     sf::Texture& woolTex = assets.woolTex;
+    sf::Texture& coalTex = assets.coalTex;
+    sf::Texture& copperOreTex = assets.copperOreTex;
+    sf::Texture& copperBarTex = assets.copperBarTex;
+    sf::Texture& ironOreTex = assets.ironOreTex;
+    sf::Texture& ironBarTex = assets.ironBarTex;
+    sf::Texture& goldOreTex = assets.goldOreTex;
+    sf::Texture& goldBarTex = assets.goldBarTex;
+    sf::Texture& diamondTex = assets.diamondTex;
     sf::Texture* campfireFrames = assets.campfireFrames;
+
 
     bool goldTexLoaded = (goldTex.getSize().x > 0);
     sf::Sprite goldSprite(goldTex);
@@ -422,6 +547,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         bgMusic.setLooping(true);
         bgMusic.setVolume(globalSettings.volume); // 0–100
         musicLoaded = true;
+        currentActiveMusic = &bgMusic;
     }
     else
     {
@@ -442,6 +568,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool quantityPromptIsP2P = false;
     bool quantityPromptIsCampfire = false;
     int quantityPromptCampfireSlot = 0;
+    bool quantityPromptIsChest = false;
+    int quantityPromptChestSlot = -1;
     TextInput quantityInput(font, { (width - 200.f) / 2.f, (height - 40.f) / 2.f + 10.f }, { 200.f, 40.f });
     bool isChatting = false;
     bool chatActive = false;
@@ -453,9 +581,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool isDraggingChat = false;
     sf::Vector2f lastMousePosChat;
 
-    // --- Session-based chat: only show messages sent after login ---
-    int loginMessageIdOffset = timedGetMaxMessageID();
+    // --- Active session chat: show chat messages and history of players currently in the game ---
+    int loginMessageIdOffset = 0;
     traceStartup("after_chat_offset");
+    authManager.clearPlayerChatMessages(username.c_str());
+    authManager.cleanupInactiveChatMessages();
 
     // --- Async multiplayer sync state ---
     std::future<SyncResult> syncFuture;
@@ -470,6 +600,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool recentTradesFetchInFlight = false;
     sf::Clock recentTradesClock;
     std::vector<TradeRecord> cachedRecentTrades;
+
+    // --- Graceful Logout State ---
+    bool isLoggingOut = false;
+    bool logoutCloseWindow = false;
 
     // --- Online player interpolation: store target (DB) positions ---
     std::map<std::string, sf::Vector2f> onlinePlayerTargets;  // target pos from DB
@@ -490,7 +624,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool tutorialActive = false;
     int tutorialStep = 0;
     sf::RectangleShape tutorialOverlay({ (float)width, (float)height });
-    tutorialOverlay.setFillColor(sf::Color(0, 0, 0, 90));
+    tutorialOverlay.setFillColor(sf::Color::Transparent);
 
     // Tutorial Goal Tracking
     float tutMoveDist = 0.f;
@@ -543,8 +677,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     const float SPAWN_RADIUS = 2000.f;
     const float DESPAWN_RADIUS = 3500.f;
 
-    const int MAX_ANIMALS = 40;
-    const int MAX_MONSTERS = 15;
+    const int MAX_ANIMALS = 6;
+    const int MAX_MONSTERS = 6;
 
     sf::Clock mobSpawnClock;
     sf::Clock monsterSpawnClock;
@@ -598,6 +732,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool spawnOverlayActive = false;
     int spawnOverlayDone = 0;
     int spawnOverlayTotal = 0;
+    long long sleepTimeOffset = 0LL;
 
     while (window.isOpen())
     {
@@ -607,28 +742,111 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             tracedLoopEntered = true;
         }
         dt = deltaClock.restart().asSeconds();
-        dt = std::min(dt, 0.016f);
+        dt = std::min(dt, 0.1f);
         if (selectionDone && !spawnOverlayActive && !craftMenuOpen && !p2pTradeOpen) {
             if (isSleeping) {
+
+                // Player has started sleeping
                 if (!sleepTimeSkipped) {
-                    sleepFadeTimer += dt;
-                    if (sleepFadeTimer >= sleepFadeDuration) {
-                        sleepFadeTimer = sleepFadeDuration;
-                        elapsedGameTime = (std::floor(elapsedGameTime / totalCycleTime) + 1.f) * totalCycleTime;
-                        hp = maxHP;
-                        authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
-                        monsters.clear();
-                        sleepTimeSkipped = true;
+
+                    // Immediately move to the beginning of the next daytime cycle
+                    elapsedGameTime =
+                        (std::floor(elapsedGameTime / totalCycleTime) + 1.f) * totalCycleTime;
+
+                    if (serverEpochCache > 0LL) {
+                        long long curSec = (serverEpochCache + sleepTimeOffset) % static_cast<long long>(totalCycleTime);
+                        sleepTimeOffset += (static_cast<long long>(totalCycleTime) - curSec);
                     }
-                } else {
+
+                    // Restore HP
+                    hp = maxHP;
+
+                    // Remove ALL monsters
+                    monsters.clear();
+
+                    // Force daytime visually
+                    darkness.setFillColor(sf::Color(0, 0, 0, 0));
+                    isNight = false;
+                    wasNight = false;
+
+                    // Stop night music and start daytime music
+                    nightMusic.stop();
+                    nightMusicPlaying = false;
+
+                    if (musicLoaded) {
+                        if (!musicStarted) {
+                            bgMusic.setLooping(true);
+                            bgMusic.setVolume(globalSettings.volume);
+                            bgMusic.play();
+                            musicStarted = true;
+                        }
+                        else if (bgMusic.getStatus() != sf::Music::Status::Playing) {
+                            bgMusic.play();
+                        }
+                    }
+
+                    // Save the new daytime
+                    std::thread([&authManager, username, hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier]() {
+                        try {
+                            authManager.savePlayerStats(
+                                username.c_str(),
+                                hunger,
+                                thirst,
+                                currency,
+                                level,
+                                exp,
+                                elapsedGameTime,
+                                hungerMultiplier,
+                                thirstMultiplier
+                            );
+                        }
+                        catch (...) {}
+                    }).detach();
+
+                    // Only perform the sleep operation once
+                    sleepTimeSkipped = true;
+
+                    // Keep monsters from respawning during the sleep transition
+                    justFinishedSleeping = true;
+
+                    // Start fade
+                    sleepFadeTimer = sleepFadeDuration;
+                }
+                else {
+
                     sleepFadeTimer -= dt;
+
                     if (sleepFadeTimer <= 0.f) {
                         sleepFadeTimer = 0.f;
                         isSleeping = false;
                         sleepTimeSkipped = false;
+
+                        // Keep the world in daytime after waking
+                        elapsedGameTime =
+                            (std::floor(elapsedGameTime / totalCycleTime) + 0.f) * totalCycleTime;
+
+                        darkness.setFillColor(sf::Color(0, 0, 0, 0));
+                        isNight = false;
+                        wasNight = false;
+
+                        // Make absolutely sure no monsters remain
+                        monsters.clear();
+
+                        // Daytime music
+                        nightMusic.stop();
+                        nightMusicPlaying = false;
+
+                        if (musicLoaded) {
+                            if (bgMusic.getStatus() != sf::Music::Status::Playing) {
+                                bgMusic.play();
+                            }
+                        }
+
+                        justFinishedSleeping = false;
                     }
                 }
-            } else {
+            }
+            else {
                 elapsedGameTime += dt;
             }
         }
@@ -678,33 +896,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
 
         // =====================================================
-        // DESPAWN FAR ANIMALS / MONSTERS & SPAWN NEAR CAMERA (ONLY IF NOT IN LOADING SCREEN)
-        // =====================================================
-        // DESPAWN / SPAWN ENTITIES (ONLY IF NOT IN LOADING SCREEN)
-        // =====================================================
-        if (!spawnOverlayActive)
-        {
-            despawnFarEntities(animals, monsters, playerPos, DESPAWN_RADIUS);
-            spawnNearbyAnimals(animals, playerPos, mobSpawnClock, MAX_ANIMALS, SPAWN_RADIUS, MAP_WIDTH, MAP_HEIGHT);
-            bool isNight = darkness.getFillColor().a > 150;
-            spawnNightZombies(monsters, playerPos, monsterSpawnClock, MAX_MONSTERS, SPAWN_RADIUS, MAP_WIDTH, MAP_HEIGHT, isNight);
-        }
-
-
-        auto isBlocked = [&](sf::Vector2f pos) {
-            return isWorldPositionBlocked(pos, structures, ponds);
-        };
-
-        // Update nearby animals and monsters
-        if (!spawnOverlayActive)
-        {
-            updateNearbyEntities(animals, monsters, playerPos, dt, isBlocked, 1800.f);
-        }
-
         UpdateCamera(window, sprite, MAP_WIDTH, MAP_HEIGHT);
         sf::Vector2f worldPos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
 
-        bubbleTimer = std::max(0.f, bubbleTimer - dt);
+        sf::View currentView = window.getView();
+        sf::Vector2f camCenter = currentView.getCenter();
+        sf::Vector2f camSize = currentView.getSize();
+        sf::FloatRect cameraBounds({ camCenter.x - camSize.x * 0.5f, camCenter.y - camSize.y * 0.5f }, camSize);
 
         bool anyCampfireMenuOpen = false;
         for (auto& fire : campfires) {
@@ -720,7 +918,40 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 break;
             }
         }
-        bool isMenuOpen = (stockPageOpen || iapPageOpen || iapVerifyingOpen || tradeMenuOpen || tradeConfirmOpen || craftMenuOpen || p2pTradeOpen || anyCampfireMenuOpen || anyFurnaceMenuOpen || chestMenuOpen);
+        isMenuOpen = (adminSimOpen || stockPageOpen || iapPageOpen || iapVerifyingOpen || tradeMenuOpen || tradeConfirmOpen || craftMenuOpen || p2pTradeOpen || anyCampfireMenuOpen || anyFurnaceMenuOpen || chestMenuOpen || isSleeping || quantityPromptOpen);
+
+        // =====================================================
+        // DESPAWN / SPAWN ENTITIES (ONLY IF NOT IN LOADING SCREEN)
+        // Spawns and moves strictly within camera bounds to prevent lag
+        // =====================================================
+        if (!spawnOverlayActive)
+        {
+            despawnFarEntities(animals, monsters, cameraBounds, 600.f);
+            int activeMaxAnimals = (disasterActive && currentDisasterType == "drought") ? 3 : MAX_ANIMALS;
+            spawnNearbyAnimals(animals, playerPos, mobSpawnClock, activeMaxAnimals, cameraBounds, MAP_WIDTH, MAP_HEIGHT, structures, campfires);
+            bool isNight = darkness.getFillColor().a > 150;
+            spawnNightZombies(monsters, playerPos, monsterSpawnClock, MAX_MONSTERS, cameraBounds, MAP_WIDTH, MAP_HEIGHT, isNight, structures, campfires);
+        }
+
+        auto isBlocked = [&](sf::Vector2f pos) {
+            bool isDrought = (disasterActive && currentDisasterType == "drought");
+            static const std::vector<sf::Sprite> emptyPonds;
+            return isWorldPositionBlocked(pos, structures, isDrought ? emptyPonds : ponds);
+        };
+
+        // Update nearby animals and monsters ONLY when NO section or menu is undergoing
+        if (!spawnOverlayActive && !isMenuOpen)
+        {
+            updateNearbyEntities(animals, monsters, playerPos, dt, isBlocked, cameraBounds);
+        }
+
+        bubbleTimer = std::max(0.f, bubbleTimer - dt);
+
+        std::string chatAlert = authManager.getAndClearChatNotification();
+        if (!chatAlert.empty()) {
+            latestPlayerMsg = chatAlert;
+            bubbleTimer = 5.0f;
+        }
 
         pollAndSyncP2PTrade(
             dt,
@@ -756,8 +987,163 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             hungerMultiplier,
             thirstMultiplier,
             p2pOfferDirty,
-            authManager
+            authManager,
+            disasterActive,
+            currentDisasterType
         );
+
+        // --- Natural Disaster System Update (Diarrhea Outbreak / Severe Drought) ---
+        if (!introActive && !tutorialActive && !isDead) {
+            // Periodic chance of a natural disaster every 30 minutes (1800 seconds)
+            if (!disasterActive && disasterCycleClock.getElapsedTime().asSeconds() >= 1800.f) {
+                disasterCycleClock.restart();
+                // 50% chance every 30 minutes
+                if ((rand() % 100) < 50) {
+                    disasterActive = true;
+                    disasterRemaining = 600.f; // Extended duration: 600 seconds (10 minutes)
+                    disasterBannerTimer = 6.f;
+                    if ((rand() % 2) == 0) {
+                        currentDisasterType = "diarrhea";
+                        disasterBannerMessage = "NATURAL DISASTER: Acute Diarrhea strikes! Raw food is POISONOUS! Cooked food in high demand!";
+                        applyDisasterFoodMarketImpact(stockMarket, authManager);
+                    } else {
+                        currentDisasterType = "drought";
+                        disasterBannerMessage = "NATURAL DISASTER: Severe Drought strikes! Ponds dried up! Flora & Fauna withering!";
+                        // Cull 65% of trees
+                        auto& items = itemManager.getItems();
+                        std::vector<Item> retainedItems;
+                        retainedItems.reserve(items.size());
+                        for (const auto& it : items) {
+                            if (it.id == ITEM_TREE) {
+                                if ((rand() % 100) < 35) retainedItems.push_back(it);
+                            } else {
+                                retainedItems.push_back(it);
+                            }
+                        }
+                        items = std::move(retainedItems);
+                        itemManager.rebuildSpatialGrid();
+
+                        // Cull 70% of animals
+                        std::vector<std::unique_ptr<Animal>> retainedAnimals;
+                        for (auto& a : animals) {
+                            if ((rand() % 100) < 30) retainedAnimals.push_back(std::move(a));
+                        }
+                        animals = std::move(retainedAnimals);
+
+                        applyDroughtMarketImpact(stockMarket, authManager);
+                    }
+                }
+            }
+
+            // ── Poll DB for admin-scheduled disasters (every 15 s, non-blocking async) ─────────────
+            static std::future<DisasterEvent> disasterPollFuture;
+            static bool disasterPollInFlight = false;
+
+            if (!disasterActive && !disasterPollInFlight && disasterPollClock.getElapsedTime().asSeconds() >= DISASTER_POLL_INTERVAL) {
+                disasterPollClock.restart();
+                disasterPollInFlight = true;
+                disasterPollFuture = std::async(std::launch::async, [&authManager]() {
+                    try {
+                        return authManager.fetchPendingDisaster();
+                    } catch (...) {
+                        return DisasterEvent();
+                    }
+                });
+            }
+
+            if (disasterPollInFlight && disasterPollFuture.valid()) {
+                if (disasterPollFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+                    DisasterEvent ev;
+                    try {
+                        ev = disasterPollFuture.get();
+                    } catch (...) {
+                        ev = DisasterEvent();
+                    }
+                    disasterPollInFlight = false;
+
+                    if (!disasterActive && ev.eventID >= 0) {
+                        activeScheduledEventID = ev.eventID;
+                        currentDisasterType    = ev.type;
+                        disasterActive         = true;
+                        disasterRemaining      = (float)ev.durationSeconds;
+                        disasterBannerTimer    = 7.f;
+                        std::thread([&authManager, eid = ev.eventID]() {
+                            try { authManager.markDisasterActive(eid); } catch (...) {}
+                        }).detach();
+
+                        if (ev.type == "drought") {
+                            disasterBannerMessage =
+                                "[ADMIN EVENT] NATURAL DISASTER: Severe Drought! "
+                                "Ponds dried up! Trees & Wildlife withering! Prices surge!";
+                            auto& dItems = itemManager.getItems();
+                            std::vector<Item> keptItems;
+                            keptItems.reserve(dItems.size());
+                            for (const auto& it : dItems) {
+                                if (it.id == ITEM_TREE) { if ((rand() % 100) < 35) keptItems.push_back(it); }
+                                else keptItems.push_back(it);
+                            }
+                            dItems = std::move(keptItems);
+                            itemManager.rebuildSpatialGrid();
+                            std::vector<std::unique_ptr<Animal>> keptAnimals;
+                            for (auto& a : animals)
+                                if ((rand() % 100) < 30) keptAnimals.push_back(std::move(a));
+                            animals = std::move(keptAnimals);
+                            applyDroughtMarketImpact(stockMarket, authManager);
+                        } else {
+                            disasterBannerMessage =
+                                "[ADMIN EVENT] NATURAL DISASTER: Acute Diarrhea! "
+                                "Raw food POISONOUS! Cooked food demand surging!";
+                            applyDisasterFoodMarketImpact(stockMarket, authManager);
+                        }
+                        inventory.showBanner("[EVENT] Scheduled disaster activated: " + ev.type +
+                                             " (" + std::to_string(ev.durationSeconds) + "s)");
+                        std::cout << "[DISASTER POLL] Activated event #" << ev.eventID
+                                  << " type=" << ev.type << " dur=" << ev.durationSeconds << "s\n";
+                    }
+                }
+            }
+
+            if (disasterActive) {
+                disasterRemaining -= dt;
+                if (!tutorialActive) {   // no disaster drain during tutorial
+                if (currentDisasterType == "drought") {
+                    // Severe drought accelerates dehydration
+                    thirst = std::min(maxThirst, thirst + (2.5f * dt));
+                } else {
+                    // Severe diarrhea accelerates dehydration and hunger
+                    thirst = std::min(maxThirst, thirst + (1.8f * dt));
+                    hunger = std::min(maxHunger, hunger + (0.8f * dt));
+                }
+                } // end !tutorialActive
+
+                if (disasterRemaining <= 0.f) {
+                    disasterActive = false;
+                    disasterRemaining = 0.f;
+                    disasterBannerTimer = 5.f;
+                    if (currentDisasterType == "drought") {
+                        disasterBannerMessage = "The Drought has ended. Rain has returned, ponds are refilled, and prices have normalized.";
+                        restoreDroughtMarketImpact(stockMarket, authManager);
+                    } else {
+                        disasterBannerMessage = "The Diarrhea outbreak has subsided. Meat prices have returned to normal.";
+                        restoreDisasterFoodMarketImpact(stockMarket, authManager);
+                    }
+
+                    // Mark DB-scheduled event as completed (if applicable, async)
+                    if (activeScheduledEventID >= 0) {
+                        int eid = activeScheduledEventID;
+                        std::thread([&authManager, eid]() {
+                            try { authManager.markDisasterCompleted(eid); } catch (...) {}
+                        }).detach();
+                        std::cout << "[DISASTER POLL] Event #" << activeScheduledEventID << " completed.\n";
+                        activeScheduledEventID = -1;
+                    }
+                }
+            }
+
+            if (disasterBannerTimer > 0.f) {
+                disasterBannerTimer -= dt;
+            }
+        }
 
         updateSurvivalStatsAndQuests(
             dt,
@@ -812,33 +1198,41 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             }
         }
 
-        checkAndPerformPeriodicAutoSave(
-            sprite,
-            lastSaveCameraPos,
-            saveCooldownClock,
-            inventory,
-            authManager,
-            username,
-            hunger,
-            thirst,
-            currency,
-            level,
-            exp,
-            elapsedGameTime,
-            hungerMultiplier,
-            thirstMultiplier,
-            structures,
-            campfires
-        );
+
 
         if (hp <= 0.f && !isDead)
         {
             isDead = true;
             deathClock.restart();
+
+            // ── Permadeath: wipe all persistent player data ───────────────────
+            // This clears inventory, structures, campfires, chests, and resets
+            // stats in the database so the player starts fresh on next login.
+            {
+                AuthManager* amPtr = &authManager;
+                std::string unameCopy = username;
+                std::thread([amPtr, unameCopy]() {
+                    try { amPtr->clearPlayerData(sql::SQLString(unameCopy.c_str())); }
+                    catch (...) {}
+                }).detach();
+            }
+
+            // Also clear in-memory state immediately
+            inventory.clear();
+            structures.clear();
+            campfires.clear();
+            currency = 50;
+            level    = 1;
+            exp      = 0;
+            hunger   = 0.f;
+            thirst   = 0.f;
+            hungerMultiplier = 1;
+            thirstMultiplier = 1;
         }
 
         if (inventoryOpen)
         {
+            inventory.updateHover(sf::Mouse::getPosition(window), window);
             vitalsUI.update(
                 window,
                 inventory,
@@ -893,17 +1287,36 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 npcGoldInput,
                 bargainAccepted,
                 saplingPlacementMode,
-                syncSaveLocalStructuresAndCampfires
+                syncSaveLocalStructuresAndCampfires,
+                &structures,
+                quantityPromptIsChest,
+                quantityPromptChestSlot,
+                activeChest,
+                quantityPromptMax
             )) {
                 continue;
             }
+            if (auto* key = event->getIf<sf::Event::KeyPressed>()) {
+                if (key->code == sf::Keyboard::Key::F7 || key->scancode == sf::Keyboard::Scancode::F7) {
+                    inventory.showBanner("[INFO] F7 hotkey is deprecated. Use chat command: /disaster diarrhea (or /disaster stop)");
+                    latestPlayerMsg = "Notice: Hotkey F7 is deprecated. Please type /disaster diarrhea or /disaster stop in chat.";
+                    bubbleTimer = 6.f;
+                    continue;
+                }
+                if (adminSimOpen && (key->code == sf::Keyboard::Key::Escape || key->scancode == sf::Keyboard::Scancode::Escape)) {
+                    adminSimOpen = false;
+                    continue;
+                }
+            }
+
             bool clickHandled = false;
             if (isChatting) {
                 chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
             }
             if (iapVerifyingOpen) {
                 iapCodeInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
-            }            if (handleKeyAndTextInputs(
+            }
+            if (handleKeyAndTextInputs(
                 event.value(),
                 globalSettings,
                 isChatting,
@@ -939,9 +1352,19 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 p2pOfferDirty,
                 p2pOfferPushTimer,
                 p2pMyReady,
-                npcGoldTyping
+                npcGoldTyping,
+                customCommandHandler
             )) {
                 continue;
+            }
+
+            if (adminSimOpen) {
+                if (auto* wheel = event->getIf<sf::Event::MouseWheelScrolled>()) {
+                    adminSimScrollOffset -= (int)wheel->delta;
+                    int maxScroll = std::max(0, (int)stockMarket.size() - 9);
+                    adminSimScrollOffset = std::clamp(adminSimScrollOffset, 0, maxScroll);
+                    continue;
+                }
             }
 
             handleMouseDragAndScroll(
@@ -962,7 +1385,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 structures,
                 isSleeping,
                 sleepFadeTimer,
-                sleepTimeSkipped
+                sleepTimeSkipped,
+                placementMode,
+                chestMenuOpen,
+                activeChest
             );
 
             if (handleGlobalKeyEvents(
@@ -993,7 +1419,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 hungerMultiplier,
                 thirstMultiplier,
                 structures,
-                campfires
+                campfires,
+                chestMenuOpen,
+                activeChest,
+                &isLoggingOut,
+                &logoutCloseWindow
             )) {
                 continue;
             }
@@ -1004,6 +1434,43 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 {
                     sf::Vector2f uiPos = window.mapPixelToCoords(mouse->position, GetUIView(&window));
                     sf::Vector2f mouseWorldPos = window.mapPixelToCoords(mouse->position);
+
+                    if (adminSimOpen) {
+                        handleAdminQuantitySimulatorClicks(uiPos, width, height, stockMarket, adminSimScrollOffset, adminSimOpen, authManager);
+                        continue;
+                    }
+
+                    if (isAdmin) {
+                        sf::FloatRect adminSimHudBtn({ (float)width - 440.f, 20.f }, { 130.f, 40.f });
+                        if (adminSimHudBtn.contains(uiPos)) {
+                            bool anyCampfireOpen = std::any_of(campfires.begin(), campfires.end(), [](const PlacedCampfire& f) { return f.menuOpen; });
+                            bool anyFurnaceOpen = std::any_of(structures.begin(), structures.end(), [](const PlacedStructure& s) { return s.id == ITEM_FURNACE && s.menuOpen; });
+                            bool isUndergoing = chestMenuOpen || anyCampfireOpen || anyFurnaceOpen || isSleeping || craftMenuOpen || tradeMenuOpen || p2pTradeOpen;
+                            if (!isUndergoing) {
+                                adminSimOpen = !adminSimOpen;
+                                if (adminSimOpen) {
+                                    stockPageOpen = false;
+                                    chestMenuOpen = false;
+                                    activeChest = nullptr;
+                                    for (auto& f : campfires) f.menuOpen = false;
+                                    for (auto& s : structures) s.menuOpen = false;
+                                    isSleeping = false;
+                                }
+                            }
+                            continue;
+                        }
+
+                        if (stockPageOpen) {
+                            sf::FloatRect sBoxRect({ ((float)width - 920.f) / 2.f, ((float)height - 620.f) / 2.f }, { 920.f, 620.f });
+                            sf::FloatRect simBtnRect({ sBoxRect.position.x + 700.f, sBoxRect.position.y + 18.f }, { 150.f, 36.f });
+                            if (simBtnRect.contains(uiPos)) {
+                                adminSimOpen = true;
+                                stockPageOpen = false;
+                                continue;
+                            }
+                        }
+                    }
+
                     handleAllGameMouseButtonPressed(
                         uiPos,
                         mouseWorldPos,
@@ -1018,6 +1485,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         placementMode,
                         tradeMenuOpen,
                         tradeConfirmOpen,
+                        tradeConfirmMessage,
+                        tradeConfirmIsP2P,
                         p2pTradeOpen,
                         isTargetNPC,
                         wrenchTargetPlayer,
@@ -1105,11 +1574,16 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         quantityPromptIsP2P,
                         quantityPromptIsCampfire,
                         quantityPromptCampfireSlot,
+                        quantityPromptIsChest,
+                        quantityPromptChestSlot,
                         quantityInput,
                         qInfo,
                         availableQuests,
                         p2pPollTimer,
                         assets,
+                        chestMenuOpen,
+                        activeChest,
+                        chestSelectedInvSlot,
                         saplingPlacementMode,
                         saplingPlacementPos,
                         saplingRotation,
@@ -1145,10 +1619,308 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         campfireFrames,
                         maxHunger,
                         MAX_MULTIPLIER,
-                        hp
+                        hp,
+                        disasterActive,
+                        currentDisasterType,
+                        &isLoggingOut,
+                        &logoutCloseWindow
                     );
                 }
             }
+        }
+
+        if (isLoggingOut)
+        {
+            // 1. Immediately close all menus & UI popups
+            wrenchMenuOpen = false;
+            craftMenuOpen = false;
+            tradeMenuOpen = false;
+            tradeConfirmOpen = false;
+            p2pTradeOpen = false;
+            p2pInvitePopup = false;
+            chestMenuOpen = false;
+            activeChest = nullptr;
+            stockPageOpen = false;
+            adminSimOpen = false;
+            iapPageOpen = false;
+            iapVerifyingOpen = false;
+            quantityPromptOpen = false;
+            inventoryOpen = false;
+
+            // 2. Stop audio immediately
+            bgMusic.stop();
+            nightMusic.stop();
+            currentActiveMusic = nullptr;
+
+            // 3. Snapshot game data on the main thread safely before background save
+            for (int i = 0; i < 4; i++) {
+                if (playerTradeSlots[i].tex != nullptr) {
+                    inventory.addItem(playerTradeSlots[i].id, *playerTradeSlots[i].tex, playerTradeSlots[i].count);
+                    playerTradeSlots[i] = {};
+                }
+                if (myP2PSlots[i].tex != nullptr) {
+                    inventory.addItem(myP2PSlots[i].id, *myP2PSlots[i].tex, myP2PSlots[i].count);
+                    myP2PSlots[i] = {};
+                }
+            }
+
+            std::vector<std::pair<int, int>> saveItems(20, { 0, 0 });
+            for (int i = 0; i < 20; i++) {
+                if (inventory.hasItem(i)) {
+                    saveItems[i] = { inventory.getItemID(i), inventory.getItemCount(i) };
+                }
+            }
+
+            std::vector<StoredStructure> saveStructData;
+            for (auto& s : structures) {
+                if (s.sprite.has_value() && s.owner == username) {
+                    saveStructData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY });
+                }
+            }
+
+            std::vector<StoredCampfire> saveCampData;
+            for (auto& c : campfires) {
+                if (c.owner == username) {
+                    saveCampData.push_back({
+                        c.position.x,
+                        c.position.y,
+                        c.timeRemaining,
+                        c.isCrafted,
+                        c.fuel,
+                        c.inputItem,
+                        c.inputCount,
+                        c.outputItem,
+                        c.outputCount
+                    });
+                }
+            }
+
+            auto renderSavingFrame = [&](const std::string& statusMessage, int dotsCount) {
+                while (const std::optional ev = window.pollEvent()) {
+                    if (ev->is<sf::Event::Closed>()) {
+                        logoutCloseWindow = true;
+                    }
+                }
+
+                std::string dots(dotsCount, '.');
+                window.setView(GetUIView(&window));
+                window.clear(sf::Color(16, 14, 22));
+
+                const float CARD_W = 620.f;
+                const float CARD_H = 260.f;
+                float cx = (float)width / 2.f;
+                float cy = (float)height / 2.f;
+
+                // Card shadow
+                sf::RectangleShape cardGlow({ CARD_W + 8.f, CARD_H + 8.f });
+                cardGlow.setOrigin({ (CARD_W + 8.f) / 2.f, (CARD_H + 8.f) / 2.f });
+                cardGlow.setPosition({ cx, cy + 2.f });
+                cardGlow.setFillColor(sf::Color(0, 0, 0, 110));
+                window.draw(cardGlow);
+
+                // Card body
+                sf::RectangleShape card({ CARD_W, CARD_H });
+                card.setOrigin({ CARD_W / 2.f, CARD_H / 2.f });
+                card.setPosition({ cx, cy });
+                card.setFillColor(sf::Color(26, 22, 34));
+                card.setOutlineThickness(2.f);
+                card.setOutlineColor(sf::Color(120, 90, 180));
+                window.draw(card);
+
+                // Header bar
+                sf::RectangleShape cardHeader({ CARD_W, 44.f });
+                cardHeader.setOrigin({ CARD_W / 2.f, CARD_H / 2.f });
+                cardHeader.setPosition({ cx, cy - CARD_H / 2.f + 22.f });
+                cardHeader.setFillColor(sf::Color(44, 34, 60));
+                window.draw(cardHeader);
+
+                // Title
+                sf::Text titleTxt(uiFont, logoutCloseWindow ? "Exiting Game..." : "Logging Out...", 22);
+                titleTxt.setStyle(sf::Text::Bold);
+                titleTxt.setFillColor(sf::Color(255, 215, 0));
+                auto tb = titleTxt.getLocalBounds();
+                titleTxt.setOrigin({ tb.size.x / 2.f, tb.size.y / 2.f });
+                titleTxt.setPosition({ cx, cy - CARD_H / 2.f + 20.f });
+                window.draw(titleTxt);
+
+                // Status text
+                sf::Text statusTxt(uiFont, statusMessage + dots, 16);
+                statusTxt.setFillColor(sf::Color(225, 225, 235));
+                auto sb = statusTxt.getLocalBounds();
+                statusTxt.setOrigin({ sb.size.x / 2.f, sb.size.y / 2.f });
+                statusTxt.setPosition({ cx, cy - 25.f });
+                window.draw(statusTxt);
+
+                // Prominent warning container banner
+                sf::RectangleShape warnBox({ 570.f, 44.f });
+                warnBox.setOrigin({ 285.f, 22.f });
+                warnBox.setPosition({ cx, cy + 30.f });
+                warnBox.setFillColor(sf::Color(70, 30, 20, 220));
+                warnBox.setOutlineThickness(1.5f);
+                warnBox.setOutlineColor(sf::Color(235, 115, 50));
+                window.draw(warnBox);
+
+                // User-requested critical warning text:
+                // "Do not turn off the game while saving, it will cause loss of data."
+                sf::Text warnTxt(uiFont, "Do not turn off the game while saving, it will cause loss of data.", 14);
+                warnTxt.setStyle(sf::Text::Bold);
+                warnTxt.setFillColor(sf::Color(255, 210, 80));
+                auto wb = warnTxt.getLocalBounds();
+                warnTxt.setOrigin({ wb.size.x / 2.f, wb.size.y / 2.f });
+                warnTxt.setPosition({ cx, cy + 30.f });
+                window.draw(warnTxt);
+
+                // Footer hint text
+                sf::Text hintTxt(uiFont, logoutCloseWindow ? "Safely saving all progress to database..." : "Returning to Main Menu shortly...", 13);
+                hintTxt.setFillColor(sf::Color(155, 155, 180));
+                auto hb = hintTxt.getLocalBounds();
+                hintTxt.setOrigin({ hb.size.x / 2.f, hb.size.y / 2.f });
+                hintTxt.setPosition({ cx, cy + 85.f });
+                window.draw(hintTxt);
+
+                window.display();
+            };
+
+            // 4. Wait for any in-flight background futures while rendering saving UI with warning
+            sf::Clock dotClock;
+            int dotCount = 0;
+            sf::Clock waitClock;
+            while ((syncInFlight && syncFuture.valid()) ||
+                   (chatFetchInFlight && chatFuture.valid()) ||
+                   (recentTradesFetchInFlight && recentTradesFuture.valid()))
+            {
+                if (syncInFlight && syncFuture.valid() && syncFuture.wait_for(std::chrono::milliseconds(10)) == std::future_status::ready) {
+                    try { (void)syncFuture.get(); } catch (...) {}
+                    syncInFlight = false;
+                }
+                if (chatFetchInFlight && chatFuture.valid() && chatFuture.wait_for(std::chrono::milliseconds(10)) == std::future_status::ready) {
+                    try { (void)chatFuture.get(); } catch (...) {}
+                    chatFetchInFlight = false;
+                }
+                if (recentTradesFetchInFlight && recentTradesFuture.valid() && recentTradesFuture.wait_for(std::chrono::milliseconds(10)) == std::future_status::ready) {
+                    try { (void)recentTradesFuture.get(); } catch (...) {}
+                    recentTradesFetchInFlight = false;
+                }
+
+                if (dotClock.getElapsedTime().asSeconds() > 0.35f) {
+                    dotCount = (dotCount + 1) % 4;
+                    dotClock.restart();
+                }
+
+                renderSavingFrame("Finalizing network synchronization", dotCount);
+
+                if (waitClock.getElapsedTime().asSeconds() > 2.0f) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
+
+            // 5. Start background save thread with snapshot data
+            std::atomic<bool> saveDone{ false };
+            std::atomic<bool> saveSuccess{ false };
+            float currentElapsed = elapsedGameTime;
+            int p2pTradeIDCopy = p2pTradeID;
+
+            std::thread saveThread([&authManager, username, p2pTradeIDCopy, saveItems, hunger, thirst, currency, level, exp, currentElapsed, hungerMultiplier, thirstMultiplier, saveStructData, saveCampData, &saveDone, &saveSuccess]() {
+                try {
+                    if (p2pTradeIDCopy > 0) {
+                        authManager.cancelP2PTrade(p2pTradeIDCopy);
+                    }
+                    authManager.saveInventory(username.c_str(), saveItems);
+                    authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed, hungerMultiplier, thirstMultiplier);
+                    authManager.saveStructures(username.c_str(), saveStructData);
+                    authManager.saveCampfires(username.c_str(), saveCampData);
+                    authManager.clearPlayerChatMessages(username.c_str());
+                    authManager.setPlayerOffline(username.c_str());
+                    saveSuccess.store(true);
+                } catch (const std::exception& e) {
+                    std::cerr << "[LOGOUT] Save failed: " << e.what() << "\n";
+                    saveSuccess.store(false);
+                } catch (...) {
+                    std::cerr << "[LOGOUT] Save failed with unknown error.\n";
+                    saveSuccess.store(false);
+                }
+                saveDone.store(true);
+            });
+
+            // 6. Active 60 FPS event pump & animated saving screen with safety timeout
+            sf::Clock totalSaveClock;
+            while (!saveDone.load())
+            {
+                if (dotClock.getElapsedTime().asSeconds() > 0.35f) {
+                    dotCount = (dotCount + 1) % 4;
+                    dotClock.restart();
+                }
+
+                renderSavingFrame("Saving player progress and structures", dotCount);
+
+                // Safety timeout: if cloud database is unresponsive after 8 seconds, don't hang indefinitely
+                if (totalSaveClock.getElapsedTime().asSeconds() > 8.0f) {
+                    std::cerr << "[LOGOUT] Save safety timeout (8s) triggered. Resuming transition.\n";
+                    saveDone.store(true);
+                    saveSuccess.store(false);
+                    break;
+                }
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
+
+            if (saveThread.joinable()) {
+                if (totalSaveClock.getElapsedTime().asSeconds() > 8.0f) {
+                    saveThread.detach();
+                } else {
+                    saveThread.join();
+                }
+            }
+
+            // 7. Brief confirmation display
+            sf::Clock confirmClock;
+            while (confirmClock.getElapsedTime().asSeconds() < 0.35f)
+            {
+                while (const std::optional ev = window.pollEvent()) {
+                    if (ev->is<sf::Event::Closed>()) logoutCloseWindow = true;
+                }
+                window.setView(GetUIView(&window));
+                window.clear(sf::Color(16, 14, 22));
+
+                const float CARD_W = 620.f;
+                const float CARD_H = 260.f;
+                float cx = (float)width / 2.f;
+                float cy = (float)height / 2.f;
+
+                sf::RectangleShape card({ CARD_W, CARD_H });
+                card.setOrigin({ CARD_W / 2.f, CARD_H / 2.f });
+                card.setPosition({ cx, cy });
+                card.setFillColor(sf::Color(26, 22, 34));
+                card.setOutlineThickness(2.f);
+                card.setOutlineColor(saveSuccess.load() ? sf::Color(70, 160, 90) : sf::Color(200, 150, 60));
+                window.draw(card);
+
+                sf::Text titleTxt(uiFont, saveSuccess.load() ? "Saved Successfully!" : "Save Completed", 22);
+                titleTxt.setStyle(sf::Text::Bold);
+                titleTxt.setFillColor(saveSuccess.load() ? sf::Color(100, 240, 120) : sf::Color(240, 190, 80));
+                auto tb = titleTxt.getLocalBounds();
+                titleTxt.setOrigin({ tb.size.x / 2.f, tb.size.y / 2.f });
+                titleTxt.setPosition({ cx, cy - 30.f });
+                window.draw(titleTxt);
+
+                sf::Text subTxt(uiFont, logoutCloseWindow ? "Closing safely..." : "Returning to Main Menu...", 15);
+                subTxt.setFillColor(sf::Color(210, 215, 225));
+                auto sb = subTxt.getLocalBounds();
+                subTxt.setOrigin({ sb.size.x / 2.f, sb.size.y / 2.f });
+                subTxt.setPosition({ cx, cy + 25.f });
+                window.draw(subTxt);
+
+                window.display();
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
+
+            // 8. If user clicked the window [X], close window now. Otherwise, leave window open for MainMenu!
+            if (logoutCloseWindow) {
+                window.close();
+            }
+
+            return;
         }
 
     if (selectionDone && !animLoadedForSelection)
@@ -1202,6 +1974,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
     if (selectionDone && musicLoaded && !musicStarted)
     {
+        bgMusic.setVolume(globalSettings.volume);
+        currentActiveMusic = &bgMusic;
         bgMusic.play();
         musicStarted = true;
     }
@@ -1253,10 +2027,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 if (d < minDist) minDist = d;
             }
 
-            if (minDist > 1000.f) {
-                // Spawn some targets right in front of player
-                for (int i = 0; i < 3; i++) {
-                    sf::Vector2f p = sprite.getPosition() + sf::Vector2f((rand() % 400 - 200), (rand() % 400 - 200));
+            if (minDist > 1000.f && animals.size() < 6) {
+                // Spawn target chickens spaced apart around player (max 6 animals total)
+                for (int i = 0; i < 2 && animals.size() < 6; i++) {
+                    float angle = (i == 0) ? 0.f : 3.14159f;
+                    sf::Vector2f p = sprite.getPosition() + sf::Vector2f(std::cos(angle) * 350.f, std::sin(angle) * 350.f);
                     animals.push_back(std::make_unique<Chicken>(p));
                 }
             }
@@ -1312,6 +2087,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             tutLastPos,
             tutAttacked,
             tutWoodGathered,
+            tutStoneGathered,
             animals,
             itemManager,
             monsters,
@@ -1322,7 +2098,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         updateCampfiresAndCooking(campfires, structures, dt, [&]() { syncSaveLocalStructuresAndCampfires(); });
 
-        updateSaplings(plantedSaplings, itemManager, treeTex, dt);
+        updateSaplings(plantedSaplings, itemManager, treeTex, dt, structures, campfires);
 
         UpdateCamera(window, sprite, MAP_WIDTH, MAP_HEIGHT);
 
@@ -1333,16 +2109,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             float centerY = pb.position.y + pb.size.y * 0.5f;
         }
 
-        nearPond = isInWater(sprite.getPosition(), pondBoundsList);
+        bool isDrought = (disasterActive && currentDisasterType == "drought");
+        nearPond = isDrought ? false : isInWater(sprite.getPosition(), pondBoundsList);
 
         window.clear(sf::Color::White);
         if ((debugFrameIndex % 300ull) == 0ull) traceStartup("hb_after_main_clear");
         window.draw(background);
 
         drawFloorGrid(window, MAP_WIDTH, MAP_HEIGHT);
+        drawSecondFloorGrid(window, structures, playerFloorLevel);
 
-        for (auto& p : ponds) {
-            window.draw(p);
+        if (!isDrought) {
+            for (auto& p : ponds) {
+                window.draw(p);
+            }
         }
         itemManager.draw(window);
 
@@ -1394,7 +2174,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             playerWrenchBtn,
             bubbleTimer,
             latestPlayerMsg,
-            snapToGrid
+            snapToGrid,
+            stairOffset
         );
 
         drawWorldInteractions(
@@ -1425,6 +2206,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             woodTex,
             saplingTex,
             stoneTex,
+            coalTex,
+            copperOreTex,
+            ironOreTex,
+            goldOreTex,
+            diamondTex,
             tutorialActive,
             tutorialStep,
             tutStoneGathered,
@@ -1470,6 +2256,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             woodRoofTex,
             woodStairsTex,
             bedTex,
+            chestTex,
             uiFont,
             latestPlayerMsg,
             bubbleTimer,
@@ -1484,14 +2271,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         );
     }
 
-    // Update Stock Market Prices every 60 seconds
-    if (stockUpdateClock.getElapsedTime().asSeconds() >= 60.f) {
+    // Update Stock Market Prices only when market stats or admin simulator is opened (not in background when closed)
+    if ((stockPageOpen || adminSimOpen) && stockUpdateClock.getElapsedTime().asSeconds() >= 1800.f) {
         stockUpdateClock.restart();
         updateStockMarketSimulation(stockMarket, authManager);
     }
         updateDayNightCycleAndMusic(
             window,
             serverEpochCache,
+            sleepTimeOffset,
             elapsedGameTime,
             totalCycleTime,
             darkness,
@@ -1509,6 +2297,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         );
 
         vitalsUI.draw(window, inventoryOpen, shieldEquipped, inventory);
+        inventory.drawItemBanner(window);
 
 
     renderAllGameUIs(
@@ -1573,6 +2362,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         bargainStatus,
         bargainColor,
         tradeConfirmOpen,
+        tradeConfirmMessage,
         stockPageOpen,
         dbStartupEnabled,
         recentTradesFetchInFlight,
@@ -1610,21 +2400,73 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         tutMoveDist, tutSprinted, tutInvOpened, tutWoodGathered, tutStoneGathered, tutAttacked, tutChatted,
         spawnOverlayActive, spawnOverlayDone, spawnOverlayTotal,
         chestMenuOpen,
+        activeChest,
+        chestSelectedInvSlot,
         campfires,
         structures,
         quantityPromptOpen, quantityPromptIsCampfire, quantityPromptCampfireSlot, quantityPromptMax, quantityInput,
+        quantityPromptIsChest, quantityPromptChestSlot, quantityPromptSourceSlot,
         isSleeping, sleepFadeTimer, sleepFadeDuration,
         getItemTexture,
         getItemName,
-        getItemPrice
+        getItemPrice,
+        disasterActive,
+        disasterRemaining,
+        disasterBannerTimer,
+        disasterBannerMessage,
+        isAdmin,
+        currentDisasterType
     );
 
-    if ((debugFrameIndex % 300ull) == 0ull) traceStartup("hb_before_final_display");
-    traceStartup("before_final_display");
+    if (adminSimOpen) {
+        MarketTextures simTex;
+        simTex.woodTex = &woodTex;
+        simTex.stoneTex = &stoneTex;
+        simTex.saplingTex = &saplingTex;
+        simTex.cookedChickenTex = &cookedChickenTex;
+        simTex.cookedPigTex = &cookedPigTex;
+        simTex.cookedSheepTex = &cookedSheepTex;
+        simTex.woolTex = &woolTex;
+        simTex.woodenSwordTex = &woodenSwordTex;
+        simTex.shieldTex = &shieldTex;
+        simTex.furnaceTex = &furnaceTex;
+        simTex.woodTileTex = &woodTileTex;
+        simTex.woodWallTex = &woodWallTex;
+        simTex.woodDoorTex = &woodDoorTex;
+        simTex.woodRoofTex = &woodRoofTex;
+        simTex.woodStairsTex = &woodStairsTex;
+        simTex.bedTex = &bedTex;
+        simTex.coalTex = &coalTex;
+        simTex.copperOreTex = &copperOreTex;
+        simTex.copperBarTex = &copperBarTex;
+        simTex.ironOreTex = &ironOreTex;
+        simTex.ironBarTex = &ironBarTex;
+        simTex.goldOreTex = &goldOreTex;
+        simTex.goldBarTex = &goldBarTex;
+        simTex.diamondTex = &diamondTex;
+
+        drawAdminQuantitySimulator(
+            window,
+            uiFont,
+            width,
+            height,
+            stockMarket,
+            adminSimScrollOffset,
+            simTex
+        );
+    }
+
+    drawBrightnessOverlay(window, width, height, static_cast<float>(globalSettings.brightness));
     window.display();
-    traceStartup("after_final_display");
 
     // Spawning moved into the main loop (incremental spawnPlan) to avoid long stalls.
     }
+
+    // When player leaves the game, do not save their chat messages/history in the server/online database
+    authManager.clearPlayerChatMessages(username.c_str());
+
+    bgMusic.stop();
+    nightMusic.stop();
+    currentActiveMusic = nullptr;
 }
 

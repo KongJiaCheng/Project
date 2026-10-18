@@ -71,4 +71,5 @@ bool handleCharacterSelectionHydration(
     unsigned int mapHeight,
     const sf::Texture& texMaleOnline,
     const sf::Texture& texFemaleOnline
-);
+);
+

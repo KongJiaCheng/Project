@@ -1,0 +1,30 @@
+# =============================================================================
+# Econova Database Configuration
+# =============================================================================
+# mode:
+#   "cloud"             - Connect to default online cloud database (default)
+#   "local" / "offline" - Use local SQLite database (econova_offline.db)
+#                         Zero server setup required! Plays offline on any computer.
+#
+# You can also switch modes directly in the game's menu!
+mode=cloud
+
+# -----------------------------------------------------------------------------
+# Local Database Settings (Offline Mode)
+# Uses built-in SQLite (econova_offline.db). No external server needed.
+# -----------------------------------------------------------------------------
+local_host=tcp://127.0.0.1:3306
+local_user=root
+local_password=
+local_schema=mmorpg
+local_ssl=false
+
+# -----------------------------------------------------------------------------
+# Cloud Database Settings (Online Mode)
+# -----------------------------------------------------------------------------
+cloud_host=tcp://mysql-308a256a-econovadb.h.aivencloud.com:22311
+cloud_user=avnadmin
+cloud_password=AVNS_YV3eowXWv3Q2tArX8fd
+cloud_schema=mmorpg
+cloud_ssl=true
+cloud_ca=ca.pem

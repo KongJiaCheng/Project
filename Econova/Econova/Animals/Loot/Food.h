@@ -20,4 +20,4 @@ struct Food
     }
 };
 
-bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float maxHunger, int maxMultiplier, float& hp);
+bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float maxHunger, int maxMultiplier, float& hp, bool disasterActive = false);

@@ -1,6 +1,7 @@
 #include "HUD.h"
 #include "ViewUtils.h"
 #include <algorithm>
+#include <thread>
 
 HUDVitalsUI::HUDVitalsUI(const sf::Font& font, const sf::Texture& hpIconTex, const sf::Texture& hungerIconTex, const sf::Texture& thirstIconTex, float BAR_WIDTH, float BAR_HEIGHT)
     : hpIcon(hpIconTex), hungerIcon(hungerIconTex), thirstIcon(thirstIconTex),
@@ -275,8 +276,25 @@ void updateHUDVitalsLayoutAndTexts(
 void drawTopRightButtons(
     sf::RenderWindow& window,
     const sf::Font& uiFont,
-    unsigned int width
+    unsigned int width,
+    bool isAdmin
 ) {
+    if (isAdmin) {
+        // Admin Sim Button
+        sf::RectangleShape adminSimBtn({ 130.f, 40.f });
+        adminSimBtn.setPosition({ (float)width - 440.f, 20.f });
+        adminSimBtn.setFillColor(sf::Color(85, 30, 115, 220)); // Regal purple/indigo
+        adminSimBtn.setOutlineThickness(2.f);
+        adminSimBtn.setOutlineColor(sf::Color(255, 215, 0)); // Gold outline
+        window.draw(adminSimBtn);
+
+        sf::Text adminSimTxt(uiFont, "Admin Sim", 18);
+        adminSimTxt.setStyle(sf::Text::Bold);
+        adminSimTxt.setFillColor(sf::Color(255, 225, 120));
+        adminSimTxt.setPosition({ (float)width - 425.f, 28.f });
+        window.draw(adminSimTxt);
+    }
+
     // HUD Market Stats Button
     sf::RectangleShape marketBtnTopRight({ 150.f, 40.f });
     marketBtnTopRight.setPosition({ (float)width - 300.f, 20.f });
@@ -300,6 +318,20 @@ void drawTopRightButtons(
     sf::Text settingsBtnTxtTopRight(uiFont, "Settings", 20);
     settingsBtnTxtTopRight.setPosition({ (float)width - 115.f, 28.f });
     window.draw(settingsBtnTxtTopRight);
+
+    // Logout Button — saves & returns to main menu
+    sf::RectangleShape logoutBtn({ 110.f, 40.f });
+    logoutBtn.setPosition({ (float)width - 140.f, 70.f });
+    logoutBtn.setFillColor(sf::Color(160, 30, 30, 220));
+    logoutBtn.setOutlineThickness(2.f);
+    logoutBtn.setOutlineColor(sf::Color(255, 100, 100));
+    window.draw(logoutBtn);
+
+    sf::Text logoutTxt(uiFont, "Logout", 20);
+    logoutTxt.setStyle(sf::Text::Bold);
+    logoutTxt.setFillColor(sf::Color::White);
+    logoutTxt.setPosition({ (float)width - 120.f, 78.f });
+    window.draw(logoutTxt);
 }
 
 void drawGoldCurrency(
@@ -376,10 +408,14 @@ void drawBrightnessOverlay(
     unsigned int height,
     float brightness
 ) {
+    float alpha = std::clamp(255.f - (brightness * 2.55f), 0.f, 255.f);
+    if (alpha <= 0.5f) return;
     sf::RectangleShape brightnessOverlay({ (float)width, (float)height });
-    brightnessOverlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(std::clamp(255.f - (brightness * 2.55f), 0.f, 255.f))));
+    brightnessOverlay.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(alpha)));
+    sf::View prevView = window.getView();
     window.setView(GetUIView(&window));
     window.draw(brightnessOverlay);
+    window.setView(prevView);
 }
 
 void drawIntroStory(
@@ -451,7 +487,7 @@ void drawTutorial(
     if (tutorialStep >= tutorialSteps.size()) return;
 
     window.setView(GetUIView(&window));
-    window.draw(tutorialOverlay);
+    // Tutorial black overlay removed per user request: only draw the tutorial dialog box
     window.draw(tutorialBox);
 
     sf::Text title(uiFont, tutorialSteps[tutorialStep].title, 34);
@@ -536,6 +572,116 @@ void drawSleepOverlay(
     window.setView(currentView);
 }
 
+void drawDisasterNotification(
+    sf::RenderWindow& window,
+    const sf::Font& font,
+    unsigned int width,
+    bool disasterActive,
+    float disasterRemaining,
+    float bannerTimer,
+    const std::string& bannerMessage,
+    const std::string& currentDisasterType
+) {
+    sf::View old = window.getView();
+    window.setView(GetUIView(&window));
+
+    // 1. If a disaster prompt/banner message is active, show prominent banner
+    if (bannerTimer > 0.f && !bannerMessage.empty()) {
+        float alpha = 255.f;
+        if (bannerTimer < 0.6f) {
+            alpha = (bannerTimer / 0.6f) * 255.f;
+        }
+        std::uint8_t a = static_cast<std::uint8_t>(std::clamp(alpha, 0.f, 255.f));
+
+        sf::Text bText(font, bannerMessage, 22);
+        bText.setStyle(sf::Text::Bold);
+        sf::FloatRect tb = bText.getLocalBounds();
+
+        float padX = 28.f;
+        float bw = tb.size.x + padX * 2.f;
+        float bh = 48.f;
+        float bx = ((float)width - bw) / 2.f;
+        float by = 75.f;
+
+        sf::RectangleShape bg({ bw, bh });
+        bg.setPosition({ bx, by });
+        if (currentDisasterType == "drought") {
+            bg.setFillColor(sf::Color(55, 25, 10, a));
+            bg.setOutlineThickness(3.f);
+            bg.setOutlineColor(sf::Color(255, 140, 30, a));
+        } else {
+            bg.setFillColor(sf::Color(45, 12, 12, a));
+            bg.setOutlineThickness(3.f);
+            bg.setOutlineColor(sf::Color(255, 60, 60, a));
+        }
+        window.draw(bg);
+
+        sf::RectangleShape sideBar({ 6.f, bh });
+        sideBar.setPosition({ bx, by });
+        sideBar.setFillColor(sf::Color(255, 180, 0, a));
+        window.draw(sideBar);
+
+        bText.setFillColor(sf::Color(255, 235, 120, a));
+        bText.setPosition({
+            bx + padX,
+            by + (bh - tb.size.y) / 2.f - tb.position.y
+        });
+        window.draw(bText);
+    }
+
+    // 2. While disaster is ongoing, show a warning badge at top of screen
+    if (disasterActive && disasterRemaining > 0.f) {
+        int totalSec = (int)std::ceil(disasterRemaining);
+        std::string timeStr;
+        if (totalSec >= 60) {
+            int m = totalSec / 60;
+            int s = totalSec % 60;
+            timeStr = std::to_string(m) + "m " + (s < 10 ? "0" : "") + std::to_string(s) + "s";
+        } else {
+            timeStr = std::to_string(totalSec) + "s";
+        }
+
+        std::string badgeStr;
+        if (currentDisasterType == "drought") {
+            badgeStr = "! SEVERE DROUGHT: Ponds dried up! Flora & Fauna withering! (" + timeStr + ") !";
+        } else {
+            badgeStr = "! DIARRHEA OUTBREAK: Dehydrating rapidly! (" + timeStr + ") !";
+        }
+
+        sf::Text badgeText(font, badgeStr, 17);
+        badgeText.setStyle(sf::Text::Bold);
+        sf::FloatRect bounds = badgeText.getLocalBounds();
+
+        float w = bounds.size.x + 30.f;
+        float h = 32.f;
+        float x = ((float)width - w) / 2.f;
+        float y = 20.f;
+
+        sf::RectangleShape bg({ w, h });
+        bg.setPosition({ x, y });
+        if (currentDisasterType == "drought") {
+            bg.setFillColor(sf::Color(115, 45, 10, 230));
+            bg.setOutlineThickness(2.f);
+            bg.setOutlineColor(sf::Color(255, 140, 30, 240));
+            badgeText.setFillColor(sf::Color(255, 230, 130));
+        } else {
+            bg.setFillColor(sf::Color(80, 20, 20, 220));
+            bg.setOutlineThickness(2.f);
+            bg.setOutlineColor(sf::Color(255, 80, 80, 240));
+            badgeText.setFillColor(sf::Color(255, 220, 100));
+        }
+        window.draw(bg);
+
+        badgeText.setPosition({
+            x + 15.f,
+            y + (h - bounds.size.y) / 2.f - bounds.position.y
+        });
+        window.draw(badgeText);
+    }
+
+    window.setView(old);
+}
+
 void renderAllGameUIs(
     sf::RenderWindow& window,
     const sf::Font& uiFont,
@@ -598,6 +744,7 @@ void renderAllGameUIs(
     const std::string& bargainStatus,
     sf::Color bargainColor,
     bool tradeConfirmOpen,
+    const std::string& tradeConfirmMessage,
     bool stockPageOpen,
     bool dbStartupEnabled,
     bool& recentTradesFetchInFlight,
@@ -635,13 +782,22 @@ void renderAllGameUIs(
     float tutMoveDist, bool tutSprinted, bool tutInvOpened, int tutWoodGathered, int tutStoneGathered, bool tutAttacked, bool tutChatted,
     bool spawnOverlayActive, int spawnOverlayDone, int spawnOverlayTotal,
     bool chestMenuOpen,
+    PlacedStructure* activeChest,
+    int chestSelectedInvSlot,
     std::vector<PlacedCampfire>& campfires,
     std::vector<PlacedStructure>& structures,
     bool quantityPromptOpen, bool quantityPromptIsCampfire, int quantityPromptCampfireSlot, int quantityPromptMax, TextInput& quantityInput,
+    bool quantityPromptIsChest, int quantityPromptChestSlot, int quantityPromptSourceSlot,
     bool isSleeping, float sleepFadeTimer, float sleepFadeDuration,
     std::function<const sf::Texture* (int id)> getItemTexture,
     std::function<std::string(int id)> getItemName,
-    std::function<int(int id)> getItemPrice
+    std::function<int(int id)> getItemPrice,
+    bool disasterActive,
+    float disasterRemaining,
+    float disasterBannerTimer,
+    const std::string& disasterBannerMessage,
+    bool isAdmin,
+    const std::string& currentDisasterType
 ) {
     window.setView(GetUIView(&window));
 
@@ -709,7 +865,7 @@ void renderAllGameUIs(
     }
 
     if (tradeConfirmOpen) {
-        drawTradeConfirmPopup(window, uiFont, width, height);
+        drawTradeConfirmPopup(window, uiFont, width, height, tradeConfirmMessage);
     }
 
     if (stockPageOpen) {
@@ -751,6 +907,14 @@ void renderAllGameUIs(
         mTex.woodRoofTex = &woodRoofTex;
         mTex.woodStairsTex = &woodStairsTex;
         mTex.bedTex = &bedTex;
+        mTex.coalTex = getItemTexture ? getItemTexture(ITEM_COAL) : nullptr;
+        mTex.copperOreTex = getItemTexture ? getItemTexture(ITEM_COPPER_ORE) : nullptr;
+        mTex.copperBarTex = getItemTexture ? getItemTexture(ITEM_COPPER_BAR) : nullptr;
+        mTex.ironOreTex = getItemTexture ? getItemTexture(ITEM_IRON_ORE) : nullptr;
+        mTex.ironBarTex = getItemTexture ? getItemTexture(ITEM_IRON_BAR) : nullptr;
+        mTex.goldOreTex = getItemTexture ? getItemTexture(ITEM_GOLD_ORE) : nullptr;
+        mTex.goldBarTex = getItemTexture ? getItemTexture(ITEM_GOLD_BAR) : nullptr;
+        mTex.diamondTex = getItemTexture ? getItemTexture(ITEM_DIAMOND) : nullptr;
 
         drawStockMarketPage(
             window,
@@ -763,7 +927,8 @@ void renderAllGameUIs(
             marketCursorBlink,
             marketScrollOffset,
             mTex,
-            cachedRecentTrades
+            cachedRecentTrades,
+            isAdmin
         );
     }
 
@@ -775,13 +940,11 @@ void renderAllGameUIs(
         drawIAPVerifying(window, uiFont, width, height, iapVerifyingTier, iapVerifyingGold, iapVerifyingPrice, iapCodeInput);
     }
 
-    drawTopRightButtons(window, uiFont, width);
+    drawTopRightButtons(window, uiFont, width, isAdmin);
 
     if (isDead) {
         drawDeathScreen(window, font, width, height, elapsedGameTime, timeOffset, totalCycleTime);
     }
-
-    drawBrightnessOverlay(window, width, height, globalSettings.brightness);
 
     if (selectionDone) {
         if (chatActive) {
@@ -830,8 +993,9 @@ void renderAllGameUIs(
         drawSpawnOverlay(window, uiFont, spawnOverlayDone, spawnOverlayTotal);
     }
 
-    if (chestMenuOpen)
+    if (chestMenuOpen && activeChest != nullptr)
     {
+        drawChestMenu(window, uiFont, width, height, *activeChest, inventory, chestSelectedInvSlot, getItemTexture);
     }
 
     for (auto& fire : campfires) {
@@ -842,17 +1006,24 @@ void renderAllGameUIs(
 
     for (auto& s : structures) {
         if (s.id == ITEM_FURNACE && s.menuOpen) {
-            drawFurnaceMenu(window, uiFont, width, height, s, woodTex, cookedChickenTex, cookedPigTex, cookedSheepTex);
+            drawFurnaceMenu(window, uiFont, width, height, s, woodTex, cookedChickenTex, cookedPigTex, cookedSheepTex, getItemTexture);
         }
     }
 
     if (quantityPromptOpen) {
-        drawQuantityPrompt(window, uiFont, width, height, quantityPromptIsCampfire, quantityPromptCampfireSlot, quantityPromptMax, quantityInput);
+        // Determine if this is a retrieve (slot occupied) or store (slot empty) operation
+        bool isChestRetrieve = quantityPromptIsChest && (quantityPromptSourceSlot == -1);
+        drawQuantityPrompt(window, uiFont, width, height,
+            quantityPromptIsCampfire, quantityPromptCampfireSlot,
+            quantityPromptMax, quantityInput,
+            quantityPromptIsChest, quantityPromptChestSlot, isChestRetrieve);
     }
 
     if (isSleeping) {
         drawSleepOverlay(window, width, height, sleepFadeTimer, sleepFadeDuration);
     }
+
+    drawDisasterNotification(window, uiFont, width, disasterActive, disasterRemaining, disasterBannerTimer, disasterBannerMessage, currentDisasterType);
 }
 
 bool handleIntroAndTutorialClicks(
@@ -904,7 +1075,12 @@ bool handleIntroAndTutorialClicks(
             tutorialStep++;
             if (tutorialStep >= (int)tutorialSteps.size()) {
                 tutorialActive = false;
-                authManager.setFirstTimeFinished(username.c_str());
+                std::string uName = username;
+                std::thread([uName]() {
+                    try {
+                        AuthManager::getInstance().setFirstTimeFinished(uName.c_str());
+                    } catch (...) {}
+                }).detach();
                 latestPlayerMsg = "You can now get daily quests from the NPC!";
                 bubbleTimer = 5.0f;
             }

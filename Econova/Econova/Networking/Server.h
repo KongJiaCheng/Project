@@ -8,10 +8,12 @@
 using TimedGetMaxMessageID = std::function<int()>;
 using TimedGetQuestInfo = std::function<QuestInfo(const std::string&)>;
 using TimedLoadMarketPrice = std::function<float(int, float)>;
+using TimedLoadAllMarketPrices = std::function<std::map<int, float>()>;
 
 extern TimedGetMaxMessageID timedGetMaxMessageID;
 extern TimedGetQuestInfo timedGetQuestInfo;
 extern TimedLoadMarketPrice timedLoadMarketPrice;
+extern TimedLoadAllMarketPrices timedLoadAllMarketPrices;
 
 PlayerStats constructServer(AuthManager& authManager, bool dbStartupEnabled, const std::string& username, float STARTUP_DB_TIMEOUT_SECS);
 
@@ -60,6 +62,7 @@ void syncAndRenderOnlinePlayers(
     const sf::Texture& woodRoofTex,
     const sf::Texture& woodStairsTex,
     const sf::Texture& bedTex,
+    const sf::Texture& chestTex,
     const sf::Font& uiFont,
     std::string& latestPlayerMsg,
     float& bubbleTimer,
@@ -75,6 +78,25 @@ void syncAndRenderOnlinePlayers(
 
 #include "Inventory.h"
 #include "Trade.h"
+
+void saveAllGameData(
+    AuthManager& authManager,
+    const std::string& username,
+    TradeSlot playerTradeSlots[4],
+    TradeSlot myP2PSlots[4],
+    int p2pTradeID,
+    Inventory& inventory,
+    float hunger,
+    float thirst,
+    int currency,
+    int level,
+    int exp,
+    float elapsedGameTime,
+    int hungerMultiplier,
+    int thirstMultiplier,
+    const std::vector<PlacedStructure>& structures,
+    const std::vector<PlacedCampfire>& campfires
+);
 
 void saveAllGameDataAndClose(
     sf::RenderWindow& window,
@@ -95,22 +117,4 @@ void saveAllGameDataAndClose(
     const std::vector<PlacedStructure>& structures,
     const std::vector<PlacedCampfire>& campfires
 );
-
-void checkAndPerformPeriodicAutoSave(
-    const sf::Sprite& sprite,
-    sf::Vector2f& lastSaveCameraPos,
-    sf::Clock& saveCooldownClock,
-    Inventory& inventory,
-    AuthManager& authManager,
-    const std::string& username,
-    float hunger,
-    float thirst,
-    int currency,
-    int level,
-    int exp,
-    float elapsedGameTime,
-    int hungerMultiplier,
-    int thirstMultiplier,
-    const std::vector<PlacedStructure>& structures,
-    const std::vector<PlacedCampfire>& campfires
-);
+

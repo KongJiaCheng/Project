@@ -34,6 +34,7 @@ struct GameAssets {
     sf::Texture furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex, chestTex;
     sf::Texture swordIconTex, shieldIconTex, tileIconTex, wallIconTex, doorIconTex, roofIconTex, stairsIconTex, bedIconTex;
     sf::Texture cookedChickenTex, cookedPigTex, cookedZombieTex, cookedSheepTex, woolTex;
+    sf::Texture coalTex, copperOreTex, copperBarTex, ironOreTex, ironBarTex, goldOreTex, goldBarTex, diamondTex;
     sf::Texture texMaleOnline, texFemaleOnline;
     sf::Texture campfireFrames[8];
 

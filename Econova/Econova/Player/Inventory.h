@@ -18,6 +18,14 @@ public:
     float computeX(sf::RenderWindow& window);
     float computeY(sf::RenderWindow& window);
     int getSelectedSlot() const { return selectedSlot; }
+    void setSelectedSlot(int slot);
+    void drawItemBanner(sf::RenderWindow& window);
+    void showBanner(const std::string& text, float duration = 3.5f) {
+        bannerText = text;
+        bannerTimer = duration;
+        bannerClock.restart();
+    }
+    static std::string getItemName(int id);
     bool isEquipped(int slot) const { return slotEquipped[slot]; }
     void toggleEquipped(int slot) { slotEquipped[slot] = !slotEquipped[slot]; }
     void setEquipped(int slot, bool eq) { slotEquipped[slot] = eq; }
@@ -69,8 +77,9 @@ private:
     sf::Clock doubleClickClock;
     int lastClickedSlot = -1;
     int hoveredSlot = -1;
-
-    static std::string getItemName(int id);
+    float bannerTimer = 0.f;
+    std::string bannerText = "";
+    sf::Clock bannerClock;
 
     struct Slot
     {
@@ -110,6 +119,10 @@ bool handleInventoryInteractionClick(
     int& hungerMultiplier,
     float maxHunger,
     int MAX_MULTIPLIER,
-    float& hp
+    float& hp,
+    bool disasterActive = false,
+    bool furnaceMenuOpen = false,
+    bool chestMenuOpen = false,
+    bool quantityPromptOpen = false
 );
 
