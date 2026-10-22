@@ -1,4 +1,4 @@
-#include "GameInput.h"
+﻿#include "GameInput.h"
 #include "ViewUtils.h"
 #include "ItemID.h"
 #include "ChickenMeat.h"
@@ -1724,6 +1724,7 @@ bool handleTopBarAndWrenchClicks(
     bool& tradeMenuOpen,
     bool& tradeConfirmOpen,
     bool& p2pTradeOpen,
+    bool isAnyBlockingMenuOpen,
     bool& isTargetNPC,
     std::string& wrenchTargetPlayer,
     sf::Vector2f& wrenchMenuPos,
@@ -1757,7 +1758,7 @@ bool handleTopBarAndWrenchClicks(
     }
 
     // Online player click -> open wrench with "Trade" option
-    if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !p2pTradeOpen) {
+    if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !p2pTradeOpen && !isAnyBlockingMenuOpen) {
         for (const auto& op : otherPlayers) {
             bool hitWrench = false;
             auto wbIt = onlinePlayerWrenchBounds.find(op.username);
@@ -1786,7 +1787,7 @@ bool handleTopBarAndWrenchClicks(
     }
 
     // Allow wrench click only if no other menus are open
-    if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen) {
+    if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen && !isAnyBlockingMenuOpen) {
         // Player wrench button, nametag, or body
         sf::FloatRect pb = playerWrenchBtn.getGlobalBounds();
         sf::FloatRect pbHit({ pb.position.x - 20.f, pb.position.y - 20.f }, { pb.size.x + 40.f, pb.size.y + 40.f });
@@ -2008,6 +2009,15 @@ void handleAllGameMouseButtonPressed(
     playerGoldTyping = false;
     p2pGoldTyping = false;
 
+    // Compute whether ANY blocking menu is open — used to swallow clicks below
+    bool anyCampfireMenuOpen = std::any_of(campfires.begin(), campfires.end(),
+        [](const PlacedCampfire& f) { return f.menuOpen; });
+    bool anyFurnaceMenuOpen2 = std::any_of(structures.begin(), structures.end(),
+        [](const PlacedStructure& s) { return s.id == ITEM_FURNACE && s.menuOpen; });
+    bool isAnyMenuOpen = (tradeMenuOpen || tradeConfirmOpen || wrenchMenuOpen || craftMenuOpen
+        || p2pTradeOpen || chestMenuOpen || anyCampfireMenuOpen || anyFurnaceMenuOpen2
+        || quantityPromptOpen || iapPageOpen || iapVerifyingOpen || stockPageOpen);
+
     if (stockPageOpen) {
         sf::FloatRect sBoxRect({ (width - 900.f) / 2.f, (height - 600.f) / 2.f }, { 900.f, 600.f });
         sf::FloatRect closeBtnRect({ sBoxRect.position.x + 840.f, sBoxRect.position.y + 20.f }, { 40.f, 40.f });
@@ -2073,6 +2083,7 @@ void handleAllGameMouseButtonPressed(
         tradeMenuOpen,
         tradeConfirmOpen,
         p2pTradeOpen,
+        isAnyMenuOpen,   // block NPC/player wrench when a menu is already open
         isTargetNPC,
         wrenchTargetPlayer,
         wrenchMenuPos,
@@ -2578,10 +2589,13 @@ void handleAllGameMouseButtonPressed(
         }
     }
 
-    if (!clickHandled)
+    // Only allow inventory slot interaction when no major menu is blocking the screen
+    bool isMenuBlockingInventory = (tradeMenuOpen || tradeConfirmOpen || wrenchMenuOpen
+        || p2pTradeOpen || chestMenuOpen || anyCampfireMenuOpen || anyFurnaceMenuOpen2
+        || quantityPromptOpen);
+    if (!clickHandled && !isMenuBlockingInventory)
     {
-        bool anyFurnaceMenuOpen = std::any_of(structures.begin(), structures.end(),
-            [](const PlacedStructure& s) { return s.id == ITEM_FURNACE && s.menuOpen; });
+        bool anyFurnaceMenuOpen = anyFurnaceMenuOpen2;
         clickHandled = handleInventoryInteractionClick(
             uiPos,
             mousePixelPos,

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <string>
@@ -232,6 +232,7 @@ bool handleTopBarAndWrenchClicks(
     bool& tradeMenuOpen,
     bool& tradeConfirmOpen,
     bool& p2pTradeOpen,
+    bool isAnyBlockingMenuOpen,
     bool& isTargetNPC,
     std::string& wrenchTargetPlayer,
     sf::Vector2f& wrenchMenuPos,
