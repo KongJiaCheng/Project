@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <SFML/Graphics.hpp>
 #include "Animation.h"
 #include <cmath>
@@ -106,12 +106,13 @@ public:
 
         applyCurrentTexture();
 
-        // Only charge attack timer when within attack range (60px).
-        // Reset when out of range to prevent phantom instant-attacks on first contact.
-        if (len <= 60.f)
+        // Charge attack timer when within contact range (120px world units).
+        // Cap (don't zero) when out of range — brief retreats don't reset full charge,
+        // but cap at cooldown so zombies can't insta-hit on very first re-entry from far away.
+        if (len <= 120.f)
             attackTimer += dt;
-        else
-            attackTimer = 0.f;
+        else if (attackTimer > attackCooldown)
+            attackTimer = attackCooldown;
     }
 
     void applyCurrentTexture()

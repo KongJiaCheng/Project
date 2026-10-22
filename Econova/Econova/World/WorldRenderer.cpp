@@ -221,6 +221,8 @@ void drawWorldCampfires(
         cs.setPosition(pc.position);
         if (!pc.isCrafted) {
             cs.setColor(sf::Color(255, 255, 255, 128));
+        } else if (pc.isHurt) {
+            cs.setColor(sf::Color(255, 100, 100));
         }
         window.draw(cs);
 

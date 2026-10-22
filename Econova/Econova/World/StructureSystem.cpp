@@ -5,6 +5,7 @@
 #include "SheepMeat.h"
 #include "ViewUtils.h"
 #include "Game.h"
+#include "Inventory.h"
 #include <algorithm>
 #include <thread>
 #include <sstream>
@@ -14,7 +15,8 @@ void syncSaveStructuresAndCampfires(
     const std::string& username,
     bool dbStartupEnabled,
     const std::vector<PlacedStructure>& structures,
-    const std::vector<PlacedCampfire>& campfires
+    const std::vector<PlacedCampfire>& campfires,
+    Inventory* inventory
 ) {
     if (!dbStartupEnabled) return;
     std::vector<StoredStructure> structData;
@@ -29,7 +31,8 @@ void syncSaveStructuresAndCampfires(
                 s.health,
                 s.rotation,
                 s.isOpen,
-                s.shearY
+                s.shearY,
+                s.owner
                 });
         }
     }
@@ -52,10 +55,42 @@ void syncSaveStructuresAndCampfires(
         }
     }
 
-    std::thread([&authManager, username, structData = std::move(structData), campData = std::move(campData)]() {
+    std::vector<StoredCampfire> allCampfires;
+    for (const auto& c : campfires) {
+        allCampfires.push_back({
+            c.position.x,
+            c.position.y,
+            c.timeRemaining,
+            c.isCrafted,
+            c.fuel,
+            c.inputItem,
+            c.inputCount,
+            c.outputItem,
+            c.outputCount,
+            c.owner
+        });
+    }
+
+    std::vector<std::pair<int, int>> invData;
+    if (inventory) {
+        invData.resize(20, { 0, 0 });
+        for (int i = 0; i < 20; ++i) {
+            if (inventory->hasItem(i)) {
+                invData[i] = { inventory->getItemID(i), inventory->getItemCount(i) };
+            }
+        }
+    }
+
+    std::thread([&authManager, username, structData = std::move(structData), campData = std::move(campData), allCampfires = std::move(allCampfires), invData = std::move(invData)]() {
         try {
             authManager.saveStructures(username.c_str(), structData);
             authManager.saveCampfires(username.c_str(), campData);
+            for (const auto& c : allCampfires) {
+                authManager.updateCampfireCookingState(c.x, c.y, c.fuel, c.inputItem, c.inputCount, c.outputItem, c.outputCount, c.timeRemaining);
+            }
+            if (!invData.empty()) {
+                authManager.saveInventory(username.c_str(), invData);
+            }
         }
         catch (...) {}
     }).detach();
@@ -101,7 +136,8 @@ void drawCampfireMenu(
     const sf::Texture& woodTex,
     const sf::Texture& cookedChickenTex,
     const sf::Texture& cookedPigTex,
-    const sf::Texture& cookedSheepTex
+    const sf::Texture& cookedSheepTex,
+    std::function<const sf::Texture*(int id)> getItemTexture
 ) {
     window.setView(GetUIView(&window));
     
@@ -192,10 +228,11 @@ void drawCampfireMenu(
     foodSlot.setOutlineColor(hoverFood ? sf::Color::Yellow : sf::Color(150, 150, 150));
     window.draw(foodSlot);
 
-    if (fire.inputCount > 0) {
+    if (fire.inputCount > 0 && fire.inputItem != 0) {
         const sf::Texture* rTex = (fire.inputItem == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() :
                                   (fire.inputItem == ITEM_PIG_MEAT) ? PigMeat::getTexture() :
                                   (fire.inputItem == ITEM_SHEEP_MEAT) ? SheepMeat::getTexture() : nullptr;
+        if (!rTex && getItemTexture) rTex = getItemTexture(fire.inputItem);
         if (rTex) {
             sf::Sprite fs(*rTex);
             sf::Vector2u ts = rTex->getSize();
@@ -211,6 +248,14 @@ void drawCampfireMenu(
         window.draw(fsText);
     }
 
+    // Direction arrow between food and cooked slot
+    bool campfireActive = (fire.inputCount > 0 && fire.fuel > 0);
+    sf::Text arrowTxt(uiFont, "->", 24);
+    arrowTxt.setStyle(sf::Text::Bold);
+    arrowTxt.setFillColor(campfireActive ? sf::Color::Yellow : sf::Color(160, 160, 160));
+    arrowTxt.setPosition({ bg.getPosition().x + 312.f, bg.getPosition().y + 133.f });
+    window.draw(arrowTxt);
+
     // 3. Cooked Food slot
     sf::RectangleShape outSlot({ 80.f, 80.f });
     outSlot.setPosition({ bg.getPosition().x + 360.f, bg.getPosition().y + 110.f });
@@ -220,10 +265,11 @@ void drawCampfireMenu(
     outSlot.setOutlineColor(hoverOut ? sf::Color::Yellow : sf::Color(150, 150, 150));
     window.draw(outSlot);
 
-    if (fire.outputCount > 0) {
+    if (fire.outputCount > 0 && fire.outputItem != 0) {
         const sf::Texture* oTex = (fire.outputItem == ITEM_COOKED_CHICKEN) ? &cookedChickenTex :
                                   (fire.outputItem == ITEM_COOKED_PIG) ? &cookedPigTex :
                                   (fire.outputItem == ITEM_COOKED_SHEEP) ? &cookedSheepTex : nullptr;
+        if (!oTex && getItemTexture) oTex = getItemTexture(fire.outputItem);
         if (oTex) {
             sf::Sprite fs(*oTex);
             sf::Vector2u ts = oTex->getSize();
@@ -240,7 +286,6 @@ void drawCampfireMenu(
     }
 
     // Status row
-    bool campfireActive = (fire.inputCount > 0 && fire.fuel > 0);
     std::string statusStr = "Insert Fuel & Raw Food";
     sf::Color statusColor(150, 150, 150);
     if (campfireActive) {
@@ -248,7 +293,7 @@ void drawCampfireMenu(
         statusColor = sf::Color::Yellow;
     }
     else if (fire.outputCount > 0) {
-        statusStr = "Cooked food ready! Click \u25BA to retrieve.";
+        statusStr = "Cooked food ready! Click output slot to retrieve.";
         statusColor = sf::Color::Green;
     }
     sf::Text statusTxt(uiFont, statusStr, 18);
@@ -293,6 +338,12 @@ void drawCampfireMenu(
             window.draw(done);
         }
     }
+
+    // Hint at bottom
+    sf::Text hintTxt(uiFont, "Select item in inventory below, then click a slot  |  Click output to retrieve", 12);
+    hintTxt.setFillColor(sf::Color(160, 160, 160));
+    hintTxt.setPosition({ bg.getPosition().x + 30.f, bg.getPosition().y + 270.f });
+    window.draw(hintTxt);
 }
 
 void drawFurnaceMenu(
@@ -418,6 +469,14 @@ void drawFurnaceMenu(
         }
     }
 
+    // Direction arrow between input and output slot
+    bool furnaceActive = (furnace.inputCount > 0 && furnace.fuel > 0);
+    sf::Text arrowTxt(uiFont, "->", 24);
+    arrowTxt.setStyle(sf::Text::Bold);
+    arrowTxt.setFillColor(furnaceActive ? sf::Color::Yellow : sf::Color(160, 160, 160));
+    arrowTxt.setPosition({ bg.getPosition().x + 312.f, bg.getPosition().y + 133.f });
+    window.draw(arrowTxt);
+
     // 3. Output slot
     sf::RectangleShape outputSlot({ 80.f, 80.f });
     outputSlot.setPosition({ bg.getPosition().x + 360.f, bg.getPosition().y + 110.f });
@@ -449,7 +508,6 @@ void drawFurnaceMenu(
         }
     }
 
-    bool furnaceActive = (furnace.inputCount > 0 && furnace.fuel > 0);
     std::string statusStr = "Insert Fuel & Ore / Food";
     sf::Color statusColor(150, 150, 150);
     if (furnaceActive) {
@@ -459,7 +517,7 @@ void drawFurnaceMenu(
     }
     else if (furnace.outputCount > 0) {
         bool isBar = (furnace.outputItem == ITEM_COPPER_BAR || furnace.outputItem == ITEM_IRON_BAR || furnace.outputItem == ITEM_GOLD_BAR);
-        statusStr = isBar ? "Metal bar ready! Click \u25BA to retrieve." : "Cooked food ready! Click \u25BA to retrieve.";
+        statusStr = isBar ? "Metal bar ready! Click output slot to retrieve." : "Cooked food ready! Click output slot to retrieve.";
         statusColor = sf::Color::Green;
     }
     sf::Text statusTxt(uiFont, statusStr, 18);
@@ -505,6 +563,12 @@ void drawFurnaceMenu(
             window.draw(done);
         }
     }
+
+    // Hint at bottom
+    sf::Text hintTxt(uiFont, "Select ore/food in inventory below, then click a slot  |  Click output to retrieve", 12);
+    hintTxt.setFillColor(sf::Color(160, 160, 160));
+    hintTxt.setPosition({ bg.getPosition().x + 30.f, bg.getPosition().y + 270.f });
+    window.draw(hintTxt);
 }
 
 // ─── Chest Menu (two-panel: inventory left, chest right) ──────────────────────
@@ -825,7 +889,7 @@ void drawQuantityPrompt(
     } else if (isChest) {
         labelText = "Enter quantity to store in chest";
     } else if (isCampfire) {
-        labelText = (campfireSlot == 1) ? "Enter quantity of fuel to place" : "Enter quantity of food to place";
+        labelText = (campfireSlot == 1) ? "Enter quantity of fuel to place" : "Enter quantity of items to place";
     } else {
         labelText = "Enter quantity to put in trade";
     }
@@ -1124,6 +1188,22 @@ bool handleStructurePlacementClicks(
 
     if (placeBtn.contains(uiPos)) {
         if (placementItemID == ITEM_NONE) {
+            for (const auto& it : structures) {
+                if (it.sprite.has_value() && it.sprite->getPosition() == placementPos) {
+                    if (!it.owner.empty() && it.owner != username) {
+                        inventory.showBanner("This belongs to " + it.owner + "! You cannot build over other players' structures.");
+                        return true;
+                    }
+                }
+            }
+            for (const auto& c : campfires) {
+                if (std::hypot(c.position.x - placementPos.x, c.position.y - placementPos.y) < 50.f) {
+                    if (!c.owner.empty() && c.owner != username) {
+                        inventory.showBanner("This belongs to " + c.owner + "! You cannot build over other players' campfires.");
+                        return true;
+                    }
+                }
+            }
             if (placementFromInventorySlot != -1) {
                 inventory.consumeItem(placementFromInventorySlot);
             }
@@ -1199,6 +1279,23 @@ bool handleStructurePlacementClicks(
                         return true;
                     }
                     targetFloor = 1.f;
+                }
+            }
+
+            for (const auto& it : structures) {
+                if (it.sprite.has_value() && it.sprite->getPosition() == placementPos) {
+                    if (!it.owner.empty() && it.owner != username) {
+                        inventory.showBanner("This belongs to " + it.owner + "! You cannot build over other players' structures.");
+                        return true;
+                    }
+                }
+            }
+            for (const auto& c : campfires) {
+                if (std::hypot(c.position.x - placementPos.x, c.position.y - placementPos.y) < 50.f) {
+                    if (!c.owner.empty() && c.owner != username) {
+                        inventory.showBanner("This belongs to " + c.owner + "! You cannot build over other players' campfires.");
+                        return true;
+                    }
                 }
             }
 
@@ -1321,6 +1418,10 @@ bool handleWorldInteractionClicks(
     for (auto& fire : campfires) {
         sf::FloatRect wrenchBtnBounds({ fire.position.x - 25.f, fire.position.y - 100.f }, { 50.f, 50.f });
         if (wrenchBtnBounds.contains(worldPos)) {
+            if (!fire.owner.empty() && fire.owner != username) {
+                inventory.showBanner("This belongs to " + fire.owner + "! You cannot wrench other players' items.");
+                return true;
+            }
             for (auto& f : campfires) f.menuOpen = false;
             for (auto& s : structures) s.menuOpen = false;
             chestMenuOpen = false;
@@ -1336,6 +1437,10 @@ bool handleWorldInteractionClicks(
             sf::FloatRect wrenchBtnBounds({ bPos.x - 25.f, bPos.y - 105.f }, { 50.f, 50.f });
             sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
             if (wrenchBtnBounds.contains(worldPos) || bedBounds.contains(worldPos)) {
+                if (!s.owner.empty() && s.owner != username) {
+                    inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
+                    return true;
+                }
                 if (!isSleeping) {
                     isSleeping = true;
                     sleepFadeTimer = 0.f;
@@ -1352,6 +1457,10 @@ bool handleWorldInteractionClicks(
             sf::Vector2f fPos = s.sprite->getPosition();
             sf::FloatRect wrenchBtnBounds({ fPos.x - 25.f, fPos.y - 175.f }, { 50.f, 50.f });
             if (wrenchBtnBounds.contains(worldPos)) {
+                if (!s.owner.empty() && s.owner != username) {
+                    inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
+                    return true;
+                }
                 for (auto& f : campfires) f.menuOpen = false;
                 for (auto& st : structures) st.menuOpen = false;
                 chestMenuOpen = false;
@@ -1383,6 +1492,10 @@ bool handleWorldInteractionClicks(
     if (nearestDoor) {
         sf::FloatRect doorBtnBounds({ nearestDoor->sprite->getPosition().x - 100.f, nearestDoor->sprite->getPosition().y - 120.f }, { 200.f, 60.f });
         if (doorBtnBounds.contains(worldPos)) {
+            if (!nearestDoor->owner.empty() && nearestDoor->owner != username) {
+                inventory.showBanner("This belongs to " + nearestDoor->owner + "! You cannot wrench other players' items.");
+                return true;
+            }
             nearestDoor->isOpen = !nearestDoor->isOpen;
             float ignore;
             applyStructureScale(*nearestDoor->sprite, nearestDoor->id, nearestDoor->rotation, nearestDoor->isOpen, ignore);
@@ -1413,6 +1526,10 @@ bool handleWorldInteractionClicks(
     if (nearestChest && !chestMenuOpen) {
         sf::FloatRect chestBtnBounds({ nearestChest->sprite->getPosition().x - 100.f, nearestChest->sprite->getPosition().y - 120.f }, { 200.f, 60.f });
         if (chestBtnBounds.contains(worldPos)) {
+            if (!nearestChest->owner.empty() && nearestChest->owner != username) {
+                inventory.showBanner("This belongs to " + nearestChest->owner + "! You cannot wrench other players' items.");
+                return true;
+            }
             chestMenuOpen = true;
             activeChest = nearestChest;
             return true;
@@ -1444,21 +1561,26 @@ void updateCampfiresAndCooking(
             }
 
             if (pc.inputCount > 0 && pc.fuel > 0) {
-                if (pc.timeRemaining <= 0.f) {
-                    pc.timeRemaining = 2.0f;
-                }
-                pc.timeRemaining -= dt;
-                if (pc.timeRemaining <= 0.f) {
-                    pc.fuel--;
-                    pc.inputCount--;
-                    if (pc.inputItem == ITEM_CHICKEN_MEAT) pc.outputItem = ITEM_COOKED_CHICKEN;
-                    else if (pc.inputItem == ITEM_PIG_MEAT) pc.outputItem = ITEM_COOKED_PIG;
-                    else if (pc.inputItem == ITEM_SHEEP_MEAT) pc.outputItem = ITEM_COOKED_SHEEP;
-                    pc.outputCount++;
-                    if (pc.inputCount <= 0) {
-                        pc.inputItem = 0;
+                int expectedOutput = 0;
+                if (pc.inputItem == ITEM_CHICKEN_MEAT) expectedOutput = ITEM_COOKED_CHICKEN;
+                else if (pc.inputItem == ITEM_PIG_MEAT) expectedOutput = ITEM_COOKED_PIG;
+                else if (pc.inputItem == ITEM_SHEEP_MEAT) expectedOutput = ITEM_COOKED_SHEEP;
+
+                if (expectedOutput != 0 && (pc.outputCount == 0 || pc.outputItem == expectedOutput)) {
+                    if (pc.timeRemaining <= 0.f) {
+                        pc.timeRemaining = 2.0f;
                     }
-                    syncSaveCallback();
+                    pc.timeRemaining -= dt;
+                    if (pc.timeRemaining <= 0.f) {
+                        pc.fuel--;
+                        pc.inputCount--;
+                        pc.outputItem = expectedOutput;
+                        pc.outputCount++;
+                        if (pc.inputCount <= 0) {
+                            pc.inputItem = 0;
+                        }
+                        syncSaveCallback();
+                    }
                 }
             } else {
                 pc.timeRemaining = 0.f;
@@ -1469,24 +1591,29 @@ void updateCampfiresAndCooking(
     for (auto& s : structures) {
         if (s.id == ITEM_FURNACE) {
             if (s.inputCount > 0 && s.fuel > 0) {
-                if (s.timeRemaining <= 0.f) {
-                    s.timeRemaining = 2.0f;
-                }
-                s.timeRemaining -= dt;
-                if (s.timeRemaining <= 0.f) {
-                    s.fuel--;
-                    s.inputCount--;
-                    if (s.inputItem == ITEM_COPPER_ORE) s.outputItem = ITEM_COPPER_BAR;
-                    else if (s.inputItem == ITEM_IRON_ORE) s.outputItem = ITEM_IRON_BAR;
-                    else if (s.inputItem == ITEM_GOLD_ORE) s.outputItem = ITEM_GOLD_BAR;
-                    else if (s.inputItem == ITEM_CHICKEN_MEAT) s.outputItem = ITEM_COOKED_CHICKEN;
-                    else if (s.inputItem == ITEM_PIG_MEAT) s.outputItem = ITEM_COOKED_PIG;
-                    else if (s.inputItem == ITEM_SHEEP_MEAT) s.outputItem = ITEM_COOKED_SHEEP;
-                    s.outputCount++;
-                    if (s.inputCount <= 0) {
-                        s.inputItem = 0;
+                int expectedOutput = 0;
+                if (s.inputItem == ITEM_COPPER_ORE) expectedOutput = ITEM_COPPER_BAR;
+                else if (s.inputItem == ITEM_IRON_ORE) expectedOutput = ITEM_IRON_BAR;
+                else if (s.inputItem == ITEM_GOLD_ORE) expectedOutput = ITEM_GOLD_BAR;
+                else if (s.inputItem == ITEM_CHICKEN_MEAT) expectedOutput = ITEM_COOKED_CHICKEN;
+                else if (s.inputItem == ITEM_PIG_MEAT) expectedOutput = ITEM_COOKED_PIG;
+                else if (s.inputItem == ITEM_SHEEP_MEAT) expectedOutput = ITEM_COOKED_SHEEP;
+
+                if (expectedOutput != 0 && (s.outputCount == 0 || s.outputItem == expectedOutput)) {
+                    if (s.timeRemaining <= 0.f) {
+                        s.timeRemaining = 2.0f;
                     }
-                    syncSaveCallback();
+                    s.timeRemaining -= dt;
+                    if (s.timeRemaining <= 0.f) {
+                        s.fuel--;
+                        s.inputCount--;
+                        s.outputItem = expectedOutput;
+                        s.outputCount++;
+                        if (s.inputCount <= 0) {
+                            s.inputItem = 0;
+                        }
+                        syncSaveCallback();
+                    }
                 }
             } else {
                 s.timeRemaining = 0.f;

@@ -93,12 +93,15 @@ struct PlacedStructure {
     }
 };
 
+class Inventory;
+
 void syncSaveStructuresAndCampfires(
     AuthManager& authManager,
     const std::string& username,
     bool dbStartupEnabled,
     const std::vector<PlacedStructure>& structures,
-    const std::vector<PlacedCampfire>& campfires
+    const std::vector<PlacedCampfire>& campfires,
+    Inventory* inventory = nullptr
 );
 
 void updateCampfiresSimulation(
@@ -115,7 +118,8 @@ void drawCampfireMenu(
     const sf::Texture& woodTex,
     const sf::Texture& cookedChickenTex,
     const sf::Texture& cookedPigTex,
-    const sf::Texture& cookedSheepTex
+    const sf::Texture& cookedSheepTex,
+    std::function<const sf::Texture*(int id)> getItemTexture = nullptr
 );
 
 void drawFurnaceMenu(

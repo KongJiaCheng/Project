@@ -46,6 +46,7 @@ public:
     void saveCampfires(const std::string& username, const std::vector<StoredCampfire>& campfires);
     std::vector<StoredCampfire> loadCampfires(const std::string& username);
     std::vector<StoredCampfire> loadOtherCampfires(const std::string& username);
+    bool updateCampfireCookingState(float x, float y, int fuel, int inputItem, int inputCount, int outputItem, int outputCount, float timeRemaining);
 
     // Chests
     void saveChestContents(const std::string& username, const std::vector<StoredChestItem>& items);

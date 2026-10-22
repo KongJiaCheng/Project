@@ -1,4 +1,4 @@
-#include "PlayerController.h"
+﻿#include "PlayerController.h"
 #include "Game.h"
 #include "ItemID.h"
 #include "SpawnEntity.h"
@@ -171,7 +171,7 @@ void updateMonstersCombat(
             float dy = zCenter.y - pCenter.y;
             float dist = std::sqrt(dx * dx + dy * dy);
 
-            bool hit = dist < 60.f;
+            bool hit = dist < 120.f;
             if (!introActive && hit) {
                 if (m->attackTimer >= m->attackCooldown) {
                     if (!tutorialActive) {
@@ -193,12 +193,12 @@ void updateMonstersCombat(
                     }
                     m->attackTimer = 0.f;
                     isPlayerHurt = true;
-                    playerHurtTimer = 0.25f;
+                    playerHurtTimer = 0.55f;
 
                     sf::Vector2f pushDir = playerSprite.getPosition() - m->sprite.getPosition();
                     float len = std::sqrt(pushDir.x * pushDir.x + pushDir.y * pushDir.y);
                     if (len != 0.f) pushDir /= len;
-                    playerSprite.move(pushDir * 30.f);
+                    playerSprite.move(pushDir * 180.f);
                 }
             }
         }
@@ -438,7 +438,7 @@ bool hydrateWorldAndPlayerData(
     for (auto& s : loaded.otherStructures) {
         const sf::Texture* tex = assets.getItemTexture(s.id);
         if (tex) {
-            structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, "other");
+            structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, s.owner.empty() ? "other" : s.owner);
             auto& newS = structures.back();
             newS.sprite->setPosition({ s.x, s.y });
             newS.health = s.health;
@@ -558,7 +558,9 @@ void handlePlayerMovementAndCombat(
     std::vector<std::unique_ptr<Monster>>& monsters,
     std::vector<PlacedStructure>& structures,
     Inventory& inventory,
-    int& playerExp
+    int& playerExp,
+    const std::string& username,
+    std::vector<PlacedCampfire>* campfires
 ) {
     const float MOVE_SPEED = 250.f;
     AnimSet* currentAnimSet = &animWalk;
@@ -718,6 +720,7 @@ void handlePlayerMovementAndCombat(
         Item* bestStone = nullptr;
         Monster* bestMonster = nullptr;
         PlacedStructure* bestStructure = nullptr;
+        PlacedCampfire* bestCampfire = nullptr;
         float bestDist = 999999.f;
 
         // 1. Animals
@@ -742,7 +745,7 @@ void handlePlayerMovementAndCombat(
                     if (d < bestDist) {
                         bestDist = d;
                         bestAnimal = a.get();
-                        bestTree = nullptr; bestStone = nullptr; bestMonster = nullptr; bestStructure = nullptr;
+                        bestTree = nullptr; bestStone = nullptr; bestMonster = nullptr; bestStructure = nullptr; bestCampfire = nullptr;
                     }
                 }
             }
@@ -772,7 +775,7 @@ void handlePlayerMovementAndCombat(
                     if (d < bestDist) {
                         bestDist = d;
                         bestTree = &tree;
-                        bestAnimal = nullptr; bestStone = nullptr; bestMonster = nullptr; bestStructure = nullptr;
+                        bestAnimal = nullptr; bestStone = nullptr; bestMonster = nullptr; bestStructure = nullptr; bestCampfire = nullptr;
                     }
                 }
             }
@@ -802,7 +805,7 @@ void handlePlayerMovementAndCombat(
                     if (d < bestDist) {
                         bestDist = d;
                         bestStone = &stone;
-                        bestAnimal = nullptr; bestTree = nullptr; bestMonster = nullptr; bestStructure = nullptr;
+                        bestAnimal = nullptr; bestTree = nullptr; bestMonster = nullptr; bestStructure = nullptr; bestCampfire = nullptr;
                     }
                 }
             }
@@ -830,17 +833,28 @@ void handlePlayerMovementAndCombat(
                     if (d < bestDist) {
                         bestDist = d;
                         bestMonster = a.get();
-                        bestAnimal = nullptr; bestTree = nullptr; bestStone = nullptr; bestStructure = nullptr;
+                        bestAnimal = nullptr; bestTree = nullptr; bestStone = nullptr; bestStructure = nullptr; bestCampfire = nullptr;
                     }
                 }
             }
         }
 
-        // 5. Structures
+        int curSlot = inventory.getSelectedSlot();
+        bool isHoldingWrench = (curSlot != -1 && inventory.hasItem(curSlot) && inventory.getItemID(curSlot) == ITEM_WRENCH);
+
+        // 5. Structures (including wood tiles)
         for (auto& s : structures) {
-            if (s.id == ITEM_WOOD_TILE || s.health <= 0) continue;
+            if (!s.sprite.has_value() || s.health <= 0) continue;
             sf::FloatRect b = s.sprite->getGlobalBounds();
             if (checkOverlap(b)) {
+                if (!s.owner.empty() && s.owner != username) {
+                    if (isHoldingWrench) {
+                        inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
+                    } else {
+                        inventory.showBanner("This belongs to " + s.owner + "! You cannot destroy other players' items.");
+                    }
+                    continue;
+                }
                 if (swordEquipped) {
                     s.health -= damage;
                     s.isHurt = true;
@@ -851,7 +865,38 @@ void handlePlayerMovementAndCombat(
                     if (d < bestDist) {
                         bestDist = d;
                         bestStructure = &s;
-                        bestAnimal = nullptr; bestTree = nullptr; bestStone = nullptr; bestMonster = nullptr;
+                        bestAnimal = nullptr; bestTree = nullptr; bestStone = nullptr; bestMonster = nullptr; bestCampfire = nullptr;
+                    }
+                }
+            }
+        }
+
+        // 6. Campfires
+        if (campfires) {
+            for (auto& c : *campfires) {
+                if (c.health <= 0) continue;
+                sf::FloatRect cb({ c.position.x - 50.f, c.position.y - 70.f }, { 100.f, 80.f });
+                if (checkOverlap(cb)) {
+                    if (!c.owner.empty() && c.owner != username) {
+                        if (isHoldingWrench) {
+                            inventory.showBanner("This belongs to " + c.owner + "! You cannot wrench other players' items.");
+                        } else {
+                            inventory.showBanner("This belongs to " + c.owner + "! You cannot destroy other players' items.");
+                        }
+                        continue;
+                    }
+                    if (swordEquipped) {
+                        c.health -= damage;
+                        c.isHurt = true;
+                        c.hurtTimer = 0.15f;
+                        hitSomething = true;
+                    } else {
+                        float d = getDistSq(c.position);
+                        if (d < bestDist) {
+                            bestDist = d;
+                            bestCampfire = &c;
+                            bestAnimal = nullptr; bestTree = nullptr; bestStone = nullptr; bestMonster = nullptr; bestStructure = nullptr;
+                        }
                     }
                 }
             }
@@ -902,10 +947,32 @@ void handlePlayerMovementAndCombat(
                 bestMonster->sprite.move(dir * 40.f);
             }
             else if (bestStructure) {
-                bestStructure->health -= damage;
-                bestStructure->isHurt = true;
-                bestStructure->hurtTimer = 0.15f;
-                hitSomething = true;
+                if (!bestStructure->owner.empty() && bestStructure->owner != username) {
+                    if (isHoldingWrench) {
+                        inventory.showBanner("This belongs to " + bestStructure->owner + "! You cannot wrench other players' items.");
+                    } else {
+                        inventory.showBanner("This belongs to " + bestStructure->owner + "! You cannot destroy other players' items.");
+                    }
+                } else {
+                    bestStructure->health -= damage;
+                    bestStructure->isHurt = true;
+                    bestStructure->hurtTimer = 0.15f;
+                    hitSomething = true;
+                }
+            }
+            else if (bestCampfire) {
+                if (!bestCampfire->owner.empty() && bestCampfire->owner != username) {
+                    if (isHoldingWrench) {
+                        inventory.showBanner("This belongs to " + bestCampfire->owner + "! You cannot wrench other players' items.");
+                    } else {
+                        inventory.showBanner("This belongs to " + bestCampfire->owner + "! You cannot destroy other players' items.");
+                    }
+                } else {
+                    bestCampfire->health -= damage;
+                    bestCampfire->isHurt = true;
+                    bestCampfire->hurtTimer = 0.15f;
+                    hitSomething = true;
+                }
             }
         }
 
@@ -955,7 +1022,7 @@ void updateWorldEntitiesAndDrops(
     float& thirst,
     int& thirstMultiplier,
     float maxThirst,
-    const std::vector<PlacedCampfire>& campfires,
+    std::vector<PlacedCampfire>& campfires,
     const std::function<sf::Vector2f(sf::Vector2f)>& snapGridFunc,
     const GameSettings& globalSettings,
     const sf::Font& font,
@@ -1170,7 +1237,23 @@ void updateWorldEntitiesAndDrops(
             ++it;
         }
     }
-    if (structureDestroyed && syncSaveFunc) {
+
+    bool campfireDestroyed = false;
+    for (auto it = campfires.begin(); it != campfires.end(); ) {
+        if (it->health <= 0) {
+            it = campfires.erase(it);
+            campfireDestroyed = true;
+        }
+        else {
+            if (it->isHurt) {
+                it->hurtTimer -= dt;
+                if (it->hurtTimer <= 0.f) it->isHurt = false;
+            }
+            ++it;
+        }
+    }
+
+    if ((structureDestroyed || campfireDestroyed) && syncSaveFunc) {
         syncSaveFunc();
     }
 

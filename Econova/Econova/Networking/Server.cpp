@@ -290,7 +290,7 @@ void syncAndRenderOnlinePlayers(
                         else if (s.id == ITEM_BED)         tex = &bedTex;
                         else if (s.id == ITEM_CHEST)       tex = &chestTex;
                         if (tex) {
-                            structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, "other");
+                            structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, s.owner.empty() ? "other" : s.owner);
                             auto& ns = structures.back();
                             ns.sprite->setPosition({ s.x, s.y });
                             ns.health = s.health;
@@ -303,26 +303,55 @@ void syncAndRenderOnlinePlayers(
                             applyStructureScale(*ns.sprite, s.id, s.rotation, s.isOpen, ns.shearY);
                         }
                     }
-                    campfires.erase(
-                        std::remove_if(campfires.begin(), campfires.end(),
-                            [&](const PlacedCampfire& c) {
-                                return c.owner != username;
-                            }),
-                        campfires.end());
+                    // Update or merge otherCampfires cleanly without disrupting open menus or destroying state
+                    for (auto it = campfires.begin(); it != campfires.end(); ) {
+                        if (it->owner != username && !it->menuOpen) {
+                            bool stillExists = false;
+                            for (const auto& oc : res.otherCampfires) {
+                                if (std::hypot(it->position.x - oc.x, it->position.y - oc.y) < 10.f) {
+                                    stillExists = true;
+                                    break;
+                                }
+                            }
+                            if (!stillExists) {
+                                it = campfires.erase(it);
+                                continue;
+                            }
+                        }
+                        ++it;
+                    }
+
                     for (auto& c : res.otherCampfires) {
-                        PlacedCampfire pc;
-                        pc.position      = { c.x, c.y };
-                        pc.timeRemaining = c.timeRemaining;
-                        pc.isCrafted     = c.isCrafted;
-                        pc.currentFrame  = 0;
-                        pc.frameTimer    = 0.f;
-                        pc.fuel          = c.fuel;
-                        pc.inputItem     = c.inputItem;
-                        pc.inputCount    = c.inputCount;
-                        pc.outputItem    = c.outputItem;
-                        pc.outputCount   = c.outputCount;
-                        pc.owner         = c.owner;
-                        campfires.push_back(pc);
+                        auto it = std::find_if(campfires.begin(), campfires.end(), [&](const PlacedCampfire& existing) {
+                            return std::hypot(existing.position.x - c.x, existing.position.y - c.y) < 10.f;
+                        });
+                        if (it != campfires.end()) {
+                            if (!it->menuOpen) {
+                                it->timeRemaining = c.timeRemaining;
+                                it->fuel          = c.fuel;
+                                it->inputItem     = c.inputItem;
+                                it->inputCount    = c.inputCount;
+                                it->outputItem    = c.outputItem;
+                                it->outputCount   = c.outputCount;
+                                it->owner         = c.owner;
+                                it->isCrafted     = c.isCrafted;
+                            }
+                        } else {
+                            PlacedCampfire pc;
+                            pc.position      = { c.x, c.y };
+                            pc.timeRemaining = c.timeRemaining;
+                            pc.isCrafted     = c.isCrafted;
+                            pc.currentFrame  = 0;
+                            pc.frameTimer    = 0.f;
+                            pc.fuel          = c.fuel;
+                            pc.inputItem     = c.inputItem;
+                            pc.inputCount    = c.inputCount;
+                            pc.outputItem    = c.outputItem;
+                            pc.outputCount   = c.outputCount;
+                            pc.owner         = c.owner;
+                            pc.menuOpen      = false;
+                            campfires.push_back(pc);
+                        }
                     }
                 }
 
@@ -473,7 +502,7 @@ void saveAllGameData(
     std::vector<StoredStructure> structData;
     for (auto& s : structures) {
         if (s.sprite.has_value() && s.owner == username) {
-            structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY });
+            structData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY, s.owner });
         }
     }
     authManager.saveStructures(username.c_str(), structData);
@@ -495,6 +524,9 @@ void saveAllGameData(
         }
     }
     authManager.saveCampfires(username.c_str(), campData);
+    for (const auto& c : campfires) {
+        authManager.updateCampfireCookingState(c.position.x, c.position.y, c.fuel, c.inputItem, c.inputCount, c.outputItem, c.outputCount, c.timeRemaining);
+    }
 
     // When the player leaves, do not save their chat messages/history in the server/online database
     authManager.clearPlayerChatMessages(username.c_str());

@@ -294,7 +294,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::vector<PlacedCampfire> campfires;
 
     auto syncSaveLocalStructuresAndCampfires = [&]() {
-        syncSaveStructuresAndCampfires(authManager, username, dbStartupEnabled, structures, campfires);
+        syncSaveStructuresAndCampfires(authManager, username, dbStartupEnabled, structures, campfires, &inventory);
     };
     traceStartup("after_campfire_frames");
 
@@ -1388,7 +1388,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 sleepTimeSkipped,
                 placementMode,
                 chestMenuOpen,
-                activeChest
+                activeChest,
+                chatActive
             )) {
                 continue;
             }
@@ -1676,11 +1677,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             std::vector<StoredStructure> saveStructData;
             for (auto& s : structures) {
                 if (s.sprite.has_value() && s.owner == username) {
-                    saveStructData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY });
+                    saveStructData.push_back({ s.id, s.sprite->getPosition().x, s.sprite->getPosition().y, s.health, s.rotation, s.isOpen, s.shearY, s.owner });
                 }
             }
 
             std::vector<StoredCampfire> saveCampData;
+            std::vector<StoredCampfire> allSaveCampData;
             for (auto& c : campfires) {
                 if (c.owner == username) {
                     saveCampData.push_back({
@@ -1695,6 +1697,18 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         c.outputCount
                     });
                 }
+                allSaveCampData.push_back({
+                    c.position.x,
+                    c.position.y,
+                    c.timeRemaining,
+                    c.isCrafted,
+                    c.fuel,
+                    c.inputItem,
+                    c.inputCount,
+                    c.outputItem,
+                    c.outputCount,
+                    c.owner
+                });
             }
 
             auto renderSavingFrame = [&](const std::string& statusMessage, int dotsCount) {
@@ -1823,7 +1837,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             float currentElapsed = elapsedGameTime;
             int p2pTradeIDCopy = p2pTradeID;
 
-            std::thread saveThread([&authManager, username, p2pTradeIDCopy, saveItems, hunger, thirst, currency, level, exp, currentElapsed, hungerMultiplier, thirstMultiplier, saveStructData, saveCampData, &saveDone, &saveSuccess]() {
+            std::thread saveThread([&authManager, username, p2pTradeIDCopy, saveItems, hunger, thirst, currency, level, exp, currentElapsed, hungerMultiplier, thirstMultiplier, saveStructData, saveCampData, allSaveCampData, &saveDone, &saveSuccess]() {
                 try {
                     if (p2pTradeIDCopy > 0) {
                         authManager.cancelP2PTrade(p2pTradeIDCopy);
@@ -1832,6 +1846,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                     authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, currentElapsed, hungerMultiplier, thirstMultiplier);
                     authManager.saveStructures(username.c_str(), saveStructData);
                     authManager.saveCampfires(username.c_str(), saveCampData);
+                    for (const auto& c : allSaveCampData) {
+                        authManager.updateCampfireCookingState(c.x, c.y, c.fuel, c.inputItem, c.inputCount, c.outputItem, c.outputCount, c.timeRemaining);
+                    }
                     authManager.clearPlayerChatMessages(username.c_str());
                     authManager.setPlayerOffline(username.c_str());
                     saveSuccess.store(true);
@@ -2095,7 +2112,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             monsters,
             structures,
             inventory,
-            exp
+            exp,
+            username,
+            &campfires
         );
 
         updateCampfiresAndCooking(campfires, structures, dt, [&]() { syncSaveLocalStructuresAndCampfires(); });

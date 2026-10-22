@@ -658,28 +658,52 @@ sql::SQLString AuthManager::generateForgotOTP(const sql::SQLString& email) {
             std::string emailStr(email.c_str());
             std::string otpStr2(otp.c_str());
 
-            // Read email credentials from email_config.txt
+            // Always display generated OTP in server/console so reset is never blocked
+            std::cout << "[AUTH] Generated OTP for " << emailStr << ": " << otpStr2 << "\n";
+
+            // Read email credentials from email_config.txt (check multiple common paths)
             std::string fromEmail, appPassword, smtpServer = "smtp.gmail.com";
             int smtpPort = 587;
-            {
-                std::ifstream cfgFile("email_config.txt");
+            const std::vector<std::string> configPaths = {
+                "email_config.txt",
+                "Release/email_config.txt",
+                "../email_config.txt",
+                "Econova/email_config.txt"
+            };
+
+            for (const auto& path : configPaths) {
+                std::ifstream cfgFile(path);
                 if (cfgFile.is_open()) {
                     std::string ln;
                     while (std::getline(cfgFile, ln)) {
+                        while (!ln.empty() && (ln.back() == '\r' || ln.back() == ' ' || ln.back() == '\t')) ln.pop_back();
                         if (ln.empty() || ln[0] == '#') continue;
-                        if (ln.rfind("from=", 0) == 0)     fromEmail   = ln.substr(5);
+                        if (ln.rfind("from=", 0) == 0)          fromEmail   = ln.substr(5);
                         else if (ln.rfind("password=", 0) == 0) appPassword = ln.substr(9);
-                        else if (ln.rfind("smtp=", 0) == 0)    smtpServer  = ln.substr(5);
-                        else if (ln.rfind("port=", 0) == 0)    { try { smtpPort = std::stoi(ln.substr(5)); } catch (...) {} }
+                        else if (ln.rfind("smtp=", 0) == 0)     smtpServer  = ln.substr(5);
+                        else if (ln.rfind("port=", 0) == 0)     { try { smtpPort = std::stoi(ln.substr(5)); } catch (...) {} }
                     }
+                    if (!fromEmail.empty() && !appPassword.empty()) break;
                 }
             }
 
-            if (!fromEmail.empty() && !appPassword.empty()) {
-                // Fire-and-forget async email via PowerShell Send-MailMessage
+            // Clean up credentials
+            while (!fromEmail.empty() && std::isspace((unsigned char)fromEmail.front())) fromEmail.erase(fromEmail.begin());
+            while (!fromEmail.empty() && std::isspace((unsigned char)fromEmail.back()))  fromEmail.pop_back();
+            // Remove any spaces from app password (Gmail app passwords are given as 4x4 groups like "abcd efgh ijkl mnop")
+            appPassword.erase(std::remove_if(appPassword.begin(), appPassword.end(), [](unsigned char c) { return std::isspace(c); }), appPassword.end());
+
+            bool isConfigured = !fromEmail.empty() && !appPassword.empty() &&
+                                fromEmail.find("your_game_email") == std::string::npos &&
+                                fromEmail.find("example.com") == std::string::npos &&
+                                fromEmail.find('@') != std::string::npos &&
+                                appPassword.find("your_16_char_app_password") == std::string::npos;
+
+            if (isConfigured) {
+                std::cout << "[AUTH] Dispatching OTP email via " << smtpServer << ":" << smtpPort << " to " << emailStr << "...\n";
+                // Fire-and-forget async email via PowerShell Send-MailMessage with TLS 1.2/1.3 and try/catch
                 std::thread([emailStr, otpStr2, fromEmail, appPassword, smtpServer, smtpPort]() {
                     try {
-                        // Escape single quotes inside any of the values
                         auto esc = [](std::string s) {
                             std::string r; r.reserve(s.size());
                             for (char c : s) { if (c == '\'') r += "''"; else r += c; }
@@ -691,29 +715,40 @@ sql::SQLString AuthManager::generateForgotOTP(const sql::SQLString& email) {
                             " If you did not request this, please ignore this email.";
                         std::string ps =
                             "powershell -NonInteractive -NoProfile -Command \""
+                            "try { "
+                            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; "
                             "$pw = ConvertTo-SecureString '" + esc(appPassword) + "' -AsPlainText -Force; "
                             "$cred = New-Object System.Management.Automation.PSCredential('" + esc(fromEmail) + "', $pw); "
-                            "Send-MailMessage "
-                            "-SmtpServer '" + esc(smtpServer) + "' "
-                            "-Port " + std::to_string(smtpPort) + " "
-                            "-UseSsl "
-                            "-From '" + esc(fromEmail) + "' "
-                            "-To '" + esc(emailStr) + "' "
-                            "-Subject 'Econova Password Reset OTP' "
-                            "-Body '" + esc(body) + "' "
-                            "-Credential $cred\"";
+                            "$mailParams = @{ "
+                            "  SmtpServer = '" + esc(smtpServer) + "'; "
+                            "  Port = " + std::to_string(smtpPort) + "; "
+                            "  UseSsl = $true; "
+                            "  Credential = $cred; "
+                            "  From = '" + esc(fromEmail) + "'; "
+                            "  To = '" + esc(emailStr) + "'; "
+                            "  Subject = 'Econova Password Reset OTP'; "
+                            "  Body = '" + esc(body) + "'; "
+                            "}; "
+                            "Send-MailMessage @mailParams -ErrorAction Stop; "
+                            "Write-Host '[AUTH] Email sent successfully to " + esc(emailStr) + "'; "
+                            "} catch { "
+                            "Write-Host ('[AUTH ERROR] Email dispatch failed: ' + $_.Exception.Message); "
+                            "if ($_.Exception.Message -match 'transport connection' -or $_.Exception.Message -match '535' -or $_.Exception.Message -match 'Failure sending mail') { "
+                            "  Write-Host '[AUTH HINT] Gmail authentication failed. Ensure 2-Step Verification is active and you are using a 16-character App Password (https://myaccount.google.com/apppasswords).'; "
+                            "} "
+                            "}\"";
                         system(ps.c_str());
                     } catch (...) {}
                 }).detach();
-                std::cout << "[AUTH] OTP email dispatched to: " << emailStr << "\n";
             } else {
-                // No config file â€” print to console as fallback
-                std::cout << "==== EMAIL CONFIG NOT FOUND ====\n"
-                          << "Create email_config.txt next to the executable:\n"
-                          << "  from=youremail@gmail.com\n"
-                          << "  password=your_app_password\n"
-                          << "OTP for " << emailStr << ": " << otpStr2 << "\n"
-                          << "================================\n";
+                std::cout << "=======================================================\n"
+                          << "[AUTH] EMAIL SERVICE NOT CONFIGURED\n"
+                          << "To send real OTP emails, edit 'email_config.txt' with:\n"
+                          << "  from=yourrealemail@gmail.com\n"
+                          << "  password=your16characterapppassword\n"
+                          << "(Generate a 16-character App Password at: https://myaccount.google.com/apppasswords)\n"
+                          << ">>> Enter OTP in-game: " << otpStr2 << " <<<\n"
+                          << "=======================================================\n";
             }
         }
 
@@ -1012,7 +1047,7 @@ std::vector<StoredStructure> AuthManager::loadStructures(const sql::SQLString& u
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY") });
+            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY"), std::string(username.c_str()) });
         }
     }
     catch (sql::SQLException& e) {
@@ -1029,12 +1064,12 @@ std::vector<StoredStructure> AuthManager::loadOtherStructures(const sql::SQLStri
     std::vector<StoredStructure> structures;
     if (!con) return structures;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username != ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT Username, ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username != ?"));
         if (!pstmt) return structures;
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY") });
+            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY"), std::string(res->getString("Username")) });
         }
     }
     catch (sql::SQLException& e) {
@@ -1209,6 +1244,41 @@ std::vector<StoredCampfire> AuthManager::loadOtherCampfires(const sql::SQLString
         }
     }
     return campfires;
+}
+
+bool AuthManager::updateCampfireCookingState(float x, float y, int fuel, int inputItem, int inputCount, int outputItem, int outputCount, float timeRemaining) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().updateCampfireCookingState(x, y, fuel, inputItem, inputCount, outputItem, outputCount, timeRemaining);
+    }
+    if (!con) return false;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        try {
+            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+                "UPDATE campfires SET Fuel = ?, InputItem = ?, InputCount = ?, OutputItem = ?, OutputCount = ?, TimeRemaining = ? "
+                "WHERE ABS(PosX - ?) < 5.0 AND ABS(PosY - ?) < 5.0"
+            ));
+            if (!pstmt) return false;
+            pstmt->setInt(1, fuel);
+            pstmt->setInt(2, inputItem);
+            pstmt->setInt(3, inputCount);
+            pstmt->setInt(4, outputItem);
+            pstmt->setInt(5, outputCount);
+            pstmt->setDouble(6, (double)timeRemaining);
+            pstmt->setDouble(7, (double)x);
+            pstmt->setDouble(8, (double)y);
+            int rows = pstmt->executeUpdate();
+            return rows > 0;
+        }
+        catch (sql::SQLException& e) {
+            if (attempt == 0) {
+                ensureCampfireColumns();
+                continue;
+            }
+            std::cerr << "updateCampfireCookingState error: " << e.what() << "\n";
+        }
+    }
+    return false;
 }
 
 int AuthManager::getOrCreateWorldSeed() {

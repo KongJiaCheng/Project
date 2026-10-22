@@ -79,9 +79,17 @@ bool handleQuantityPromptEvent(
                         activeFire->fuel += amt;
                         saplingPlacementMode = false;
                     }
+                    if (activeFire->inputCount > 0 && activeFire->timeRemaining <= 0.f) {
+                        activeFire->timeRemaining = 2.0f;
+                    }
+                    inventory.showBanner("Added " + std::to_string(amt) + "x " + Inventory::getItemName(itemID) + " as fuel!");
                 } else if (quantityPromptCampfireSlot == 2) { // Raw Food
                     activeFire->inputItem = itemID;
                     activeFire->inputCount += amt;
+                    if (activeFire->timeRemaining <= 0.f) {
+                        activeFire->timeRemaining = 2.0f;
+                    }
+                    inventory.showBanner("Added " + std::to_string(amt) + "x " + Inventory::getItemName(itemID) + " to campfire!");
                 }
                 for (int c = 0; c < amt; c++) {
                     inventory.consumeItem(quantityPromptSourceSlot);
@@ -100,9 +108,17 @@ bool handleQuantityPromptEvent(
                         activeFurnace->fuel += amt;
                         saplingPlacementMode = false;
                     }
+                    if (activeFurnace->inputCount > 0 && activeFurnace->timeRemaining <= 0.f) {
+                        activeFurnace->timeRemaining = 2.0f;
+                    }
+                    inventory.showBanner("Added " + std::to_string(amt) + "x " + Inventory::getItemName(itemID) + " as fuel!");
                 } else if (quantityPromptCampfireSlot == 2) { // Ore or Raw Food
                     activeFurnace->inputItem = itemID;
                     activeFurnace->inputCount += amt;
+                    if (activeFurnace->timeRemaining <= 0.f) {
+                        activeFurnace->timeRemaining = 2.0f;
+                    }
+                    inventory.showBanner("Added " + std::to_string(amt) + "x " + Inventory::getItemName(itemID) + " to furnace!");
                 }
                 for (int c = 0; c < amt; c++) {
                     inventory.consumeItem(quantityPromptSourceSlot);
@@ -287,7 +303,8 @@ bool handleCampfireMenuClicks(
     int& quantityPromptCampfireSlot,
     TextInput& quantityInput,
     bool& saplingPlacementMode,
-    std::function<void()> syncSaveCallback
+    std::function<void()> syncSaveCallback,
+    std::function<const sf::Texture* (int id)> getItemTexture
 ) {
     for (auto& fire : campfires) {
         if (fire.menuOpen) {
@@ -295,11 +312,29 @@ bool handleCampfireMenuClicks(
                 (float)width / 2.f - 250.f,
                 (float)height / 2.f - 150.f
             );
-            
+
+            sf::FloatRect menuRect(menuPos, { 500.f, 300.f });
             sf::FloatRect closeBtn(
                 { menuPos.x + 440.f, menuPos.y + 10.f },
                 { 40.f, 40.f }
             );
+
+            // 1) Clicking inventory at bottom of screen selects that slot without closing campfire menu
+            int invSlot = inventory.getSlotAt(uiPos);
+            if (invSlot != -1) {
+                inventory.setSelectedSlot(invSlot);
+                if (inventory.hasItem(invSlot)) {
+                    inventory.showBanner("Selected: " + Inventory::getItemName(inventory.getItemID(invSlot)));
+                }
+                return true;
+            }
+
+            // 2) Close menu if clicking close button or clicking outside menu
+            if (closeBtn.contains(uiPos) || !menuRect.contains(uiPos)) {
+                fire.menuOpen = false;
+                return true;
+            }
+
             sf::FloatRect fuelBtn(
                 { menuPos.x + 60.f, menuPos.y + 110.f },
                 { 80.f, 80.f }
@@ -309,117 +344,212 @@ bool handleCampfireMenuClicks(
                 { 80.f, 80.f }
             );
             sf::FloatRect takeBtn(
-                { menuPos.x + 360.f, menuPos.y + 110.f },
-                { 80.f, 80.f }
+                { menuPos.x + 290.f, menuPos.y + 100.f },
+                { 160.f, 100.f }
             );
-            
-            sf::FloatRect menuRect(menuPos, { 500.f, 300.f });
-            if (!menuRect.contains(uiPos) || closeBtn.contains(uiPos)) {
-                fire.menuOpen = false;
-                return true;
-            }
-            else if (fuelBtn.contains(uiPos)) {
-                if (fire.fuel > 0) {
-                    int woodReturn = fire.fuel / 4;
-                    int saplingReturn = fire.fuel % 4;
-                    if (woodReturn > 0) {
-                        inventory.addItem(ITEM_WOOD, woodTex, woodReturn);
+
+            // 3) Fuel button clicked
+            if (fuelBtn.contains(uiPos)) {
+                int fuelSlot = -1;
+                int sel = inventory.getSelectedSlot();
+                if (sel != -1 && inventory.hasItem(sel)) {
+                    int id = inventory.getItemID(sel);
+                    if (id == ITEM_WOOD || id == ITEM_SAPLING) {
+                        fuelSlot = sel;
                     }
-                    if (saplingReturn > 0) {
-                        inventory.addItem(ITEM_SAPLING, saplingTex, saplingReturn);
-                    }
-                    fire.fuel = 0;
-                    if (syncSaveCallback) syncSaveCallback();
-                } else {
-                    int selSlot = inventory.getSelectedSlot();
-                    if (selSlot != -1 && inventory.hasItem(selSlot)) {
-                        int itemID = inventory.getItemID(selSlot);
-                        if (itemID == ITEM_WOOD || itemID == ITEM_SAPLING) {
-                            int totalQty = inventory.getItemCount(selSlot);
-                            if (totalQty > 1) {
-                                quantityPromptOpen = true;
-                                quantityPromptMax = totalQty;
-                                quantityPromptTargetSlot = 0;
-                                quantityPromptSourceSlot = selSlot;
-                                quantityPromptIsP2P = false;
-                                quantityPromptIsCampfire = true;
-                                quantityPromptCampfireSlot = 1;
-                                quantityInput.clear();
-                                quantityInput.setText(std::to_string(totalQty));
-                                quantityInput.setFocus(true);
-                            } else {
-                                if (itemID == ITEM_WOOD) {
-                                    fire.fuel += 4;
-                                } else {
-                                    fire.fuel += 1;
-                                    if (itemID == ITEM_SAPLING) {
-                                        saplingPlacementMode = false;
-                                    }
-                                }
-                                inventory.consumeItem(selSlot);
-                                if (syncSaveCallback) syncSaveCallback();
+                }
+                if (fuelSlot == -1) {
+                    for (int i = 0; i < 20; ++i) {
+                        if (inventory.hasItem(i)) {
+                            int id = inventory.getItemID(i);
+                            if (id == ITEM_WOOD || id == ITEM_SAPLING) {
+                                fuelSlot = i;
+                                inventory.setSelectedSlot(i);
+                                break;
                             }
                         }
                     }
                 }
+
+                if (fuelSlot != -1) {
+                    int itemID = inventory.getItemID(fuelSlot);
+                    int totalQty = inventory.getItemCount(fuelSlot);
+                    if (totalQty > 1) {
+                        quantityPromptOpen = true;
+                        quantityPromptMax = totalQty;
+                        quantityPromptTargetSlot = 0;
+                        quantityPromptSourceSlot = fuelSlot;
+                        quantityPromptIsP2P = false;
+                        quantityPromptIsCampfire = true;
+                        quantityPromptCampfireSlot = 1;
+                        quantityInput.clear();
+                        quantityInput.setText(std::to_string(totalQty));
+                        quantityInput.setFocus(true);
+                    } else {
+                        if (itemID == ITEM_WOOD) {
+                            fire.fuel += 4;
+                        } else {
+                            fire.fuel += 1;
+                            if (itemID == ITEM_SAPLING) {
+                                saplingPlacementMode = false;
+                            }
+                        }
+                        inventory.consumeItem(fuelSlot);
+                        if (fire.inputCount > 0 && fire.timeRemaining <= 0.f) {
+                            fire.timeRemaining = 2.0f;
+                        }
+                        if (syncSaveCallback) syncSaveCallback();
+                        inventory.showBanner("Added fuel (+ " + std::string(itemID == ITEM_WOOD ? "4" : "1") + " fuel)!");
+                    }
+                } else {
+                    if (fire.fuel > 0) {
+                        int woodReturn = fire.fuel / 4;
+                        int saplingReturn = fire.fuel % 4;
+                        if (woodReturn > 0) {
+                            inventory.addItem(ITEM_WOOD, woodTex, woodReturn);
+                        }
+                        if (saplingReturn > 0) {
+                            inventory.addItem(ITEM_SAPLING, saplingTex, saplingReturn);
+                        }
+                        fire.fuel = 0;
+                        if (syncSaveCallback) syncSaveCallback();
+                        inventory.showBanner("Withdrew fuel to inventory.");
+                    } else {
+                        inventory.showBanner("No fuel (Wood / Sapling) in inventory!");
+                    }
+                }
                 return true;
             }
+            // 4) Cook/Food button clicked (Campfires can ONLY cook raw meats)
             else if (cookBtn.contains(uiPos)) {
-                if (fire.inputCount > 0 && fire.inputItem != 0) {
-                    const sf::Texture* rTex = (fire.inputItem == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() : 
-                                              (fire.inputItem == ITEM_PIG_MEAT) ? PigMeat::getTexture() : 
-                                              (fire.inputItem == ITEM_SHEEP_MEAT) ? SheepMeat::getTexture() : nullptr;
-                    if (rTex) {
-                        inventory.addItem(fire.inputItem, *rTex, fire.inputCount);
+                int sel = inventory.getSelectedSlot();
+                if (sel != -1 && inventory.hasItem(sel)) {
+                    int selID = inventory.getItemID(sel);
+                    if (selID == ITEM_COPPER_ORE || selID == ITEM_IRON_ORE || selID == ITEM_GOLD_ORE) {
+                        inventory.showBanner("Campfires can only cook food! Use a furnace to smelt ores.");
+                        return true;
                     }
-                    fire.inputCount = 0;
-                    fire.inputItem = 0;
-                    if (syncSaveCallback) syncSaveCallback();
-                } else {
-                    int selSlot = inventory.getSelectedSlot();
-                    if (selSlot != -1 && inventory.hasItem(selSlot)) {
-                        int itemID = inventory.getItemID(selSlot);
-                        if (itemID == ITEM_CHICKEN_MEAT || itemID == ITEM_PIG_MEAT || itemID == ITEM_SHEEP_MEAT) {
-                            int totalQty = inventory.getItemCount(selSlot);
-                            if (totalQty > 1) {
-                                quantityPromptOpen = true;
-                                quantityPromptMax = totalQty;
-                                quantityPromptTargetSlot = 0;
-                                quantityPromptSourceSlot = selSlot;
-                                quantityPromptIsP2P = false;
-                                quantityPromptIsCampfire = true;
-                                quantityPromptCampfireSlot = 2;
-                                quantityInput.clear();
-                                quantityInput.setText(std::to_string(totalQty));
-                                quantityInput.setFocus(true);
-                            } else {
-                                fire.inputItem = itemID;
-                                fire.inputCount = 1;
-                                inventory.consumeItem(selSlot);
-                                if (syncSaveCallback) syncSaveCallback();
+                }
+
+                auto isRawMeat = [](int id) {
+                    return id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_SHEEP_MEAT;
+                };
+
+                int foodSlot = -1;
+                if (sel != -1 && inventory.hasItem(sel) && isRawMeat(inventory.getItemID(sel))) {
+                    if (fire.inputCount > 0 && fire.inputItem != inventory.getItemID(sel)) {
+                        inventory.showBanner("Campfire has " + Inventory::getItemName(fire.inputItem) + "! Withdraw it first.");
+                        return true;
+                    }
+                    foodSlot = sel;
+                }
+
+                if (foodSlot == -1) {
+                    if (fire.inputCount > 0 && fire.inputItem != 0) {
+                        for (int i = 0; i < 20; ++i) {
+                            if (inventory.hasItem(i) && inventory.getItemID(i) == fire.inputItem) {
+                                foodSlot = i;
+                                inventory.setSelectedSlot(i);
+                                break;
+                            }
+                        }
+                    }
+                    if (foodSlot == -1 && fire.inputCount == 0) {
+                        for (int i = 0; i < 20; ++i) {
+                            if (inventory.hasItem(i) && isRawMeat(inventory.getItemID(i))) {
+                                foodSlot = i;
+                                inventory.setSelectedSlot(i);
+                                break;
                             }
                         }
                     }
                 }
+
+                if (foodSlot != -1) {
+                    int itemID = inventory.getItemID(foodSlot);
+                    int totalQty = inventory.getItemCount(foodSlot);
+                    if (totalQty > 1) {
+                        quantityPromptOpen = true;
+                        quantityPromptMax = totalQty;
+                        quantityPromptTargetSlot = 0;
+                        quantityPromptSourceSlot = foodSlot;
+                        quantityPromptIsP2P = false;
+                        quantityPromptIsCampfire = true;
+                        quantityPromptCampfireSlot = 2;
+                        quantityInput.clear();
+                        quantityInput.setText(std::to_string(totalQty));
+                        quantityInput.setFocus(true);
+                    } else {
+                        fire.inputItem = itemID;
+                        fire.inputCount += 1;
+                        if (fire.timeRemaining <= 0.f) {
+                            fire.timeRemaining = 2.0f;
+                        }
+                        inventory.consumeItem(foodSlot);
+                        if (syncSaveCallback) syncSaveCallback();
+                        inventory.showBanner("Added 1x " + Inventory::getItemName(itemID) + " to campfire!");
+                    }
+                } else {
+                    if (fire.inputCount > 0 && fire.inputItem != 0) {
+                        const sf::Texture* rTex = (fire.inputItem == ITEM_CHICKEN_MEAT) ? ChickenMeat::getTexture() : 
+                                                  (fire.inputItem == ITEM_PIG_MEAT) ? PigMeat::getTexture() : 
+                                                  (fire.inputItem == ITEM_SHEEP_MEAT) ? SheepMeat::getTexture() : nullptr;
+                        if (!rTex && getItemTexture) rTex = getItemTexture(fire.inputItem);
+                        if (rTex) {
+                            inventory.addItem(fire.inputItem, *rTex, fire.inputCount);
+                        } else {
+                            inventory.addItem(fire.inputItem, woodTex, fire.inputCount);
+                        }
+                        inventory.showBanner("Withdrew " + std::to_string(fire.inputCount) + "x " + Inventory::getItemName(fire.inputItem) + ".");
+                        fire.inputCount = 0;
+                        fire.inputItem = 0;
+                        fire.timeRemaining = 0.f;
+                        if (syncSaveCallback) syncSaveCallback();
+                    } else {
+                        inventory.showBanner("No raw food in inventory! (Campfires only cook raw meat)");
+                    }
+                }
                 return true;
             }
+            // 5) Retrieve output button clicked
             else if (takeBtn.contains(uiPos)) {
-                if (fire.outputCount > 0) {
-                    if (fire.outputItem == ITEM_COOKED_CHICKEN) {
-                        inventory.addItem(ITEM_COOKED_CHICKEN, cookedChickenTex, fire.outputCount);
+                if (fire.outputCount > 0 && fire.outputItem != 0) {
+                    bool hasRoom = false;
+                    for (int i = 0; i < 20; ++i) {
+                        if (!inventory.hasItem(i) || (inventory.getItemID(i) == fire.outputItem && inventory.getItemCount(i) < 99)) {
+                            hasRoom = true;
+                            break;
+                        }
                     }
-                    else if (fire.outputItem == ITEM_COOKED_PIG) {
-                        inventory.addItem(ITEM_COOKED_PIG, cookedPigTex, fire.outputCount);
+                    if (!hasRoom) {
+                        inventory.showBanner("Inventory is full!");
+                        return true;
                     }
-                    else if (fire.outputItem == ITEM_COOKED_SHEEP) {
-                        inventory.addItem(ITEM_COOKED_SHEEP, cookedSheepTex, fire.outputCount);
+
+                    const sf::Texture* oTex = nullptr;
+                    if (fire.outputItem == ITEM_COOKED_CHICKEN) oTex = &cookedChickenTex;
+                    else if (fire.outputItem == ITEM_COOKED_PIG) oTex = &cookedPigTex;
+                    else if (fire.outputItem == ITEM_COOKED_SHEEP) oTex = &cookedSheepTex;
+                    if (!oTex && getItemTexture) oTex = getItemTexture(fire.outputItem);
+
+                    int count = fire.outputCount;
+                    int item = fire.outputItem;
+                    if (oTex) {
+                        inventory.addItem(item, *oTex, count);
+                    } else {
+                        inventory.addItem(item, cookedChickenTex, count);
                     }
+                    inventory.showBanner("Retrieved " + std::to_string(count) + "x " + Inventory::getItemName(item) + "!");
                     fire.outputCount = 0;
                     fire.outputItem = 0;
                     if (syncSaveCallback) syncSaveCallback();
+                } else {
+                    inventory.showBanner("No cooked food ready to retrieve yet.");
                 }
                 return true;
             }
+
+            return true; // Consume any other click inside menu window
         }
     }
     return false;
@@ -455,10 +585,28 @@ bool handleFurnaceMenuClicks(
                 (float)height / 2.f - 150.f
             );
             
+            sf::FloatRect menuRect(menuPos, { 500.f, 300.f });
             sf::FloatRect closeBtn(
                 { menuPos.x + 440.f, menuPos.y + 10.f },
                 { 40.f, 40.f }
             );
+
+            // 1) Clicking inventory at bottom of screen selects that slot without closing furnace menu
+            int invSlot = inventory.getSlotAt(uiPos);
+            if (invSlot != -1) {
+                inventory.setSelectedSlot(invSlot);
+                if (inventory.hasItem(invSlot)) {
+                    inventory.showBanner("Selected: " + Inventory::getItemName(inventory.getItemID(invSlot)));
+                }
+                return true;
+            }
+
+            // 2) Close menu if clicking close button or clicking outside menu
+            if (closeBtn.contains(uiPos) || !menuRect.contains(uiPos)) {
+                s.menuOpen = false;
+                return true;
+            }
+
             sf::FloatRect fuelBtn(
                 { menuPos.x + 60.f, menuPos.y + 110.f },
                 { 80.f, 80.f }
@@ -468,130 +616,212 @@ bool handleFurnaceMenuClicks(
                 { 80.f, 80.f }
             );
             sf::FloatRect takeBtn(
-                { menuPos.x + 360.f, menuPos.y + 110.f },
-                { 80.f, 80.f }
+                { menuPos.x + 290.f, menuPos.y + 100.f },
+                { 160.f, 100.f }
             );
-            
-            sf::FloatRect menuRect(menuPos, { 500.f, 300.f });
-            if (!menuRect.contains(uiPos) || closeBtn.contains(uiPos)) {
-                s.menuOpen = false;
-                return true;
-            }
-            else if (fuelBtn.contains(uiPos)) {
-                if (s.fuel > 0) {
-                    int coalReturn = s.fuel / 8;
-                    int rem = s.fuel % 8;
-                    int woodReturn = rem / 4;
-                    int saplingReturn = rem % 4;
-                    if (coalReturn > 0) {
-                        const sf::Texture* cTex = getItemTexture ? getItemTexture(ITEM_COAL) : nullptr;
-                        if (cTex) inventory.addItem(ITEM_COAL, *cTex, coalReturn);
+
+            // 3) Fuel button clicked
+            if (fuelBtn.contains(uiPos)) {
+                int fuelSlot = -1;
+                int sel = inventory.getSelectedSlot();
+                if (sel != -1 && inventory.hasItem(sel)) {
+                    int id = inventory.getItemID(sel);
+                    if (id == ITEM_COAL || id == ITEM_WOOD || id == ITEM_SAPLING) {
+                        fuelSlot = sel;
                     }
-                    if (woodReturn > 0) {
-                        inventory.addItem(ITEM_WOOD, woodTex, woodReturn);
-                    }
-                    if (saplingReturn > 0) {
-                        inventory.addItem(ITEM_SAPLING, saplingTex, saplingReturn);
-                    }
-                    s.fuel = 0;
-                    if (syncSaveCallback) syncSaveCallback();
-                } else {
-                    int selSlot = inventory.getSelectedSlot();
-                    if (selSlot != -1 && inventory.hasItem(selSlot)) {
-                        int itemID = inventory.getItemID(selSlot);
-                        if (itemID == ITEM_COAL || itemID == ITEM_WOOD || itemID == ITEM_SAPLING) {
-                            int totalQty = inventory.getItemCount(selSlot);
-                            if (totalQty > 1) {
-                                quantityPromptOpen = true;
-                                quantityPromptMax = totalQty;
-                                quantityPromptTargetSlot = 0;
-                                quantityPromptSourceSlot = selSlot;
-                                quantityPromptIsP2P = false;
-                                quantityPromptIsCampfire = true;
-                                quantityPromptCampfireSlot = 1;
-                                quantityInput.clear();
-                                quantityInput.setText(std::to_string(totalQty));
-                                quantityInput.setFocus(true);
-                            } else {
-                                if (itemID == ITEM_COAL) {
-                                    s.fuel += 8;
-                                } else if (itemID == ITEM_WOOD) {
-                                    s.fuel += 4;
-                                } else {
-                                    s.fuel += 1;
-                                    if (itemID == ITEM_SAPLING) {
-                                        saplingPlacementMode = false;
-                                    }
-                                }
-                                inventory.consumeItem(selSlot);
-                                if (syncSaveCallback) syncSaveCallback();
+                }
+                if (fuelSlot == -1) {
+                    for (int i = 0; i < 20; ++i) {
+                        if (inventory.hasItem(i)) {
+                            int id = inventory.getItemID(i);
+                            if (id == ITEM_COAL || id == ITEM_WOOD || id == ITEM_SAPLING) {
+                                fuelSlot = i;
+                                inventory.setSelectedSlot(i);
+                                break;
                             }
                         }
                     }
                 }
+
+                if (fuelSlot != -1) {
+                    int itemID = inventory.getItemID(fuelSlot);
+                    int totalQty = inventory.getItemCount(fuelSlot);
+                    if (totalQty > 1) {
+                        quantityPromptOpen = true;
+                        quantityPromptMax = totalQty;
+                        quantityPromptTargetSlot = 0;
+                        quantityPromptSourceSlot = fuelSlot;
+                        quantityPromptIsP2P = false;
+                        quantityPromptIsCampfire = true;
+                        quantityPromptCampfireSlot = 1;
+                        quantityInput.clear();
+                        quantityInput.setText(std::to_string(totalQty));
+                        quantityInput.setFocus(true);
+                    } else {
+                        if (itemID == ITEM_COAL) {
+                            s.fuel += 8;
+                        } else if (itemID == ITEM_WOOD) {
+                            s.fuel += 4;
+                        } else {
+                            s.fuel += 1;
+                            if (itemID == ITEM_SAPLING) {
+                                saplingPlacementMode = false;
+                            }
+                        }
+                        inventory.consumeItem(fuelSlot);
+                        if (s.inputCount > 0 && s.timeRemaining <= 0.f) {
+                            s.timeRemaining = 2.0f;
+                        }
+                        if (syncSaveCallback) syncSaveCallback();
+                        inventory.showBanner("Added fuel to furnace!");
+                    }
+                } else {
+                    if (s.fuel > 0) {
+                        int coalReturn = s.fuel / 8;
+                        int rem = s.fuel % 8;
+                        int woodReturn = rem / 4;
+                        int saplingReturn = rem % 4;
+                        if (coalReturn > 0) {
+                            const sf::Texture* cTex = getItemTexture ? getItemTexture(ITEM_COAL) : nullptr;
+                            inventory.addItem(ITEM_COAL, cTex ? *cTex : woodTex, coalReturn);
+                        }
+                        if (woodReturn > 0) {
+                            inventory.addItem(ITEM_WOOD, woodTex, woodReturn);
+                        }
+                        if (saplingReturn > 0) {
+                            inventory.addItem(ITEM_SAPLING, saplingTex, saplingReturn);
+                        }
+                        s.fuel = 0;
+                        if (syncSaveCallback) syncSaveCallback();
+                        inventory.showBanner("Withdrew fuel to inventory.");
+                    } else {
+                        inventory.showBanner("No fuel (Coal / Wood / Sapling) in inventory!");
+                    }
+                }
                 return true;
             }
+            // 4) Cook/Smelt button clicked (Furnace accepts ores AND raw food)
             else if (cookBtn.contains(uiPos)) {
-                if (s.inputCount > 0 && s.inputItem != 0) {
-                    const sf::Texture* rTex = getItemTexture ? getItemTexture(s.inputItem) : nullptr;
-                    if (!rTex) {
-                        if (s.inputItem == ITEM_CHICKEN_MEAT) rTex = ChickenMeat::getTexture();
-                        else if (s.inputItem == ITEM_PIG_MEAT) rTex = PigMeat::getTexture();
-                        else if (s.inputItem == ITEM_SHEEP_MEAT) rTex = SheepMeat::getTexture();
+                auto isFurnaceInput = [](int id) {
+                    return id == ITEM_COPPER_ORE || id == ITEM_IRON_ORE || id == ITEM_GOLD_ORE ||
+                           id == ITEM_CHICKEN_MEAT || id == ITEM_PIG_MEAT || id == ITEM_SHEEP_MEAT;
+                };
+
+                int foodSlot = -1;
+                int sel = inventory.getSelectedSlot();
+                if (sel != -1 && inventory.hasItem(sel) && isFurnaceInput(inventory.getItemID(sel))) {
+                    if (s.inputCount > 0 && s.inputItem != inventory.getItemID(sel)) {
+                        inventory.showBanner("Furnace has " + Inventory::getItemName(s.inputItem) + "! Withdraw it first.");
+                        return true;
                     }
-                    if (rTex) {
-                        inventory.addItem(s.inputItem, *rTex, s.inputCount);
+                    foodSlot = sel;
+                }
+
+                if (foodSlot == -1) {
+                    if (s.inputCount > 0 && s.inputItem != 0) {
+                        for (int i = 0; i < 20; ++i) {
+                            if (inventory.hasItem(i) && inventory.getItemID(i) == s.inputItem) {
+                                foodSlot = i;
+                                inventory.setSelectedSlot(i);
+                                break;
+                            }
+                        }
                     }
-                    s.inputCount = 0;
-                    s.inputItem = 0;
-                    if (syncSaveCallback) syncSaveCallback();
-                } else {
-                    int selSlot = inventory.getSelectedSlot();
-                    if (selSlot != -1 && inventory.hasItem(selSlot)) {
-                        int itemID = inventory.getItemID(selSlot);
-                        bool isValidInput = (itemID == ITEM_COPPER_ORE || itemID == ITEM_IRON_ORE || itemID == ITEM_GOLD_ORE ||
-                                             itemID == ITEM_CHICKEN_MEAT || itemID == ITEM_PIG_MEAT || itemID == ITEM_SHEEP_MEAT);
-                        if (isValidInput && (s.inputCount == 0 || s.inputItem == itemID)) {
-                            int totalQty = inventory.getItemCount(selSlot);
-                            if (totalQty > 1) {
-                                quantityPromptOpen = true;
-                                quantityPromptMax = totalQty;
-                                quantityPromptTargetSlot = 0;
-                                quantityPromptSourceSlot = selSlot;
-                                quantityPromptIsP2P = false;
-                                quantityPromptIsCampfire = true;
-                                quantityPromptCampfireSlot = 2;
-                                quantityInput.clear();
-                                quantityInput.setText(std::to_string(totalQty));
-                                quantityInput.setFocus(true);
-                            } else {
-                                s.inputItem = itemID;
-                                s.inputCount += 1;
-                                inventory.consumeItem(selSlot);
-                                if (syncSaveCallback) syncSaveCallback();
+                    if (foodSlot == -1 && s.inputCount == 0) {
+                        for (int i = 0; i < 20; ++i) {
+                            if (inventory.hasItem(i) && isFurnaceInput(inventory.getItemID(i))) {
+                                foodSlot = i;
+                                inventory.setSelectedSlot(i);
+                                break;
                             }
                         }
                     }
                 }
+
+                if (foodSlot != -1) {
+                    int itemID = inventory.getItemID(foodSlot);
+                    int totalQty = inventory.getItemCount(foodSlot);
+                    if (totalQty > 1) {
+                        quantityPromptOpen = true;
+                        quantityPromptMax = totalQty;
+                        quantityPromptTargetSlot = 0;
+                        quantityPromptSourceSlot = foodSlot;
+                        quantityPromptIsP2P = false;
+                        quantityPromptIsCampfire = true;
+                        quantityPromptCampfireSlot = 2;
+                        quantityInput.clear();
+                        quantityInput.setText(std::to_string(totalQty));
+                        quantityInput.setFocus(true);
+                    } else {
+                        s.inputItem = itemID;
+                        s.inputCount += 1;
+                        if (s.timeRemaining <= 0.f) {
+                            s.timeRemaining = 2.0f;
+                        }
+                        inventory.consumeItem(foodSlot);
+                        if (syncSaveCallback) syncSaveCallback();
+                        inventory.showBanner("Added 1x " + Inventory::getItemName(itemID) + " to furnace!");
+                    }
+                } else {
+                    if (s.inputCount > 0 && s.inputItem != 0) {
+                        const sf::Texture* rTex = getItemTexture ? getItemTexture(s.inputItem) : nullptr;
+                        if (!rTex) {
+                            if (s.inputItem == ITEM_CHICKEN_MEAT) rTex = ChickenMeat::getTexture();
+                            else if (s.inputItem == ITEM_PIG_MEAT) rTex = PigMeat::getTexture();
+                            else if (s.inputItem == ITEM_SHEEP_MEAT) rTex = SheepMeat::getTexture();
+                        }
+                        inventory.addItem(s.inputItem, rTex ? *rTex : woodTex, s.inputCount);
+                        inventory.showBanner("Withdrew " + std::to_string(s.inputCount) + "x " + Inventory::getItemName(s.inputItem) + ".");
+                        s.inputCount = 0;
+                        s.inputItem = 0;
+                        s.timeRemaining = 0.f;
+                        if (syncSaveCallback) syncSaveCallback();
+                    } else {
+                        inventory.showBanner("No ores or raw food in inventory! (Furnace can smelt ores and cook food)");
+                    }
+                }
                 return true;
             }
+            // 5) Retrieve output button clicked
             else if (takeBtn.contains(uiPos)) {
-                if (s.outputCount > 0) {
+                if (s.outputCount > 0 && s.outputItem != 0) {
+                    bool hasRoom = false;
+                    for (int i = 0; i < 20; ++i) {
+                        if (!inventory.hasItem(i) || (inventory.getItemID(i) == s.outputItem && inventory.getItemCount(i) < 99)) {
+                            hasRoom = true;
+                            break;
+                        }
+                    }
+                    if (!hasRoom) {
+                        inventory.showBanner("Inventory is full!");
+                        return true;
+                    }
+
                     const sf::Texture* oTex = getItemTexture ? getItemTexture(s.outputItem) : nullptr;
                     if (!oTex) {
                         if (s.outputItem == ITEM_COOKED_CHICKEN) oTex = &cookedChickenTex;
                         else if (s.outputItem == ITEM_COOKED_PIG) oTex = &cookedPigTex;
                         else if (s.outputItem == ITEM_COOKED_SHEEP) oTex = &cookedSheepTex;
                     }
+
+                    int count = s.outputCount;
+                    int item = s.outputItem;
                     if (oTex) {
-                        inventory.addItem(s.outputItem, *oTex, s.outputCount);
+                        inventory.addItem(item, *oTex, count);
+                    } else {
+                        inventory.addItem(item, cookedChickenTex, count);
                     }
+                    inventory.showBanner("Retrieved " + std::to_string(count) + "x " + Inventory::getItemName(item) + "!");
                     s.outputCount = 0;
                     s.outputItem = 0;
                     if (syncSaveCallback) syncSaveCallback();
+                } else {
+                    inventory.showBanner("Nothing ready to retrieve yet.");
                 }
                 return true;
             }
+
+            return true; // Consume any other click inside menu window
         }
     }
     return false;
@@ -1262,12 +1492,13 @@ bool handleMouseDragAndScroll(
     bool& sleepTimeSkipped,
     bool placementMode,
     bool& chestMenuOpen,
-    PlacedStructure*& activeChest
+    PlacedStructure*& activeChest,
+    bool chatActive
 ) {
     if (auto* wheel = event.getIf<sf::Event::MouseWheelScrolled>()) {
         if (wheel->wheel == sf::Mouse::Wheel::Vertical) {
             sf::Vector2f uiPos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
-            if (sf::FloatRect({ chatBoxX, chatBoxY }, { chatBoxWidth, chatBoxHeight }).contains(uiPos)) {
+            if (chatActive && sf::FloatRect({ chatBoxX, chatBoxY }, { chatBoxWidth, chatBoxHeight }).contains(uiPos)) {
                 chatScroll -= wheel->delta * 30.f;
                 if (chatScroll < 0.f) chatScroll = 0.f;
                 return true;
@@ -1317,6 +1548,11 @@ bool handleMouseDragAndScroll(
                     sf::FloatRect fireBounds({ fire.position.x - 50.f, fire.position.y - 70.f }, { 100.f, 80.f });
                     if (wrenchBtnBounds.contains(curWorldPos) || fireBounds.contains(curWorldPos))
                     {
+                        if (!fire.owner.empty() && fire.owner != username) {
+                            inventory.showBanner("This belongs to " + fire.owner + "! You cannot wrench other players' items.");
+                            hitWorldStructure = true;
+                            break;
+                        }
                         for (auto& f : campfires) f.menuOpen = false;
                         for (auto& st : structures) st.menuOpen = false;
                         chestMenuOpen = false;
@@ -1337,6 +1573,11 @@ bool handleMouseDragAndScroll(
                             sf::FloatRect wrenchBtnBounds({ fPos.x - 35.f, fPos.y - 185.f }, { 70.f, 70.f });
                             sf::FloatRect furnaceBounds({ fPos.x - 80.f, fPos.y - 150.f }, { 160.f, 160.f });
                             if (wrenchBtnBounds.contains(curWorldPos) || furnaceBounds.contains(curWorldPos)) {
+                                if (!s.owner.empty() && s.owner != username) {
+                                    inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
+                                    hitWorldStructure = true;
+                                    break;
+                                }
                                 for (auto& f : campfires) f.menuOpen = false;
                                 for (auto& st : structures) st.menuOpen = false;
                                 chestMenuOpen = false;
@@ -1359,6 +1600,11 @@ bool handleMouseDragAndScroll(
                             sf::FloatRect wrenchBtnBounds({ bPos.x - 35.f, bPos.y - 115.f }, { 70.f, 70.f });
                             sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
                             if (wrenchBtnBounds.contains(curWorldPos) || bedBounds.contains(curWorldPos)) {
+                                if (!s.owner.empty() && s.owner != username) {
+                                    inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
+                                    hitWorldStructure = true;
+                                    break;
+                                }
                                 if (!isSleeping) {
                                     for (auto& f : campfires) f.menuOpen = false;
                                     for (auto& st : structures) st.menuOpen = false;
@@ -1388,6 +1634,11 @@ bool handleMouseDragAndScroll(
                                 doorBounds = sf::FloatRect({ s.sprite->getPosition().x, s.sprite->getPosition().y - 500.f }, { 500.f, 500.f });
                             }
                             if (doorBtnBounds.contains(curWorldPos) || doorBounds.contains(curWorldPos)) {
+                                if (!s.owner.empty() && s.owner != username) {
+                                    inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
+                                    hitWorldStructure = true;
+                                    break;
+                                }
                                 s.isOpen = !s.isOpen;
                                 float ignore;
                                 applyStructureScale(*s.sprite, s.id, s.rotation, s.isOpen, ignore);
@@ -1405,6 +1656,11 @@ bool handleMouseDragAndScroll(
                             sf::Vector2f cPos = s.sprite->getPosition();
                             sf::FloatRect chestBounds({ cPos.x - 150.f, cPos.y - 200.f }, { 300.f, 250.f });
                             if (chestBounds.contains(curWorldPos)) {
+                                if (!s.owner.empty() && s.owner != username) {
+                                    inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
+                                    hitWorldStructure = true;
+                                    break;
+                                }
                                 for (auto& f : campfires) f.menuOpen = false;
                                 for (auto& st : structures) st.menuOpen = false;
                                 isSleeping = false;
@@ -1422,18 +1678,20 @@ bool handleMouseDragAndScroll(
                 }
             } // end !placementMode && !isSectionUndergoing
 
-            sf::Vector2f uiPos = window.mapPixelToCoords(mouse->position, GetUIView(&window));
-            if (sf::FloatRect({ chatBoxX, chatBoxY }, { chatBoxWidth, chatBoxHeight }).contains(uiPos)) {
-                isDraggingChat = true;
-                lastMousePosChat = uiPos;
-                return true;
+            if (chatActive) {
+                sf::Vector2f uiPos = window.mapPixelToCoords(mouse->position, GetUIView(&window));
+                if (sf::FloatRect({ chatBoxX, chatBoxY }, { chatBoxWidth, chatBoxHeight }).contains(uiPos)) {
+                    isDraggingChat = true;
+                    lastMousePosChat = uiPos;
+                    return true;
+                }
             }
         }
     }
 
     if (auto* mouse = event.getIf<sf::Event::MouseButtonReleased>()) {
         if (mouse->button == sf::Mouse::Button::Left) {
-            if (isDraggingChat) {
+            if (chatActive && isDraggingChat) {
                 isDraggingChat = false;
                 return true;
             }
@@ -1441,7 +1699,7 @@ bool handleMouseDragAndScroll(
     }
 
     if (auto* move = event.getIf<sf::Event::MouseMoved>()) {
-        if (isDraggingChat) {
+        if (chatActive && isDraggingChat) {
             sf::Vector2f uiPos = window.mapPixelToCoords(move->position, GetUIView(&window));
             chatScroll -= (uiPos.y - lastMousePosChat.y);
             if (chatScroll < 0.f) chatScroll = 0.f;
@@ -1505,8 +1763,15 @@ bool handleTopBarAndWrenchClicks(
             auto wbIt = onlinePlayerWrenchBounds.find(op.username);
             if (wbIt != onlinePlayerWrenchBounds.end()) {
                 sf::FloatRect wb = wbIt->second;
-                sf::FloatRect wbHit({ wb.position.x - 15.f, wb.position.y - 15.f }, { wb.size.x + 30.f, wb.size.y + 30.f });
-                hitWrench = wbHit.contains(worldPos);
+                sf::FloatRect wbHit({ wb.position.x - 20.f, wb.position.y - 20.f }, { wb.size.x + 40.f, wb.size.y + 40.f });
+                sf::FloatRect wNameHit({ wb.position.x - 200.f, wb.position.y - 15.f }, { 210.f, wb.size.y + 30.f });
+                hitWrench = wbHit.contains(worldPos) || wNameHit.contains(worldPos);
+            }
+            if (!hitWrench) {
+                auto dispIt = onlinePlayerDisplayPos.find(op.username);
+                sf::Vector2f opPos = (dispIt != onlinePlayerDisplayPos.end()) ? dispIt->second : sf::Vector2f(op.x, op.y);
+                sf::FloatRect opBounds({ opPos.x - 120.f, opPos.y - 280.f }, { 240.f, 320.f });
+                hitWrench = opBounds.contains(worldPos);
             }
             if (hitWrench) {
                 wrenchMenuOpen = true;
@@ -1522,10 +1787,12 @@ bool handleTopBarAndWrenchClicks(
 
     // Allow wrench click only if no other menus are open
     if (!wrenchMenuOpen && !craftMenuOpen && !placementMode && !tradeMenuOpen && !tradeConfirmOpen) {
-        // Player wrench button
+        // Player wrench button, nametag, or body
         sf::FloatRect pb = playerWrenchBtn.getGlobalBounds();
-        sf::FloatRect pbHit({ pb.position.x - 15.f, pb.position.y - 15.f }, { pb.size.x + 30.f, pb.size.y + 30.f });
-        if (pbHit.contains(worldPos)) {
+        sf::FloatRect pbHit({ pb.position.x - 20.f, pb.position.y - 20.f }, { pb.size.x + 40.f, pb.size.y + 40.f });
+        sf::FloatRect pNameHit({ pb.position.x - 200.f, pb.position.y - 15.f }, { 210.f, pb.size.y + 30.f });
+        sf::FloatRect pBodyHit({ pb.position.x - 140.f, pb.position.y + 30.f }, { 200.f, 300.f });
+        if (pbHit.contains(worldPos) || pNameHit.contains(worldPos) || pBodyHit.contains(worldPos)) {
             wrenchMenuOpen = true;
             isTargetNPC = false;
             wrenchTargetPlayer = "";
@@ -1535,12 +1802,17 @@ bool handleTopBarAndWrenchClicks(
             return true;
         }
 
-        // Female NPC wrench button
+        // Female NPC wrench button, nametag, or body
         bool hitFemale = false;
         if (npcFemale.wrenchBtn.has_value()) {
             sf::FloatRect fb = npcFemale.wrenchBtn->getGlobalBounds();
-            sf::FloatRect fbHit({ fb.position.x - 15.f, fb.position.y - 15.f }, { fb.size.x + 30.f, fb.size.y + 30.f });
-            hitFemale = fbHit.contains(worldPos);
+            sf::FloatRect fbHit({ fb.position.x - 20.f, fb.position.y - 20.f }, { fb.size.x + 40.f, fb.size.y + 40.f });
+            sf::FloatRect fNameHit({ fb.position.x - 200.f, fb.position.y - 15.f }, { 210.f, fb.size.y + 30.f });
+            hitFemale = fbHit.contains(worldPos) || fNameHit.contains(worldPos);
+        }
+        if (!hitFemale && npcFemale.sprite.has_value()) {
+            sf::FloatRect fBody = npcFemale.sprite->getGlobalBounds();
+            hitFemale = fBody.contains(worldPos);
         }
         if (hitFemale) {
             wrenchMenuOpen = true;
@@ -1552,12 +1824,17 @@ bool handleTopBarAndWrenchClicks(
             return true;
         }
 
-        // Male NPC wrench button
+        // Male NPC wrench button, nametag, or body
         bool hitMale = false;
         if (npcMale.wrenchBtn.has_value()) {
             sf::FloatRect mb = npcMale.wrenchBtn->getGlobalBounds();
-            sf::FloatRect mbHit({ mb.position.x - 15.f, mb.position.y - 15.f }, { mb.size.x + 30.f, mb.size.y + 30.f });
-            hitMale = mbHit.contains(worldPos);
+            sf::FloatRect mbHit({ mb.position.x - 20.f, mb.position.y - 20.f }, { mb.size.x + 40.f, mb.size.y + 40.f });
+            sf::FloatRect mNameHit({ mb.position.x - 200.f, mb.position.y - 15.f }, { 210.f, mb.size.y + 30.f });
+            hitMale = mbHit.contains(worldPos) || mNameHit.contains(worldPos);
+        }
+        if (!hitMale && npcMale.sprite.has_value()) {
+            sf::FloatRect mBody = npcMale.sprite->getGlobalBounds();
+            hitMale = mBody.contains(worldPos);
         }
         if (hitMale) {
             wrenchMenuOpen = true;
@@ -1881,7 +2158,8 @@ void handleAllGameMouseButtonPressed(
             quantityPromptCampfireSlot,
             quantityInput,
             saplingPlacementMode,
-            syncSaveCallback
+            syncSaveCallback,
+            [&](int id) { return assets.getItemTexture(id); }
         );
     }
     else if (std::any_of(structures.begin(), structures.end(), [](const PlacedStructure& s) { return s.id == ITEM_FURNACE && s.menuOpen; })) {

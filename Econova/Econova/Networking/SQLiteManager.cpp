@@ -487,20 +487,22 @@ std::vector<StoredStructure> SQLiteManager::loadStructures(const std::string& us
     if (!db) return res;
 
     sqlite3_stmt* rawStmt = nullptr;
-    const char* sql = "SELECT structureId, posX, posY, rotation, isOpen, shearY FROM Structures WHERE Username = ?";
+    const char* sql = "SELECT Username, structureId, posX, posY, rotation, isOpen, shearY FROM Structures WHERE Username = ?";
     if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return res;
     StmtGuard stmt(rawStmt);
 
     sqlite3_bind_text(stmt.get(), 1, username.c_str(), -1, SQLITE_TRANSIENT);
     while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
         StoredStructure s;
-        s.id = sqlite3_column_int(stmt.get(), 0);
-        s.x = (float)sqlite3_column_double(stmt.get(), 1);
-        s.y = (float)sqlite3_column_double(stmt.get(), 2);
+        const unsigned char* u = sqlite3_column_text(stmt.get(), 0);
+        s.owner = u ? reinterpret_cast<const char*>(u) : username;
+        s.id = sqlite3_column_int(stmt.get(), 1);
+        s.x = (float)sqlite3_column_double(stmt.get(), 2);
+        s.y = (float)sqlite3_column_double(stmt.get(), 3);
         s.health = 100.f;
-        s.rotation = (float)sqlite3_column_double(stmt.get(), 3);
-        s.isOpen = sqlite3_column_int(stmt.get(), 4) != 0;
-        s.shearY = (float)sqlite3_column_double(stmt.get(), 5);
+        s.rotation = (float)sqlite3_column_double(stmt.get(), 4);
+        s.isOpen = sqlite3_column_int(stmt.get(), 5) != 0;
+        s.shearY = (float)sqlite3_column_double(stmt.get(), 6);
         res.push_back(s);
     }
     return res;
@@ -512,20 +514,22 @@ std::vector<StoredStructure> SQLiteManager::loadOtherStructures(const std::strin
     if (!db) return res;
 
     sqlite3_stmt* rawStmt = nullptr;
-    const char* sql = "SELECT structureId, posX, posY, rotation, isOpen, shearY FROM Structures WHERE Username != ?";
+    const char* sql = "SELECT Username, structureId, posX, posY, rotation, isOpen, shearY FROM Structures WHERE Username != ?";
     if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return res;
     StmtGuard stmt(rawStmt);
 
     sqlite3_bind_text(stmt.get(), 1, username.c_str(), -1, SQLITE_TRANSIENT);
     while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
         StoredStructure s;
-        s.id = sqlite3_column_int(stmt.get(), 0);
-        s.x = (float)sqlite3_column_double(stmt.get(), 1);
-        s.y = (float)sqlite3_column_double(stmt.get(), 2);
+        const unsigned char* u = sqlite3_column_text(stmt.get(), 0);
+        s.owner = u ? reinterpret_cast<const char*>(u) : "other";
+        s.id = sqlite3_column_int(stmt.get(), 1);
+        s.x = (float)sqlite3_column_double(stmt.get(), 2);
+        s.y = (float)sqlite3_column_double(stmt.get(), 3);
         s.health = 100.f;
-        s.rotation = (float)sqlite3_column_double(stmt.get(), 3);
-        s.isOpen = sqlite3_column_int(stmt.get(), 4) != 0;
-        s.shearY = (float)sqlite3_column_double(stmt.get(), 5);
+        s.rotation = (float)sqlite3_column_double(stmt.get(), 4);
+        s.isOpen = sqlite3_column_int(stmt.get(), 5) != 0;
+        s.shearY = (float)sqlite3_column_double(stmt.get(), 6);
         res.push_back(s);
     }
     return res;
@@ -626,6 +630,26 @@ std::vector<StoredCampfire> SQLiteManager::loadOtherCampfires(const std::string&
         campfires.push_back(sc);
     }
     return campfires;
+}
+
+bool SQLiteManager::updateCampfireCookingState(float x, float y, int fuel, int inputItem, int inputCount, int outputItem, int outputCount, float timeRemaining) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) return false;
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql = "UPDATE campfires SET Fuel = ?, InputItem = ?, InputCount = ?, OutputItem = ?, OutputCount = ?, TimeRemaining = ? "
+                      "WHERE ABS(PosX - ?) < 5.0 AND ABS(PosY - ?) < 5.0";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_int(stmt.get(), 1, fuel);
+    sqlite3_bind_int(stmt.get(), 2, inputItem);
+    sqlite3_bind_int(stmt.get(), 3, inputCount);
+    sqlite3_bind_int(stmt.get(), 4, outputItem);
+    sqlite3_bind_int(stmt.get(), 5, outputCount);
+    sqlite3_bind_double(stmt.get(), 6, (double)timeRemaining);
+    sqlite3_bind_double(stmt.get(), 7, (double)x);
+    sqlite3_bind_double(stmt.get(), 8, (double)y);
+    int rc = sqlite3_step(stmt.get());
+    return rc == SQLITE_DONE;
 }
 
 void SQLiteManager::saveChestContents(const std::string& username, const std::vector<StoredChestItem>& items) {

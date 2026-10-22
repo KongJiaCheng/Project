@@ -31,6 +31,7 @@ struct StoredStructure {
     float rotation;
     bool isOpen = false;
     float shearY = 0.f;
+    std::string owner = "";
 };
 
 struct StoredChestItem {
@@ -174,6 +175,7 @@ public:
     void saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires);
     std::vector<StoredCampfire> loadCampfires(const sql::SQLString& username);
     std::vector<StoredCampfire> loadOtherCampfires(const sql::SQLString& username);
+    bool updateCampfireCookingState(float x, float y, int fuel, int inputItem, int inputCount, int outputItem, int outputCount, float timeRemaining);
 
     void saveChestContents(const sql::SQLString& username, const std::vector<StoredChestItem>& items);
     std::vector<StoredChestItem> loadChestContents(const sql::SQLString& username);

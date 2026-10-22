@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Monster.h"
 #include "ItemID.h"
 #include "ZombieFlesh.h"
@@ -114,11 +114,12 @@ public:
 
         applyCurrentTexture();
 
-        // Only charge attack timer when within attack range (60px).
-        // Reset to 0 when out of range so zombies don't phantom-attack on first contact.
-        if (len <= 60.f)
+        // Charge attack timer when within contact range (120px world units).
+        // Cap (don't zero) when out of range — brief retreats don't reset full charge,
+        // but cap at cooldown so zombies can't insta-hit on very first re-entry from far away.
+        if (len <= 120.f)
             attackTimer += dt;
-        else
-            attackTimer = 0.f;
+        else if (attackTimer > attackCooldown)
+            attackTimer = attackCooldown;
     }
 };

@@ -5,8 +5,11 @@
 #   1. Go to https://myaccount.google.com/security
 #   2. Enable 2-Step Verification if not already enabled
 #   3. Go to https://myaccount.google.com/apppasswords
-#   4. Select app "Mail", device "Windows Computer", click Generate
-#   5. Copy the 16-character password shown and paste it as the password below
+#   4. Create an App Password for "Mail" / "Windows Computer"
+#   5. Paste the 16-character password below (e.g. abcd efgh ijkl mnop)
+#
+# NOTE: If left as default, OTP codes will still be printed to the console
+# so you can test password reset without setting up an email account.
 #
 from=your_game_email@gmail.com
 password=your_16_char_app_password

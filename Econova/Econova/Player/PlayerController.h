@@ -183,7 +183,9 @@ void handlePlayerMovementAndCombat(
     std::vector<std::unique_ptr<Monster>>& monsters,
     std::vector<PlacedStructure>& structures,
     Inventory& inventory,
-    int& playerExp
+    int& playerExp,
+    const std::string& username = "",
+    std::vector<PlacedCampfire>* campfires = nullptr
 );
 
 void updateWorldEntitiesAndDrops(
@@ -217,7 +219,7 @@ void updateWorldEntitiesAndDrops(
     float& thirst,
     int& thirstMultiplier,
     float maxThirst,
-    const std::vector<PlacedCampfire>& campfires,
+    std::vector<PlacedCampfire>& campfires,
     const std::function<sf::Vector2f(sf::Vector2f)>& snapGridFunc,
     const GameSettings& globalSettings,
     const sf::Font& font,

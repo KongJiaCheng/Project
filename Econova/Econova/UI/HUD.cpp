@@ -1000,7 +1000,7 @@ void renderAllGameUIs(
 
     for (auto& fire : campfires) {
         if (fire.menuOpen) {
-            drawCampfireMenu(window, uiFont, width, height, fire, woodTex, cookedChickenTex, cookedPigTex, cookedSheepTex);
+            drawCampfireMenu(window, uiFont, width, height, fire, woodTex, cookedChickenTex, cookedPigTex, cookedSheepTex, getItemTexture);
         }
     }
 

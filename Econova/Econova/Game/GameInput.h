@@ -69,7 +69,8 @@ bool handleCampfireMenuClicks(
     int& quantityPromptCampfireSlot,
     TextInput& quantityInput,
     bool& saplingPlacementMode,
-    std::function<void()> syncSaveCallback
+    std::function<void()> syncSaveCallback,
+    std::function<const sf::Texture* (int id)> getItemTexture = nullptr
 );
 
 bool handleFurnaceMenuClicks(
@@ -213,7 +214,8 @@ bool handleMouseDragAndScroll(
     bool& sleepTimeSkipped,
     bool placementMode,
     bool& chestMenuOpen,
-    PlacedStructure*& activeChest
+    PlacedStructure*& activeChest,
+    bool chatActive = false
 );
 
 bool handleTopBarAndWrenchClicks(
