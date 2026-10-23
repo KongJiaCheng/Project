@@ -67,6 +67,10 @@ bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float max
             hunger += maxHunger;
         }
         hunger = (std::max)(0.f, hunger);
+        // Restore HP when multiplier is X2 or higher
+        if (hungerMultiplier >= 2) {
+            hp = std::min(hp + 10.f, 100.f);
+        }
         return true;
     }
     else if (itemID == ITEM_COOKED_PIG) {
@@ -79,6 +83,10 @@ bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float max
             hunger += maxHunger;
         }
         hunger = (std::max)(0.f, hunger);
+        // Restore HP when multiplier is X2 or higher
+        if (hungerMultiplier >= 2) {
+            hp = std::min(hp + 15.f, 100.f);
+        }
         return true;
     }
     else if (itemID == ITEM_COOKED_SHEEP) {
@@ -91,6 +99,10 @@ bool consumeFoodItem(int itemID, float& hunger, int& hungerMultiplier, float max
             hunger += maxHunger;
         }
         hunger = (std::max)(0.f, hunger);
+        // Restore HP when multiplier is X2 or higher
+        if (hungerMultiplier >= 2) {
+            hp = std::min(hp + 15.f, 100.f);
+        }
         return true;
     }
     return false;

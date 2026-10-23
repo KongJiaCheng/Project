@@ -823,7 +823,7 @@ void renderWorldDepthScene(
     for (auto& d : depthDrawables) d.draw();
 
     sprite.setPosition(originalPlayerPos);
-    sprite.setColor(sf::Color::White);
+    if (!isPlayerHurt) sprite.setColor(sf::Color::White);
 
     if (animLoadedForSelection) {
         if (npcFemale.sprite.has_value()) window.draw(*npcFemale.sprite);

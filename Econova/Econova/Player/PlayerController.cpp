@@ -1422,6 +1422,13 @@ void updateSurvivalStatsAndQuests(
         {
             hp = std::min(maxHP, hp + 5.f * dt);
         }
+
+        // Passive HP regen when hunger multiplier is X2 or above (well-fed bonus)
+        if (hungerMultiplier >= 2)
+        {
+            float regenRate = 2.f * (float)(hungerMultiplier - 1); // X2=2hp/s, X3=4hp/s, etc.
+            hp = std::min(maxHP, hp + regenRate * dt);
+        }
     }
 
     int nextLevelExp = level * 100;
