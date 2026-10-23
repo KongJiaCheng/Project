@@ -1,4 +1,4 @@
-﻿#include "GameInput.h"
+#include "GameInput.h"
 #include "ViewUtils.h"
 #include "ItemID.h"
 #include "ChickenMeat.h"
@@ -1530,9 +1530,10 @@ bool handleMouseDragAndScroll(
         if (mouse->button == sf::Mouse::Button::Left) {
             bool anyCampfireOpen = std::any_of(campfires.begin(), campfires.end(), [](const PlacedCampfire& f) { return f.menuOpen; });
             bool anyFurnaceOpen = std::any_of(structures.begin(), structures.end(), [](const PlacedStructure& s) { return s.id == ITEM_FURNACE && s.menuOpen; });
+
             bool isSectionUndergoing = chestMenuOpen || anyCampfireOpen || anyFurnaceOpen || isSleeping || stockPageOpen;
 
-            // Don't fire world interactions (wrench/door/bed/chest) while in placement mode or when a section is undergoing
+            // Don't fire world interactions while in placement mode or when any menu is open
             if (!placementMode && !isSectionUndergoing) {
                 // Use the actual click position (not the frame-level worldPos)
                 sf::Vector2f curWorldPos = window.mapPixelToCoords(mouse->position);
@@ -2659,6 +2660,11 @@ bool handleGlobalKeyEvents(
     std::vector<PlacedCampfire>& campfires,
     bool& chestMenuOpen,
     PlacedStructure*& activeChest,
+    bool& wrenchMenuOpen,
+    bool& stockPageOpen,
+    bool& iapPageOpen,
+    bool& iapVerifyingOpen,
+    int& chestSelectedInvSlot,
     bool* isLoggingOutPtr,
     bool* logoutCloseWindowPtr
 ) {
@@ -2712,9 +2718,23 @@ bool handleGlobalKeyEvents(
                 }
                 return true;
             }
+            if (wrenchMenuOpen) {
+                wrenchMenuOpen = false;
+                return true;
+            }
+            if (stockPageOpen) {
+                stockPageOpen = false;
+                return true;
+            }
+            if (iapPageOpen || iapVerifyingOpen) {
+                iapPageOpen = false;
+                iapVerifyingOpen = false;
+                return true;
+            }
             if (chestMenuOpen) {
                 chestMenuOpen = false;
                 activeChest = nullptr;
+                chestSelectedInvSlot = -1;
                 return true;
             }
             bool closedSubMenu = false;

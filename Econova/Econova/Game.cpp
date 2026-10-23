@@ -1425,6 +1425,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 campfires,
                 chestMenuOpen,
                 activeChest,
+                wrenchMenuOpen,
+                stockPageOpen,
+                iapPageOpen,
+                iapVerifyingOpen,
+                chestSelectedInvSlot,
                 &isLoggingOut,
                 &logoutCloseWindow
             )) {

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <string>
@@ -431,6 +431,11 @@ bool handleGlobalKeyEvents(
     std::vector<PlacedCampfire>& campfires,
     bool& chestMenuOpen,
     PlacedStructure*& activeChest,
+    bool& wrenchMenuOpen,
+    bool& stockPageOpen,
+    bool& iapPageOpen,
+    bool& iapVerifyingOpen,
+    int& chestSelectedInvSlot,
     bool* isLoggingOutPtr = nullptr,
     bool* logoutCloseWindowPtr = nullptr
 );
