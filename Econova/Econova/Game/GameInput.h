@@ -215,7 +215,11 @@ bool handleMouseDragAndScroll(
     bool placementMode,
     bool& chestMenuOpen,
     PlacedStructure*& activeChest,
-    bool chatActive = false
+    bool chatActive = false,
+    bool tradeMenuOpen = false,
+    bool p2pTradeOpen = false,
+    bool tradeConfirmOpen = false,
+    bool wrenchMenuOpen = false
 );
 
 bool handleTopBarAndWrenchClicks(

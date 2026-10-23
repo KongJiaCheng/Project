@@ -1493,7 +1493,11 @@ bool handleMouseDragAndScroll(
     bool placementMode,
     bool& chestMenuOpen,
     PlacedStructure*& activeChest,
-    bool chatActive
+    bool chatActive,
+    bool tradeMenuOpen,
+    bool p2pTradeOpen,
+    bool tradeConfirmOpen,
+    bool wrenchMenuOpen
 ) {
     if (auto* wheel = event.getIf<sf::Event::MouseWheelScrolled>()) {
         if (wheel->wheel == sf::Mouse::Wheel::Vertical) {
@@ -1531,7 +1535,7 @@ bool handleMouseDragAndScroll(
             bool anyCampfireOpen = std::any_of(campfires.begin(), campfires.end(), [](const PlacedCampfire& f) { return f.menuOpen; });
             bool anyFurnaceOpen = std::any_of(structures.begin(), structures.end(), [](const PlacedStructure& s) { return s.id == ITEM_FURNACE && s.menuOpen; });
 
-            bool isSectionUndergoing = chestMenuOpen || anyCampfireOpen || anyFurnaceOpen || isSleeping || stockPageOpen;
+            bool isSectionUndergoing = chestMenuOpen || anyCampfireOpen || anyFurnaceOpen || isSleeping || stockPageOpen || tradeMenuOpen || p2pTradeOpen || tradeConfirmOpen || wrenchMenuOpen;
 
             // Don't fire world interactions while in placement mode or when any menu is open
             if (!placementMode && !isSectionUndergoing) {

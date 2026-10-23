@@ -1,4 +1,4 @@
-﻿#include "PlayerController.h"
+#include "PlayerController.h"
 #include "Game.h"
 #include "ItemID.h"
 #include "SpawnEntity.h"
@@ -193,12 +193,12 @@ void updateMonstersCombat(
                     }
                     m->attackTimer = 0.f;
                     isPlayerHurt = true;
-                    playerHurtTimer = 0.55f;
+                    playerHurtTimer = 0.8f;
 
                     sf::Vector2f pushDir = playerSprite.getPosition() - m->sprite.getPosition();
                     float len = std::sqrt(pushDir.x * pushDir.x + pushDir.y * pushDir.y);
                     if (len != 0.f) pushDir /= len;
-                    playerSprite.move(pushDir * 180.f);
+                    playerSprite.move(pushDir * 220.f);
                 }
             }
         }

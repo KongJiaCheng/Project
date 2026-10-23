@@ -1389,7 +1389,11 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 placementMode,
                 chestMenuOpen,
                 activeChest,
-                chatActive
+                chatActive,
+                tradeMenuOpen,
+                p2pTradeOpen,
+                tradeConfirmOpen,
+                wrenchMenuOpen
             )) {
                 continue;
             }

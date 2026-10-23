@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <SFML/Graphics.hpp>
 #include "Animation.h"
 #include <cmath>
@@ -109,7 +109,7 @@ public:
         // Charge attack timer when within contact range (120px world units).
         // Cap (don't zero) when out of range — brief retreats don't reset full charge,
         // but cap at cooldown so zombies can't insta-hit on very first re-entry from far away.
-        if (len <= 120.f)
+        if (len <= 130.f)
             attackTimer += dt;
         else if (attackTimer > attackCooldown)
             attackTimer = attackCooldown;
