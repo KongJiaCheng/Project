@@ -46,7 +46,8 @@ bool handleQuantityPromptEvent(
     bool& quantityPromptIsChest,
     int quantityPromptChestSlot,
     PlacedStructure* activeChest,
-    int quantityPromptMax
+    int quantityPromptMax,
+    std::function<const sf::Texture*(int id)> getItemTexture = nullptr
 );
 
 bool handleCampfireMenuClicks(

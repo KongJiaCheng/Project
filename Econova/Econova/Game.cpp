@@ -1334,7 +1334,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 quantityPromptIsChest,
                 quantityPromptChestSlot,
                 activeChest,
-                quantityPromptMax
+                quantityPromptMax,
+                [&](int id) { return assets.getItemTexture(id); }
             )) {
                 continue;
             }

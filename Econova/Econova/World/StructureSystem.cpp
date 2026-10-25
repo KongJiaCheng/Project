@@ -847,7 +847,7 @@ void drawChestMenu(
     hintBar.setFillColor(sf::Color(18, 14, 9));
     window.draw(hintBar);
     sf::Text hint(uiFont,
-        "  Select inv item \u25B6 click chest slot to STORE  |  Click chest slot to RETRIEVE  |  [ESC]/[X] Close", 11);
+        "  Click inv slot to STORE  |  Click chest slot to RETRIEVE  |  [ESC]/[X] Close", 11);
     hint.setFillColor(sf::Color(130, 115, 80));
     hint.setPosition({ ppx + 8.f, hintY + 6.f });
     window.draw(hint);
@@ -864,71 +864,211 @@ void drawQuantityPrompt(
     TextInput& quantityInput,
     bool isChest,
     int chestSlotIdx,
-    bool isChestRetrieve
+    bool isRetrieve
 ) {
     sf::View currentView = window.getView();
     window.setView(GetUIView(&window));
 
-    sf::RectangleShape qBox({ 400.f, 220.f });
-    sf::Vector2f qBoxPos = { ((float)width - 400.f) / 2.f, ((float)height - 220.f) / 2.f };
-    qBox.setPosition(qBoxPos);
-    qBox.setFillColor(sf::Color(20, 25, 35, 250));
+    const float uiW = 1920.f;
+    const float uiH = 1080.f;
+
+    // Fullscreen dimmed backdrop
+    sf::RectangleShape backdrop({ uiW, uiH });
+    backdrop.setFillColor(sf::Color(0, 0, 0, 160));
+    window.draw(backdrop);
+
+    const float boxW = 480.f;
+    const float boxH = 260.f;
+    const float boxX = (uiW - boxW) / 2.f;
+    const float boxY = (uiH - boxH) / 2.f;
+
+    // Shadow
+    sf::RectangleShape shadow({ boxW + 8.f, boxH + 8.f });
+    shadow.setPosition({ boxX - 4.f, boxY + 4.f });
+    shadow.setFillColor(sf::Color(0, 0, 0, 140));
+    window.draw(shadow);
+
+    // Box body
+    sf::RectangleShape qBox({ boxW, boxH });
+    qBox.setPosition({ boxX, boxY });
+    qBox.setFillColor(sf::Color(22, 26, 34, 252));
     qBox.setOutlineThickness(3.f);
-    qBox.setOutlineColor(sf::Color(0, 242, 254, 180));
+    qBox.setOutlineColor(isRetrieve ? sf::Color(255, 180, 50) : sf::Color(0, 220, 240));
     window.draw(qBox);
 
-    sf::Text qTitle(uiFont, "ENTER AMOUNT", 20);
+    // Header bar
+    sf::RectangleShape header({ boxW, 44.f });
+    header.setPosition({ boxX, boxY });
+    header.setFillColor(isRetrieve ? sf::Color(65, 45, 15) : sf::Color(15, 55, 65));
+    window.draw(header);
+
+    sf::Text qTitle(uiFont, isRetrieve ? "RETRIEVE QUANTITY" : "STORE / PLACE QUANTITY", 18);
     qTitle.setStyle(sf::Text::Bold);
-    qTitle.setFillColor(sf::Color(0, 242, 254));
-    qTitle.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 25.f });
+    qTitle.setFillColor(isRetrieve ? sf::Color(255, 205, 80) : sf::Color(0, 242, 254));
+    auto tb = qTitle.getLocalBounds();
+    qTitle.setPosition({ boxX + (boxW - tb.size.x) / 2.f, boxY + 10.f });
     window.draw(qTitle);
 
+    // Context label
     std::string labelText;
-    if (isChest && isChestRetrieve) {
-        labelText = "Enter quantity to retrieve from chest";
+    if (isChest && isRetrieve) {
+        labelText = "Quantity to retrieve from chest";
     } else if (isChest) {
-        labelText = "Enter quantity to store in chest";
+        labelText = "Quantity to store in chest";
+    } else if (isCampfire && campfireSlot == 3) {
+        labelText = "Quantity of output to retrieve";
+    } else if (isCampfire && isRetrieve) {
+        labelText = (campfireSlot == 1) ? "Quantity of fuel to withdraw" : "Quantity of input to withdraw";
     } else if (isCampfire) {
-        labelText = (campfireSlot == 1) ? "Enter quantity of fuel to place" : "Enter quantity of items to place";
+        labelText = (campfireSlot == 1) ? "Quantity of fuel to add" : "Quantity of items to cook/smelt";
     } else {
-        labelText = "Enter quantity to put in trade";
+        labelText = "Quantity to put in trade";
     }
-    sf::Text qLabel(uiFont, labelText + " (Max: " + std::to_string(maxAmount) + "):", 12);
-    qLabel.setFillColor(sf::Color(200, 200, 210));
-    qLabel.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 65.f });
+    sf::Text qLabel(uiFont, labelText + " (Max: " + std::to_string(maxAmount) + "):", 13);
+    qLabel.setFillColor(sf::Color(210, 215, 225));
+    qLabel.setPosition({ boxX + 30.f, boxY + 56.f });
     window.draw(qLabel);
-
-    // Always keep focus so typing works immediately
-    quantityInput.setFocus(true);
-    quantityInput.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 95.f });
-    quantityInput.draw(window);
 
     sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
 
-    sf::FloatRect confirmBtnRect({ qBoxPos.x + 30.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+    // [-] Decrement button
+    const float minusW = 44.f, minusH = 38.f;
+    const float minusX = boxX + 30.f, inputY = boxY + 84.f;
+    sf::FloatRect minusRect({ minusX, inputY }, { minusW, minusH });
+    bool minusHov = minusRect.contains(mousePos);
+    sf::RectangleShape minusBtn({ minusW, minusH });
+    minusBtn.setPosition({ minusX, inputY });
+    minusBtn.setFillColor(minusHov ? sf::Color(65, 75, 95) : sf::Color(42, 48, 62));
+    minusBtn.setOutlineThickness(1.5f);
+    minusBtn.setOutlineColor(sf::Color(100, 115, 140));
+    window.draw(minusBtn);
+    sf::Text minusTxt(uiFont, "-", 20);
+    minusTxt.setStyle(sf::Text::Bold);
+    minusTxt.setFillColor(sf::Color::White);
+    auto mb = minusTxt.getLocalBounds();
+    minusTxt.setPosition({ minusX + (minusW - mb.size.x) / 2.f, inputY + (minusH - mb.size.y) / 2.f - 4.f });
+    window.draw(minusTxt);
+
+    // Text Input box (centered between - and +)
+    const float inputW = boxW - 60.f - (minusW * 2.f) - 16.f;
+    const float inputX = minusX + minusW + 8.f;
+    quantityInput.setFocus(true);
+    quantityInput.setPosition({ inputX, inputY });
+    quantityInput.draw(window);
+
+    // [+] Increment button
+    const float plusX = inputX + inputW + 8.f;
+    sf::FloatRect plusRect({ plusX, inputY }, { minusW, minusH });
+    bool plusHov = plusRect.contains(mousePos);
+    sf::RectangleShape plusBtn({ minusW, minusH });
+    plusBtn.setPosition({ plusX, inputY });
+    plusBtn.setFillColor(plusHov ? sf::Color(65, 75, 95) : sf::Color(42, 48, 62));
+    plusBtn.setOutlineThickness(1.5f);
+    plusBtn.setOutlineColor(sf::Color(100, 115, 140));
+    window.draw(plusBtn);
+    sf::Text plusTxt(uiFont, "+", 20);
+    plusTxt.setStyle(sf::Text::Bold);
+    plusTxt.setFillColor(sf::Color::White);
+    auto pb = plusTxt.getLocalBounds();
+    plusTxt.setPosition({ plusX + (minusW - pb.size.x) / 2.f, inputY + (minusH - pb.size.y) / 2.f - 4.f });
+    window.draw(plusTxt);
+
+    // Quick preset buttons row: [1]  [Half]  [All]
+    const float preY = boxY + 132.f;
+    const float preW = (boxW - 60.f - 16.f) / 3.f;
+    const float preH = 32.f;
+
+    // [1]
+    sf::FloatRect btn1Rect({ boxX + 30.f, preY }, { preW, preH });
+    bool hov1 = btn1Rect.contains(mousePos);
+    sf::RectangleShape btn1({ preW, preH });
+    btn1.setPosition({ boxX + 30.f, preY });
+    btn1.setFillColor(hov1 ? sf::Color(55, 75, 95) : sf::Color(35, 48, 62));
+    btn1.setOutlineThickness(1.f);
+    btn1.setOutlineColor(sf::Color(80, 110, 140));
+    window.draw(btn1);
+    sf::Text txt1(uiFont, "1", 14);
+    txt1.setStyle(sf::Text::Bold);
+    txt1.setFillColor(sf::Color::White);
+    auto b1b = txt1.getLocalBounds();
+    txt1.setPosition({ boxX + 30.f + (preW - b1b.size.x) / 2.f, preY + (preH - b1b.size.y) / 2.f - 3.f });
+    window.draw(txt1);
+
+    // [Half]
+    sf::FloatRect btnHRect({ boxX + 30.f + preW + 8.f, preY }, { preW, preH });
+    bool hovH = btnHRect.contains(mousePos);
+    sf::RectangleShape btnH({ preW, preH });
+    btnH.setPosition({ boxX + 30.f + preW + 8.f, preY });
+    btnH.setFillColor(hovH ? sf::Color(55, 75, 95) : sf::Color(35, 48, 62));
+    btnH.setOutlineThickness(1.f);
+    btnH.setOutlineColor(sf::Color(80, 110, 140));
+    window.draw(btnH);
+    int halfVal = std::max(1, maxAmount / 2);
+    sf::Text txtH(uiFont, "Half (" + std::to_string(halfVal) + ")", 14);
+    txtH.setStyle(sf::Text::Bold);
+    txtH.setFillColor(sf::Color::White);
+    auto bhb = txtH.getLocalBounds();
+    txtH.setPosition({ boxX + 30.f + preW + 8.f + (preW - bhb.size.x) / 2.f, preY + (preH - bhb.size.y) / 2.f - 3.f });
+    window.draw(txtH);
+
+    // [All]
+    sf::FloatRect btnARect({ boxX + 30.f + (preW + 8.f) * 2.f, preY }, { preW, preH });
+    bool hovA = btnARect.contains(mousePos);
+    sf::RectangleShape btnA({ preW, preH });
+    btnA.setPosition({ boxX + 30.f + (preW + 8.f) * 2.f, preY });
+    btnA.setFillColor(hovA ? sf::Color(55, 75, 95) : sf::Color(35, 48, 62));
+    btnA.setOutlineThickness(1.f);
+    btnA.setOutlineColor(sf::Color(80, 110, 140));
+    window.draw(btnA);
+    sf::Text txtA(uiFont, "All (" + std::to_string(maxAmount) + ")", 14);
+    txtA.setStyle(sf::Text::Bold);
+    txtA.setFillColor(sf::Color::White);
+    auto bab = txtA.getLocalBounds();
+    txtA.setPosition({ boxX + 30.f + (preW + 8.f) * 2.f + (preW - bab.size.x) / 2.f, preY + (preH - bab.size.y) / 2.f - 3.f });
+    window.draw(txtA);
+
+    // Bottom Action buttons: [Confirm / Retrieve]  [Cancel]
+    const float actY = boxY + 180.f;
+    const float actW = (boxW - 60.f - 16.f) / 2.f;
+    const float actH = 42.f;
+
+    // Confirm button
+    sf::FloatRect confirmBtnRect({ boxX + 30.f, actY }, { actW, actH });
     bool confirmHover = confirmBtnRect.contains(mousePos);
-    sf::RectangleShape confirmBtn({ 160.f, 40.f });
-    confirmBtn.setPosition({ qBoxPos.x + 30.f, qBoxPos.y + 150.f });
-    confirmBtn.setFillColor(confirmHover ? sf::Color(0, 200, 254) : sf::Color(0, 150, 200));
+    sf::RectangleShape confirmBtn({ actW, actH });
+    confirmBtn.setPosition({ boxX + 30.f, actY });
+    if (isRetrieve) {
+        confirmBtn.setFillColor(confirmHover ? sf::Color(230, 150, 30) : sf::Color(190, 120, 20));
+        confirmBtn.setOutlineColor(confirmHover ? sf::Color(255, 200, 80) : sf::Color(210, 140, 30));
+    } else {
+        confirmBtn.setFillColor(confirmHover ? sf::Color(0, 190, 230) : sf::Color(0, 150, 190));
+        confirmBtn.setOutlineColor(confirmHover ? sf::Color(100, 230, 255) : sf::Color(0, 180, 220));
+    }
+    confirmBtn.setOutlineThickness(1.5f);
     window.draw(confirmBtn);
 
-    sf::Text confirmTxt(uiFont, "Confirm", 15);
+    sf::Text confirmTxt(uiFont, isRetrieve ? "Retrieve" : "Confirm", 16);
     confirmTxt.setStyle(sf::Text::Bold);
     confirmTxt.setFillColor(sf::Color::White);
-    confirmTxt.setPosition({ confirmBtn.getPosition().x + (confirmBtn.getSize().x - confirmTxt.getGlobalBounds().size.x) / 2.f, confirmBtn.getPosition().y + 10.f });
+    auto cb = confirmTxt.getLocalBounds();
+    confirmTxt.setPosition({ boxX + 30.f + (actW - cb.size.x) / 2.f, actY + (actH - cb.size.y) / 2.f - 3.f });
     window.draw(confirmTxt);
 
-    sf::FloatRect cancelBtnRect({ qBoxPos.x + 210.f, qBoxPos.y + 150.f }, { 160.f, 40.f });
+    // Cancel button
+    sf::FloatRect cancelBtnRect({ boxX + 30.f + actW + 16.f, actY }, { actW, actH });
     bool cancelHover = cancelBtnRect.contains(mousePos);
-    sf::RectangleShape cancelBtn({ 160.f, 40.f });
-    cancelBtn.setPosition({ qBoxPos.x + 210.f, qBoxPos.y + 150.f });
-    cancelBtn.setFillColor(cancelHover ? sf::Color(200, 60, 60) : sf::Color(150, 40, 40));
+    sf::RectangleShape cancelBtn({ actW, actH });
+    cancelBtn.setPosition({ boxX + 30.f + actW + 16.f, actY });
+    cancelBtn.setFillColor(cancelHover ? sf::Color(180, 50, 50) : sf::Color(140, 40, 40));
+    cancelBtn.setOutlineThickness(1.5f);
+    cancelBtn.setOutlineColor(cancelHover ? sf::Color(230, 90, 90) : sf::Color(170, 50, 50));
     window.draw(cancelBtn);
 
-    sf::Text cancelTxt(uiFont, "Cancel", 15);
+    sf::Text cancelTxt(uiFont, "Cancel", 16);
     cancelTxt.setStyle(sf::Text::Bold);
     cancelTxt.setFillColor(sf::Color::White);
-    cancelTxt.setPosition({ cancelBtn.getPosition().x + (cancelBtn.getSize().x - cancelTxt.getGlobalBounds().size.x) / 2.f, cancelBtn.getPosition().y + 10.f });
+    auto cnb = cancelTxt.getLocalBounds();
+    cancelTxt.setPosition({ boxX + 30.f + actW + 16.f + (actW - cnb.size.x) / 2.f, actY + (actH - cnb.size.y) / 2.f - 3.f });
     window.draw(cancelTxt);
 
     window.setView(currentView);

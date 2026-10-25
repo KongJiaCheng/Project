@@ -159,7 +159,7 @@ void drawQuantityPrompt(
     TextInput& quantityInput,
     bool isChest = false,
     int chestSlotIdx = -1,
-    bool isChestRetrieve = false
+    bool isRetrieve = false
 );
 
 void drawTradeConfirmPopup(

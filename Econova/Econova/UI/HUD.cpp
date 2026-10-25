@@ -1012,11 +1012,11 @@ void renderAllGameUIs(
 
     if (quantityPromptOpen) {
         // Determine if this is a retrieve (slot occupied) or store (slot empty) operation
-        bool isChestRetrieve = quantityPromptIsChest && (quantityPromptSourceSlot == -1);
+        bool isRetrieve = (quantityPromptSourceSlot == -1);
         drawQuantityPrompt(window, uiFont, width, height,
             quantityPromptIsCampfire, quantityPromptCampfireSlot,
             quantityPromptMax, quantityInput,
-            quantityPromptIsChest, quantityPromptChestSlot, isChestRetrieve);
+            quantityPromptIsChest, quantityPromptChestSlot, isRetrieve);
     }
 
     if (isSleeping) {
