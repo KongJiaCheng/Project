@@ -168,11 +168,29 @@ bool AuthManager::initDB(bool forceLocal) {
         con->setSchema(schemaStr);
         std::cout << "[DB] Successfully connected to " << (useLocal ? "LOCAL" : "CLOUD") << " database: " << schemaStr << "\n";
 
+        // Unconditionally ensure ban/mute security columns exist with DEFAULT NULL
+        try {
+            std::unique_ptr<sql::Statement> stmtSec(con->createStatement());
+            if (stmtSec) {
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN banned_until DATETIME DEFAULT NULL"); } catch (...) {}
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN muted_until DATETIME DEFAULT NULL"); } catch (...) {}
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN ban_reason VARCHAR(255) DEFAULT NULL"); } catch (...) {}
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN banned_by VARCHAR(50) DEFAULT NULL"); } catch (...) {}
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN ban_start TIMESTAMP NULL DEFAULT NULL"); } catch (...) {}
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN mute_reason VARCHAR(255) DEFAULT NULL"); } catch (...) {}
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN muted_by VARCHAR(50) DEFAULT NULL"); } catch (...) {}
+                try { stmtSec->execute("ALTER TABLE Accounts ADD COLUMN mute_start TIMESTAMP NULL DEFAULT NULL"); } catch (...) {}
+                // Ensure all non-banned and non-muted accounts have NULL for ban/mute fields
+                try { stmtSec->execute("UPDATE Accounts SET ban_reason = NULL, banned_by = NULL, ban_start = NULL, banned_until = NULL WHERE banned_until IS NULL OR banned_until <= CURRENT_TIMESTAMP"); } catch (...) {}
+                try { stmtSec->execute("UPDATE Accounts SET mute_reason = NULL, muted_by = NULL, mute_start = NULL, muted_until = NULL WHERE muted_until IS NULL OR muted_until <= CURRENT_TIMESTAMP"); } catch (...) {}
+            }
+        } catch (...) {}
+
         // ---- Schema migration guard ----
         // We write a local file "schema_version.txt" after migrations complete.
         // If it already says the current version, skip all ALTER TABLE calls entirely
         // so startup doesn't waste 20+ network round-trips every launch.
-        const int CURRENT_SCHEMA_VERSION = 4;
+        const int CURRENT_SCHEMA_VERSION = 10;
         const std::string SCHEMA_FILE = "schema_version.txt";
         int localSchemaVersion = 0;
         {
@@ -241,15 +259,15 @@ bool AuthManager::initDB(bool forceLocal) {
                     catch (...) {}
                     try { stmt->execute("ALTER TABLE Accounts ADD COLUMN muted_until DATETIME DEFAULT NULL"); }
                     catch (...) {}
-                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN ban_reason VARCHAR(255) DEFAULT 'Violation of Community Guidelines'"); }
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN ban_reason VARCHAR(255) DEFAULT NULL"); }
                     catch (...) {}
-                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN banned_by VARCHAR(50) DEFAULT 'admin'"); }
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN banned_by VARCHAR(50) DEFAULT NULL"); }
                     catch (...) {}
                     try { stmt->execute("ALTER TABLE Accounts ADD COLUMN ban_start TIMESTAMP NULL DEFAULT NULL"); }
                     catch (...) {}
-                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN mute_reason VARCHAR(255) DEFAULT 'Violation of Community Guidelines'"); }
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN mute_reason VARCHAR(255) DEFAULT NULL"); }
                     catch (...) {}
-                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN muted_by VARCHAR(50) DEFAULT 'admin'"); }
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN muted_by VARCHAR(50) DEFAULT NULL"); }
                     catch (...) {}
                     try { stmt->execute("ALTER TABLE Accounts ADD COLUMN mute_start TIMESTAMP NULL DEFAULT NULL"); }
                     catch (...) {}
@@ -607,19 +625,66 @@ bool AuthManager::loginUser(const sql::SQLString& username, const sql::SQLString
     }
     try {
         // Fetch stored hash (or plaintext) by username only â€” verify in C++
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
-            "SELECT Password, roles, (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
-            "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
-            "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date, "
-            "ban_reason, banned_by "
-            "FROM Accounts WHERE Username = ?"
-        ));
+        std::unique_ptr<sql::PreparedStatement> pstmt;
+        bool hasSecCols = true;
+        try {
+            pstmt.reset(con->prepareStatement(
+                "SELECT Password, roles, (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+                "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+                "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date, "
+                "ban_reason, banned_by "
+                "FROM Accounts WHERE Username = ?"
+            ));
+        } catch (...) {
+            // Attempt to add missing columns immediately
+            try {
+                std::unique_ptr<sql::Statement> stmtFix(con->createStatement());
+                if (stmtFix) {
+                    try { stmtFix->execute("ALTER TABLE Accounts ADD COLUMN ban_reason VARCHAR(255) DEFAULT NULL"); } catch (...) {}
+                    try { stmtFix->execute("ALTER TABLE Accounts ADD COLUMN banned_by VARCHAR(50) DEFAULT NULL"); } catch (...) {}
+                }
+                pstmt.reset(con->prepareStatement(
+                    "SELECT Password, roles, (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+                    "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+                    "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date, "
+                    "ban_reason, banned_by "
+                    "FROM Accounts WHERE Username = ?"
+                ));
+            } catch (...) {
+                hasSecCols = false;
+                pstmt.reset(con->prepareStatement(
+                    "SELECT Password, roles, (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+                    "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+                    "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date "
+                    "FROM Accounts WHERE Username = ?"
+                ));
+            }
+        }
         if (!pstmt) {
             errMessage = "Database query preparation failed.";
             return false;
         }
         pstmt->setString(1, username);
-        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        std::unique_ptr<sql::ResultSet> res;
+        try {
+            res.reset(pstmt->executeQuery());
+        } catch (sql::SQLException& e) {
+            // If unknown column still threw during execute, fall back to safe query
+            try {
+                hasSecCols = false;
+                pstmt.reset(con->prepareStatement(
+                    "SELECT Password, roles, (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+                    "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+                    "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date "
+                    "FROM Accounts WHERE Username = ?"
+                ));
+                pstmt->setString(1, username);
+                res.reset(pstmt->executeQuery());
+            } catch (sql::SQLException& e2) {
+                errMessage = "Database query error: " + std::string(e2.what());
+                return false;
+            }
+        }
         if (res && res->next()) {
             std::string storedPwd = std::string(res->getString("Password").c_str());
             std::string inputPwd  = std::string(password.c_str());
@@ -648,8 +713,8 @@ bool AuthManager::loginUser(const sql::SQLString& username, const sql::SQLString
             bool isBanned = res->getBoolean("is_banned");
             if (isBanned) {
                 std::string banDate = res->isNull("ban_date") ? "" : std::string(res->getString("ban_date"));
-                std::string reason = res->isNull("ban_reason") ? "Violation of Community Guidelines" : std::string(res->getString("ban_reason"));
-                std::string bannedBy = res->isNull("banned_by") ? "admin" : std::string(res->getString("banned_by"));
+                std::string reason = (hasSecCols && !res->isNull("ban_reason")) ? std::string(res->getString("ban_reason")) : "";
+                std::string bannedBy = (hasSecCols && !res->isNull("banned_by")) ? std::string(res->getString("banned_by")) : "";
                 long long remSec = res->getInt64("rem_sec");
                 bool isPerm = (banDate.find("9999") == 0);
                 cachedBanInfo.isBanned = true;
@@ -666,6 +731,16 @@ bool AuthManager::loginUser(const sql::SQLString& username, const sql::SQLString
                 return false;
             }
             cachedBanInfo.isBanned = false;
+            cachedBanInfo.reason = "";
+            cachedBanInfo.banDate = "";
+            cachedBanInfo.bannedBy = "";
+            cachedBanInfo.remainingSeconds = 0;
+            try {
+                std::unique_ptr<sql::PreparedStatement> psClean(con->prepareStatement(
+                    "UPDATE Accounts SET banned_until = NULL, ban_reason = NULL, banned_by = NULL, ban_start = NULL WHERE Username = ? AND (banned_until IS NULL OR banned_until <= CURRENT_TIMESTAMP)"
+                ));
+                if (psClean) { psClean->setString(1, username); psClean->executeUpdate(); }
+            } catch (...) {}
 
             std::string uStr = std::string(username);
             std::string currentRole = std::string(res->getString("roles"));
@@ -2003,13 +2078,25 @@ BanInfo AuthManager::getBanInfo(const std::string& username) {
     BanInfo info;
     if (!con) return info;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
-            "SELECT (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
-            "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
-            "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date, "
-            "ban_reason, banned_by "
-            "FROM Accounts WHERE Username = ?"
-        ));
+        std::unique_ptr<sql::PreparedStatement> pstmt;
+        bool hasSecCols = true;
+        try {
+            pstmt.reset(con->prepareStatement(
+                "SELECT (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+                "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+                "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date, "
+                "ban_reason, banned_by "
+                "FROM Accounts WHERE Username = ?"
+            ));
+        } catch (...) {
+            hasSecCols = false;
+            pstmt.reset(con->prepareStatement(
+                "SELECT (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+                "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+                "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date "
+                "FROM Accounts WHERE Username = ?"
+            ));
+        }
         if (!pstmt) return info;
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
@@ -2018,10 +2105,22 @@ BanInfo AuthManager::getBanInfo(const std::string& username) {
             if (isBanned) {
                 info.isBanned = true;
                 info.banDate = res->isNull("ban_date") ? "" : std::string(res->getString("ban_date"));
-                info.reason = res->isNull("ban_reason") ? "Violation of Community Guidelines" : std::string(res->getString("ban_reason"));
-                info.bannedBy = res->isNull("banned_by") ? "admin" : std::string(res->getString("banned_by"));
+                info.reason = (hasSecCols && !res->isNull("ban_reason")) ? std::string(res->getString("ban_reason")) : "";
+                info.bannedBy = (hasSecCols && !res->isNull("banned_by")) ? std::string(res->getString("banned_by")) : "";
                 info.remainingSeconds = res->getInt64("rem_sec");
                 info.isPermanent = (info.banDate.find("9999") == 0);
+            } else {
+                info.isBanned = false;
+                info.reason = "";
+                info.banDate = "";
+                info.bannedBy = "";
+                info.remainingSeconds = 0;
+                try {
+                    std::unique_ptr<sql::PreparedStatement> psClean(con->prepareStatement(
+                        "UPDATE Accounts SET banned_until = NULL, ban_reason = NULL, banned_by = NULL, ban_start = NULL WHERE Username = ? AND (banned_until IS NULL OR banned_until <= CURRENT_TIMESTAMP)"
+                    ));
+                    if (psClean) { psClean->setString(1, username); psClean->executeUpdate(); }
+                } catch (...) {}
             }
         }
     }
@@ -2037,13 +2136,25 @@ MuteInfo AuthManager::getMuteStatus(const std::string& username) {
     MuteInfo info;
     if (!con) return info;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
-            "SELECT (muted_until > CURRENT_TIMESTAMP) AS is_muted, "
-            "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, muted_until) AS rem_sec, "
-            "DATE_FORMAT(muted_until, '%Y-%m-%d %H:%i:%S') as mute_date, "
-            "mute_reason, muted_by "
-            "FROM Accounts WHERE Username = ?"
-        ));
+        std::unique_ptr<sql::PreparedStatement> pstmt;
+        bool hasSecCols = true;
+        try {
+            pstmt.reset(con->prepareStatement(
+                "SELECT (muted_until > CURRENT_TIMESTAMP) AS is_muted, "
+                "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, muted_until) AS rem_sec, "
+                "DATE_FORMAT(muted_until, '%Y-%m-%d %H:%i:%S') as mute_date, "
+                "mute_reason, muted_by "
+                "FROM Accounts WHERE Username = ?"
+            ));
+        } catch (...) {
+            hasSecCols = false;
+            pstmt.reset(con->prepareStatement(
+                "SELECT (muted_until > CURRENT_TIMESTAMP) AS is_muted, "
+                "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, muted_until) AS rem_sec, "
+                "DATE_FORMAT(muted_until, '%Y-%m-%d %H:%i:%S') as mute_date "
+                "FROM Accounts WHERE Username = ?"
+            ));
+        }
         if (!pstmt) return info;
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
@@ -2052,9 +2163,21 @@ MuteInfo AuthManager::getMuteStatus(const std::string& username) {
             if (isMuted) {
                 info.isMuted = true;
                 info.muteDate = res->isNull("mute_date") ? "" : std::string(res->getString("mute_date"));
-                info.reason = res->isNull("mute_reason") ? "Violation of Community Guidelines" : std::string(res->getString("mute_reason"));
-                info.mutedBy = res->isNull("muted_by") ? "admin" : std::string(res->getString("muted_by"));
+                info.reason = (hasSecCols && !res->isNull("mute_reason")) ? std::string(res->getString("mute_reason")) : "";
+                info.mutedBy = (hasSecCols && !res->isNull("muted_by")) ? std::string(res->getString("muted_by")) : "";
                 info.remainingSeconds = res->getInt64("rem_sec");
+            } else {
+                info.isMuted = false;
+                info.reason = "";
+                info.muteDate = "";
+                info.mutedBy = "";
+                info.remainingSeconds = 0;
+                try {
+                    std::unique_ptr<sql::PreparedStatement> psClean(con->prepareStatement(
+                        "UPDATE Accounts SET muted_until = NULL, mute_reason = NULL, muted_by = NULL, mute_start = NULL WHERE Username = ? AND (muted_until IS NULL OR muted_until <= CURRENT_TIMESTAMP)"
+                    ));
+                    if (psClean) { psClean->setString(1, username); psClean->executeUpdate(); }
+                } catch (...) {}
             }
         }
     }
@@ -2255,7 +2378,7 @@ bool AuthManager::banUser(const std::string& target, const std::string& duration
             return false;
         }
 
-        std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+        bool hasReason = !reason.empty();
         std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
 
         if (isPerm) {
@@ -2263,7 +2386,11 @@ bool AuthManager::banUser(const std::string& target, const std::string& duration
                 "UPDATE Accounts SET banned_until = '9999-12-31 23:59:59', ban_reason = ?, banned_by = ?, ban_start = CURRENT_TIMESTAMP WHERE Username = ?"
             ));
             if (!pstmt) return false;
-            pstmt->setString(1, finalReason);
+            if (hasReason) {
+                pstmt->setString(1, reason);
+            } else {
+                pstmt->setNull(1, sql::DataType::VARCHAR);
+            }
             pstmt->setString(2, finalAdmin);
             pstmt->setString(3, target);
             pstmt->executeUpdate();
@@ -2275,12 +2402,13 @@ bool AuthManager::banUser(const std::string& target, const std::string& duration
                 if (pRec) {
                     pRec->setString(1, target);
                     pRec->setString(2, finalAdmin);
-                    pRec->setString(3, finalReason);
+                    if (hasReason) pRec->setString(3, reason);
+                    else pRec->setNull(3, sql::DataType::VARCHAR);
                     pRec->executeUpdate();
                 }
             } catch (...) {}
 
-            outMsg = "Successfully permanently banned " + target + ". Reason: " + finalReason;
+            outMsg = "Successfully permanently banned " + target + (hasReason ? (". Reason: " + reason) : " (No reason).");
         }
         else {
             std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
@@ -2288,7 +2416,11 @@ bool AuthManager::banUser(const std::string& target, const std::string& duration
             ));
             if (!pstmt) return false;
             pstmt->setInt(1, days);
-            pstmt->setString(2, finalReason);
+            if (hasReason) {
+                pstmt->setString(2, reason);
+            } else {
+                pstmt->setNull(2, sql::DataType::VARCHAR);
+            }
             pstmt->setString(3, finalAdmin);
             pstmt->setString(4, target);
             pstmt->executeUpdate();
@@ -2301,12 +2433,13 @@ bool AuthManager::banUser(const std::string& target, const std::string& duration
                     pRec->setString(1, target);
                     pRec->setString(2, finalAdmin);
                     pRec->setInt(3, days);
-                    pRec->setString(4, finalReason);
+                    if (hasReason) pRec->setString(4, reason);
+                    else pRec->setNull(4, sql::DataType::VARCHAR);
                     pRec->executeUpdate();
                 }
             } catch (...) {}
 
-            outMsg = "Successfully banned " + target + " for " + durationStr + " days. Reason: " + finalReason;
+            outMsg = "Successfully banned " + target + " for " + durationStr + " days" + (hasReason ? (". Reason: " + reason) : ".");
         }
         return true;
     }
@@ -2374,7 +2507,7 @@ bool AuthManager::muteUser(const std::string& target, int minutes, std::string& 
             return false;
         }
 
-        std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+        bool hasReason = !reason.empty();
         std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
 
         std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
@@ -2382,7 +2515,11 @@ bool AuthManager::muteUser(const std::string& target, int minutes, std::string& 
         ));
         if (!pstmt) return false;
         pstmt->setInt(1, minutes);
-        pstmt->setString(2, finalReason);
+        if (hasReason) {
+            pstmt->setString(2, reason);
+        } else {
+            pstmt->setNull(2, sql::DataType::VARCHAR);
+        }
         pstmt->setString(3, finalAdmin);
         pstmt->setString(4, target);
         pstmt->executeUpdate();
@@ -2395,12 +2532,13 @@ bool AuthManager::muteUser(const std::string& target, int minutes, std::string& 
                 pRec->setString(1, target);
                 pRec->setString(2, finalAdmin);
                 pRec->setInt(3, minutes);
-                pRec->setString(4, finalReason);
+                if (hasReason) pRec->setString(4, reason);
+                else pRec->setNull(4, sql::DataType::VARCHAR);
                 pRec->executeUpdate();
             }
         } catch (...) {}
 
-        outMsg = "Successfully muted " + target + " for " + std::to_string(minutes) + " minutes. Reason: " + finalReason;
+        outMsg = "Successfully muted " + target + " for " + std::to_string(minutes) + " minutes" + (hasReason ? (". Reason: " + reason) : ".");
         return true;
     }
     catch (sql::SQLException& e) {

@@ -107,7 +107,40 @@ bool handleChatCommandsAndInput(
     bool tutorialActive,
     int tutorialStep,
     bool& tutChatted,
-    std::function<bool(const std::string& cmd, const std::string& args, std::string& feedback)> customCommandHandler = nullptr
+    std::function<bool(const std::string& cmd, const std::string& args, std::string& feedback)> customCommandHandler = nullptr,
+    bool* adminPromptOpen = nullptr,
+    bool* adminPromptIsBan = nullptr,
+    std::string* adminPromptTarget = nullptr,
+    std::string* adminPromptDuration = nullptr,
+    int* adminPromptMuteMinutes = nullptr,
+    TextInput* adminReasonInput = nullptr
+);
+
+void drawAdminActionPrompt(
+    sf::RenderWindow& window,
+    const sf::Font& uiFont,
+    unsigned int width,
+    unsigned int height,
+    bool isBan,
+    const std::string& targetUser,
+    const std::string& durationStr,
+    int muteMinutes,
+    TextInput& reasonInput
+);
+
+bool handleAdminPromptEvent(
+    const sf::Event& event,
+    sf::RenderWindow& window,
+    bool& adminPromptOpen,
+    bool adminPromptIsBan,
+    const std::string& adminPromptTarget,
+    const std::string& adminPromptDuration,
+    int adminPromptMuteMinutes,
+    TextInput& adminReasonInput,
+    AuthManager& authManager,
+    const std::string& currentUsername,
+    std::string& latestPlayerMsg,
+    float& bubbleTimer
 );
 bool handleWrenchMenuClicks(
     sf::Vector2f uiPos,
@@ -190,7 +223,13 @@ bool handleKeyAndTextInputs(
     float& p2pOfferPushTimer,
     bool& p2pMyReady,
     bool& npcGoldTyping,
-    std::function<bool(const std::string& cmd, const std::string& args, std::string& feedback)> customCommandHandler = nullptr
+    std::function<bool(const std::string& cmd, const std::string& args, std::string& feedback)> customCommandHandler = nullptr,
+    bool* adminPromptOpen = nullptr,
+    bool* adminPromptIsBan = nullptr,
+    std::string* adminPromptTarget = nullptr,
+    std::string* adminPromptDuration = nullptr,
+    int* adminPromptMuteMinutes = nullptr,
+    TextInput* adminReasonInput = nullptr
 );
 
 bool handleMouseDragAndScroll(

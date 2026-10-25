@@ -589,6 +589,12 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool quantityPromptIsChest = false;
     int quantityPromptChestSlot = -1;
     TextInput quantityInput(font, { (width - 200.f) / 2.f, (height - 40.f) / 2.f + 10.f }, { 200.f, 40.f });
+    bool adminPromptOpen = false;
+    bool adminPromptIsBan = true;
+    std::string adminPromptTarget = "";
+    std::string adminPromptDuration = "";
+    int adminPromptMuteMinutes = 60;
+    TextInput adminReasonInput(font, { ((float)width - 480.f) / 2.f, ((float)height - 42.f) / 2.f }, { 480.f, 42.f });
     bool isChatting = false;
     bool chatActive = false;
     std::vector<std::pair<std::string, std::string>> chatMessages;
@@ -936,7 +942,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 break;
             }
         }
-        isMenuOpen = (adminSimOpen || stockPageOpen || iapPageOpen || iapVerifyingOpen || tradeMenuOpen || tradeConfirmOpen || craftMenuOpen || p2pTradeOpen || anyCampfireMenuOpen || anyFurnaceMenuOpen || chestMenuOpen || isSleeping || quantityPromptOpen);
+        isMenuOpen = (adminPromptOpen || adminSimOpen || stockPageOpen || iapPageOpen || iapVerifyingOpen || tradeMenuOpen || tradeConfirmOpen || craftMenuOpen || p2pTradeOpen || anyCampfireMenuOpen || anyFurnaceMenuOpen || chestMenuOpen || isSleeping || quantityPromptOpen);
 
         // =====================================================
         // DESPAWN / SPAWN ENTITIES (ONLY IF NOT IN LOADING SCREEN)
@@ -1283,6 +1289,22 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
         while (std::optional<sf::Event> event = window.pollEvent())
         {
+            if (handleAdminPromptEvent(
+                event.value(),
+                window,
+                adminPromptOpen,
+                adminPromptIsBan,
+                adminPromptTarget,
+                adminPromptDuration,
+                adminPromptMuteMinutes,
+                adminReasonInput,
+                authManager,
+                username,
+                latestPlayerMsg,
+                bubbleTimer
+            )) {
+                continue;
+            }
             if (handleQuantityPromptEvent(
                 event.value(),
                 window,
@@ -1371,7 +1393,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 p2pOfferPushTimer,
                 p2pMyReady,
                 npcGoldTyping,
-                customCommandHandler
+                customCommandHandler,
+                &adminPromptOpen,
+                &adminPromptIsBan,
+                &adminPromptTarget,
+                &adminPromptDuration,
+                &adminPromptMuteMinutes,
+                &adminReasonInput
             )) {
                 continue;
             }
@@ -2571,6 +2599,20 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             stockMarket,
             adminSimScrollOffset,
             simTex
+        );
+    }
+
+    if (adminPromptOpen) {
+        drawAdminActionPrompt(
+            window,
+            uiFont,
+            width,
+            height,
+            adminPromptIsBan,
+            adminPromptTarget,
+            adminPromptDuration,
+            adminPromptMuteMinutes,
+            adminReasonInput
         );
     }
 

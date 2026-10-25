@@ -229,12 +229,14 @@ void SQLiteManager::createTables() {
         if (errMsg) sqlite3_free(errMsg);
     }
 
-    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN ban_reason TEXT;", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN banned_by TEXT;", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN ban_start TEXT;", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN mute_reason TEXT;", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN muted_by TEXT;", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN mute_start TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN ban_reason TEXT DEFAULT NULL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN banned_by TEXT DEFAULT NULL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN ban_start TEXT DEFAULT NULL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN mute_reason TEXT DEFAULT NULL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN muted_by TEXT DEFAULT NULL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN mute_start TEXT DEFAULT NULL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "UPDATE Accounts SET ban_reason = NULL, banned_by = NULL, ban_start = NULL, banned_until = NULL WHERE banned_until IS NULL OR strftime('%s', banned_until) <= strftime('%s', 'now');", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "UPDATE Accounts SET mute_reason = NULL, muted_by = NULL, mute_start = NULL, muted_until = NULL WHERE muted_until IS NULL OR strftime('%s', muted_until) <= strftime('%s', 'now');", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE scheduled_disasters ADD COLUMN activated_at INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE scheduled_disasters ADD COLUMN end_time INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
 }
@@ -1096,10 +1098,22 @@ BanInfo SQLiteManager::getBanInfo(const std::string& username) {
             const unsigned char* bd = sqlite3_column_text(stmt.get(), 2);
             info.banDate = bd ? reinterpret_cast<const char*>(bd) : "";
             const unsigned char* br = sqlite3_column_text(stmt.get(), 3);
-            info.reason = br ? reinterpret_cast<const char*>(br) : "Violation of Community Guidelines";
+            info.reason = br ? reinterpret_cast<const char*>(br) : "";
             const unsigned char* bb = sqlite3_column_text(stmt.get(), 4);
-            info.bannedBy = bb ? reinterpret_cast<const char*>(bb) : "admin";
+            info.bannedBy = bb ? reinterpret_cast<const char*>(bb) : "";
             info.isPermanent = (info.banDate.find("9999") == 0);
+        } else {
+            info.isBanned = false;
+            info.reason = "";
+            info.banDate = "";
+            info.bannedBy = "";
+            info.remainingSeconds = 0;
+            sqlite3_stmt* psClean = nullptr;
+            if (sqlite3_prepare_v2(db, "UPDATE Accounts SET banned_until = NULL, ban_reason = NULL, banned_by = NULL, ban_start = NULL WHERE Username = ? AND (banned_until IS NULL OR strftime('%s', banned_until) <= strftime('%s', 'now'))", -1, &psClean, nullptr) == SQLITE_OK) {
+                sqlite3_bind_text(psClean, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_step(psClean);
+                sqlite3_finalize(psClean);
+            }
         }
     }
     return info;
@@ -1128,9 +1142,21 @@ MuteInfo SQLiteManager::getMuteStatus(const std::string& username) {
             const unsigned char* md = sqlite3_column_text(stmt.get(), 2);
             info.muteDate = md ? reinterpret_cast<const char*>(md) : "";
             const unsigned char* mr = sqlite3_column_text(stmt.get(), 3);
-            info.reason = mr ? reinterpret_cast<const char*>(mr) : "Violation of Community Guidelines";
+            info.reason = mr ? reinterpret_cast<const char*>(mr) : "";
             const unsigned char* mb = sqlite3_column_text(stmt.get(), 4);
-            info.mutedBy = mb ? reinterpret_cast<const char*>(mb) : "admin";
+            info.mutedBy = mb ? reinterpret_cast<const char*>(mb) : "";
+        } else {
+            info.isMuted = false;
+            info.reason = "";
+            info.muteDate = "";
+            info.mutedBy = "";
+            info.remainingSeconds = 0;
+            sqlite3_stmt* psClean = nullptr;
+            if (sqlite3_prepare_v2(db, "UPDATE Accounts SET muted_until = NULL, mute_reason = NULL, muted_by = NULL, mute_start = NULL WHERE Username = ? AND (muted_until IS NULL OR strftime('%s', muted_until) <= strftime('%s', 'now'))", -1, &psClean, nullptr) == SQLITE_OK) {
+                sqlite3_bind_text(psClean, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_step(psClean);
+                sqlite3_finalize(psClean);
+            }
         }
     }
     return info;
@@ -1288,7 +1314,7 @@ bool SQLiteManager::banUser(const std::string& target, const std::string& durati
         return false;
     }
 
-    std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+    bool hasReason = !reason.empty();
     std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
 
     if (isPerm) {
@@ -1296,7 +1322,8 @@ bool SQLiteManager::banUser(const std::string& target, const std::string& durati
         const char* sql = "UPDATE Accounts SET banned_until = '9999-12-31 23:59:59', ban_reason = ?, banned_by = ?, ban_start = datetime('now') WHERE Username = ?";
         if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
         StmtGuard stmt(rawStmt);
-        sqlite3_bind_text(stmt.get(), 1, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+        if (hasReason) sqlite3_bind_text(stmt.get(), 1, reason.c_str(), -1, SQLITE_TRANSIENT);
+        else sqlite3_bind_null(stmt.get(), 1);
         sqlite3_bind_text(stmt.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt.get(), 3, target.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_step(stmt.get());
@@ -1306,11 +1333,12 @@ bool SQLiteManager::banUser(const std::string& target, const std::string& durati
             StmtGuard sRec(pRec);
             sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(sRec.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(sRec.get(), 3, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+            if (hasReason) sqlite3_bind_text(sRec.get(), 3, reason.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(sRec.get(), 3);
             sqlite3_step(sRec.get());
         }
 
-        outMsg = "Successfully permanently banned " + target + ". Reason: " + finalReason;
+        outMsg = "Successfully permanently banned " + target + (hasReason ? (". Reason: " + reason) : " (No reason).");
     } else {
         sqlite3_stmt* rawStmt = nullptr;
         std::string durExpr = "+" + std::to_string(days) + " days";
@@ -1318,7 +1346,8 @@ bool SQLiteManager::banUser(const std::string& target, const std::string& durati
         if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
         StmtGuard stmt(rawStmt);
         sqlite3_bind_text(stmt.get(), 1, durExpr.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt.get(), 2, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+        if (hasReason) sqlite3_bind_text(stmt.get(), 2, reason.c_str(), -1, SQLITE_TRANSIENT);
+        else sqlite3_bind_null(stmt.get(), 2);
         sqlite3_bind_text(stmt.get(), 3, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt.get(), 4, target.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_step(stmt.get());
@@ -1329,11 +1358,12 @@ bool SQLiteManager::banUser(const std::string& target, const std::string& durati
             sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(sRec.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(sRec.get(), 3, durExpr.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(sRec.get(), 4, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+            if (hasReason) sqlite3_bind_text(sRec.get(), 4, reason.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(sRec.get(), 4);
             sqlite3_step(sRec.get());
         }
 
-        outMsg = "Successfully banned " + target + " for " + durationStr + " days. Reason: " + finalReason;
+        outMsg = "Successfully banned " + target + " for " + durationStr + " days" + (hasReason ? (". Reason: " + reason) : ".");
     }
     return true;
 }
@@ -1388,7 +1418,7 @@ bool SQLiteManager::muteUser(const std::string& target, int minutes, std::string
         }
     }
 
-    std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+    bool hasReason = !reason.empty();
     std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
     std::string durExpr = "+" + std::to_string(minutes) + " minutes";
 
@@ -1397,7 +1427,8 @@ bool SQLiteManager::muteUser(const std::string& target, int minutes, std::string
     if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
     StmtGuard stmt(rawStmt);
     sqlite3_bind_text(stmt.get(), 1, durExpr.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 2, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+    if (hasReason) sqlite3_bind_text(stmt.get(), 2, reason.c_str(), -1, SQLITE_TRANSIENT);
+    else sqlite3_bind_null(stmt.get(), 2);
     sqlite3_bind_text(stmt.get(), 3, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 4, target.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt.get());
@@ -1408,11 +1439,12 @@ bool SQLiteManager::muteUser(const std::string& target, int minutes, std::string
         sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(sRec.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(sRec.get(), 3, durExpr.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(sRec.get(), 4, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+        if (hasReason) sqlite3_bind_text(sRec.get(), 4, reason.c_str(), -1, SQLITE_TRANSIENT);
+        else sqlite3_bind_null(sRec.get(), 4);
         sqlite3_step(sRec.get());
     }
 
-    outMsg = "Successfully muted " + target + " for " + std::to_string(minutes) + " minutes. Reason: " + finalReason;
+    outMsg = "Successfully muted " + target + " for " + std::to_string(minutes) + " minutes" + (hasReason ? (". Reason: " + reason) : ".");
     return true;
 }
 

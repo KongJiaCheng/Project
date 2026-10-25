@@ -1454,7 +1454,7 @@ int main(int argc, char** argv) {
             reasonLbl.setPosition({ boxX + 40.f, boxY + 80.f });
             window->draw(reasonLbl);
 
-            std::string reasonText = activeBanInfo.reason.empty() ? "Violation of Community Guidelines" : activeBanInfo.reason;
+            std::string reasonText = activeBanInfo.reason.empty() ? "None (No reason provided)" : activeBanInfo.reason;
             sf::Text reasonVal(font, reasonText, 16);
             reasonVal.setFillColor(sf::Color::White);
             reasonVal.setPosition({ boxX + 40.f, boxY + 108.f });
