@@ -233,6 +233,10 @@ public:
     // Death / Permadeath
     void clearPlayerData(const sql::SQLString& username); // wipes inventory, structures, campfires, chests, resets stats
 
+    // Cached ban info access
+    const BanInfo& getCachedBanInfo() const { return cachedBanInfo; }
+    void setCachedBanInfo(const BanInfo& b) { cachedBanInfo = b; }
+
 private:
     void ensureCampfireColumns();
     sql::mysql::MySQL_Driver* driver = nullptr;

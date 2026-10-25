@@ -843,7 +843,8 @@ bool handleChatCommandsAndInput(
     std::string* adminPromptTarget,
     std::string* adminPromptDuration,
     int* adminPromptMuteMinutes,
-    TextInput* adminReasonInput
+    TextInput* adminReasonInput,
+    sf::Clock* adminPromptClock
 ) {
     if (msg.empty()) return false;
 
@@ -859,53 +860,91 @@ bool handleChatCommandsAndInput(
                 s.find("admin") != std::string::npos || s.find("moderator") != std::string::npos);
     };
 
-    if (msg.find("/ban ") == 0) {
-        std::string rest = msg.substr(5);
-        size_t spacePos = rest.find(' ');
-        if (spacePos == std::string::npos) {
-            latestPlayerMsg = "Usage: /ban <username> <3|7|14|30|perm>";
-            bubbleTimer = 5.f;
+    if (msg == "/ban" || msg.rfind("/ban ", 0) == 0) {
+        std::string rest = (msg.length() > 5) ? msg.substr(5) : "";
+        while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) rest.erase(rest.begin());
+        while (!rest.empty() && (rest.back() == ' ' || rest.back() == '\t')) rest.pop_back();
+
+        if (rest.empty()) {
+            latestPlayerMsg = "Usage: /ban <username> [3|7|14|30|perm]";
+            bubbleTimer = 6.f;
+            return true;
         }
-        else {
-            std::string target = rest.substr(0, spacePos);
-            std::string duration = rest.substr(spacePos + 1);
-            std::string initialReason = "";
-            size_t secondSpace = duration.find(' ');
-            if (secondSpace != std::string::npos) {
-                initialReason = duration.substr(secondSpace + 1);
-                duration = duration.substr(0, secondSpace);
-            }
-            std::string executorRole = authManager.getUserRole(username.c_str());
-            if (!isStaffRole(executorRole) && !AuthManager::isTargetedAdmin(username, "")) {
-                latestPlayerMsg = "Error: Only moderators or administrators can ban.";
-                bubbleTimer = 5.f;
-            }
-            else {
-                if (adminPromptOpen && adminPromptIsBan && adminPromptTarget && adminPromptDuration && adminReasonInput) {
-                    *adminPromptOpen = true;
-                    *adminPromptIsBan = true;
-                    *adminPromptTarget = target;
-                    *adminPromptDuration = duration;
-                    adminReasonInput->clear();
-                    if (!initialReason.empty()) {
-                        adminReasonInput->setText(initialReason);
+
+        std::string executorRole = authManager.getUserRole(username.c_str());
+        if (!isStaffRole(executorRole) && !AuthManager::isTargetedAdmin(username, "")) {
+            latestPlayerMsg = "Error: Only moderators or administrators can ban.";
+            bubbleTimer = 5.f;
+            return true;
+        }
+
+        std::string target = rest;
+        std::string duration = "30";
+        std::string initialReason = "";
+
+        size_t lastSpace = rest.rfind(' ');
+        if (lastSpace != std::string::npos) {
+            std::string lastWord = rest.substr(lastSpace + 1);
+            std::string lowerLast = lastWord;
+            for (char& c : lowerLast) c = (char)::tolower((unsigned char)c);
+            if (lowerLast == "3" || lowerLast == "7" || lowerLast == "14" || lowerLast == "30" || lowerLast == "perm" || lowerLast == "permanent") {
+                target = rest.substr(0, lastSpace);
+                duration = lowerLast;
+            } else {
+                size_t firstSpace = rest.find(' ');
+                std::string firstToken = rest.substr(0, firstSpace);
+                std::string rem = rest.substr(firstSpace + 1);
+                size_t secondSpace = rem.find(' ');
+                std::string secondToken = (secondSpace != std::string::npos) ? rem.substr(0, secondSpace) : rem;
+                std::string lowerSecond = secondToken;
+                for (char& c : lowerSecond) c = (char)::tolower((unsigned char)c);
+                if (lowerSecond == "3" || lowerSecond == "7" || lowerSecond == "14" || lowerSecond == "30" || lowerSecond == "perm" || lowerSecond == "permanent") {
+                    target = firstToken;
+                    duration = lowerSecond;
+                    if (secondSpace != std::string::npos) {
+                        initialReason = rem.substr(secondSpace + 1);
                     }
-                    adminReasonInput->setFocus(true);
-                    latestPlayerMsg = "Admin Action: Write ban reason in prompt box.";
-                    bubbleTimer = 4.f;
-                } else {
-                    std::string feedback;
-                    authManager.banUser(target, duration, feedback, initialReason, username);
-                    latestPlayerMsg = feedback;
-                    bubbleTimer = 5.f;
                 }
             }
         }
+
+        while (target.size() >= 2 && ((target.front() == '"' && target.back() == '"') || (target.front() == '\'' && target.back() == '\''))) {
+            target = target.substr(1, target.size() - 2);
+        }
+        while (!target.empty() && (target.front() == ' ' || target.front() == '\t')) target.erase(target.begin());
+        while (!target.empty() && (target.back() == ' ' || target.back() == '\t')) target.pop_back();
+
+        if (adminPromptOpen && adminPromptIsBan && adminPromptTarget && adminPromptDuration && adminReasonInput) {
+            *adminPromptOpen = true;
+            *adminPromptIsBan = true;
+            *adminPromptTarget = target;
+            *adminPromptDuration = duration;
+            adminReasonInput->clear();
+            if (!initialReason.empty()) {
+                adminReasonInput->setText(initialReason);
+            }
+            adminReasonInput->setFocus(true);
+            if (adminPromptClock) adminPromptClock->restart();
+            latestPlayerMsg = "Admin Action: Write ban reason in prompt box.";
+            bubbleTimer = 4.f;
+        } else {
+            std::string feedback;
+            authManager.banUser(target, duration, feedback, initialReason, username);
+            latestPlayerMsg = feedback;
+            bubbleTimer = 5.f;
+        }
+        return true;
     }
-    else if (msg.find("/unban ") == 0) {
-        std::string target = msg.substr(7);
+    else if (msg == "/unban" || msg.rfind("/unban ", 0) == 0) {
+        std::string target = (msg.length() > 7) ? msg.substr(7) : "";
+        while (!target.empty() && (target.front() == ' ' || target.front() == '\t')) target.erase(target.begin());
+        while (!target.empty() && (target.back() == ' ' || target.back() == '\t')) target.pop_back();
+        while (target.size() >= 2 && ((target.front() == '"' && target.back() == '"') || (target.front() == '\'' && target.back() == '\''))) {
+            target = target.substr(1, target.size() - 2);
+        }
+
         std::string executorRole = authManager.getUserRole(username.c_str());
-        if (!isStaffRole(executorRole)) {
+        if (!isStaffRole(executorRole) && !AuthManager::isTargetedAdmin(username, "")) {
             latestPlayerMsg = "Error: Only moderators or administrators can unban.";
             bubbleTimer = 5.f;
         }
@@ -916,58 +955,97 @@ bool handleChatCommandsAndInput(
             bubbleTimer = 5.f;
         }
     }
-    else if (msg.find("/mute ") == 0) {
-        std::string rest = msg.substr(6);
-        size_t spacePos = rest.find(' ');
-        std::string target = rest;
-        int minutes = 60;
-        std::string initialReason = "";
-        if (spacePos != std::string::npos) {
-            target = rest.substr(0, spacePos);
-            std::string rem = rest.substr(spacePos + 1);
-            size_t secondSpace = rem.find(' ');
-            std::string minStr = rem;
-            if (secondSpace != std::string::npos) {
-                minStr = rem.substr(0, secondSpace);
-                initialReason = rem.substr(secondSpace + 1);
-            }
-            try {
-                minutes = std::stoi(minStr);
-            }
-            catch (...) {
-                minutes = 60;
-            }
+    else if (msg == "/mute" || msg.rfind("/mute ", 0) == 0) {
+        std::string rest = (msg.length() > 6) ? msg.substr(6) : "";
+        while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) rest.erase(rest.begin());
+        while (!rest.empty() && (rest.back() == ' ' || rest.back() == '\t')) rest.pop_back();
+
+        if (rest.empty()) {
+            latestPlayerMsg = "Usage: /mute <username> [minutes]";
+            bubbleTimer = 6.f;
+            return true;
         }
+
         std::string executorRole = authManager.getUserRole(username.c_str());
         if (!isStaffRole(executorRole) && !AuthManager::isTargetedAdmin(username, "")) {
             latestPlayerMsg = "Error: Only moderators or administrators can mute.";
             bubbleTimer = 5.f;
+            return true;
         }
-        else {
-            if (adminPromptOpen && adminPromptIsBan && adminPromptTarget && adminPromptMuteMinutes && adminReasonInput) {
-                *adminPromptOpen = true;
-                *adminPromptIsBan = false;
-                *adminPromptTarget = target;
-                *adminPromptMuteMinutes = minutes;
-                adminReasonInput->clear();
-                if (!initialReason.empty()) {
-                    adminReasonInput->setText(initialReason);
+
+        std::string target = rest;
+        int minutes = 60;
+        std::string initialReason = "";
+
+        size_t lastSpace = rest.rfind(' ');
+        if (lastSpace != std::string::npos) {
+            std::string lastWord = rest.substr(lastSpace + 1);
+            try {
+                size_t idx = 0;
+                int m = std::stoi(lastWord, &idx);
+                if (idx == lastWord.size() && m > 0) {
+                    target = rest.substr(0, lastSpace);
+                    minutes = m;
                 }
-                adminReasonInput->setFocus(true);
-                latestPlayerMsg = "Admin Action: Write mute reason in prompt box.";
-                bubbleTimer = 4.f;
-            } else {
-                std::string feedback;
-                authManager.muteUser(target, minutes, feedback, initialReason, username);
-                latestPlayerMsg = feedback;
-                bubbleTimer = 5.f;
-            }
+            } catch (...) {}
         }
+
+        size_t firstSpace = rest.find(' ');
+        if (firstSpace != std::string::npos) {
+            std::string firstToken = rest.substr(0, firstSpace);
+            std::string rem = rest.substr(firstSpace + 1);
+            size_t secondSpace = rem.find(' ');
+            std::string secondToken = (secondSpace != std::string::npos) ? rem.substr(0, secondSpace) : rem;
+            try {
+                size_t idx = 0;
+                int m = std::stoi(secondToken, &idx);
+                if (idx == secondToken.size() && m > 0) {
+                    target = firstToken;
+                    minutes = m;
+                    if (secondSpace != std::string::npos) {
+                        initialReason = rem.substr(secondSpace + 1);
+                    }
+                }
+            } catch (...) {}
+        }
+
+        while (target.size() >= 2 && ((target.front() == '"' && target.back() == '"') || (target.front() == '\'' && target.back() == '\''))) {
+            target = target.substr(1, target.size() - 2);
+        }
+        while (!target.empty() && (target.front() == ' ' || target.front() == '\t')) target.erase(target.begin());
+        while (!target.empty() && (target.back() == ' ' || target.back() == '\t')) target.pop_back();
+
+        if (adminPromptOpen && adminPromptIsBan && adminPromptTarget && adminPromptMuteMinutes && adminReasonInput) {
+            *adminPromptOpen = true;
+            *adminPromptIsBan = false;
+            *adminPromptTarget = target;
+            *adminPromptMuteMinutes = minutes;
+            adminReasonInput->clear();
+            if (!initialReason.empty()) {
+                adminReasonInput->setText(initialReason);
+            }
+            adminReasonInput->setFocus(true);
+            if (adminPromptClock) adminPromptClock->restart();
+            latestPlayerMsg = "Admin Action: Write mute reason in prompt box.";
+            bubbleTimer = 4.f;
+        } else {
+            std::string feedback;
+            authManager.muteUser(target, minutes, feedback, initialReason, username);
+            latestPlayerMsg = feedback;
+            bubbleTimer = 5.f;
+        }
+        return true;
     }
-    else if (msg.find("/unmute ") == 0) {
-        std::string target = msg.substr(8);
+    else if (msg == "/unmute" || msg.rfind("/unmute ", 0) == 0) {
+        std::string target = (msg.length() > 8) ? msg.substr(8) : "";
+        while (!target.empty() && (target.front() == ' ' || target.front() == '\t')) target.erase(target.begin());
+        while (!target.empty() && (target.back() == ' ' || target.back() == '\t')) target.pop_back();
+        while (target.size() >= 2 && ((target.front() == '"' && target.back() == '"') || (target.front() == '\'' && target.back() == '\''))) {
+            target = target.substr(1, target.size() - 2);
+        }
+
         std::string executorRole = authManager.getUserRole(username.c_str());
-        if (!isStaffRole(executorRole)) {
+        if (!isStaffRole(executorRole) && !AuthManager::isTargetedAdmin(username, "")) {
             latestPlayerMsg = "Error: Only moderators or administrators can unmute.";
             bubbleTimer = 5.f;
         }
@@ -1325,7 +1403,8 @@ bool handleKeyAndTextInputs(
     std::string* adminPromptTarget,
     std::string* adminPromptDuration,
     int* adminPromptMuteMinutes,
-    TextInput* adminReasonInput
+    TextInput* adminReasonInput,
+    sf::Clock* adminPromptClock
 ) {
     if (auto* textEvent = event.getIf<sf::Event::TextEntered>())
     {
@@ -1465,7 +1544,8 @@ bool handleKeyAndTextInputs(
                             adminPromptTarget,
                             adminPromptDuration,
                             adminPromptMuteMinutes,
-                            adminReasonInput
+                            adminReasonInput,
+                            adminPromptClock
                         );
                         chatInput.clear();
                     }
@@ -2860,15 +2940,18 @@ void drawAdminActionPrompt(
     sf::View origView = window.getView();
     window.setView(GetUIView(&window));
 
+    const float uiW = 1920.f;
+    const float uiH = 1080.f;
+
     // Fullscreen dimmed backdrop
-    sf::RectangleShape backdrop({ (float)width, (float)height });
+    sf::RectangleShape backdrop({ uiW, uiH });
     backdrop.setFillColor(sf::Color(0, 0, 0, 185));
     window.draw(backdrop);
 
     const float boxW = 540.f;
     const float boxH = 290.f;
-    const float boxX = ((float)width - boxW) / 2.f;
-    const float boxY = ((float)height - boxH) / 2.f;
+    const float boxX = (uiW - boxW) / 2.f;
+    const float boxY = (uiH - boxH) / 2.f;
 
     // Shadow
     sf::RectangleShape shadow({ boxW + 8.f, boxH + 8.f });
@@ -2990,9 +3073,16 @@ bool handleAdminPromptEvent(
     AuthManager& authManager,
     const std::string& currentUsername,
     std::string& latestPlayerMsg,
-    float& bubbleTimer
+    float& bubbleTimer,
+    sf::Clock& adminPromptClock
 ) {
     if (!adminPromptOpen) return false;
+
+    // Ignore events in the first 0.35s after opening so the Enter/click that opened it doesn't immediately close it!
+    float elapsedSinceOpen = adminPromptClock.getElapsedTime().asSeconds();
+    if (elapsedSinceOpen < 0.35f) {
+        return true;
+    }
 
     auto executeAction = [&]() {
         std::string reason = adminReasonInput.getText();
@@ -3021,13 +3111,12 @@ bool handleAdminPromptEvent(
     sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
 
     if (auto* textEvent = event.getIf<sf::Event::TextEntered>()) {
-        if (textEvent->unicode == 13) {
-            executeAction();
-            return true;
-        }
         if (textEvent->unicode == 27) {
             cancelAction();
             return true;
+        }
+        if (textEvent->unicode == 13 || (textEvent->unicode < 32 && textEvent->unicode != 8)) {
+            return true; // Ignore control characters and carriage returns in TextEntered
         }
         adminReasonInput.processEvent(event, mousePos);
         return true;
@@ -3049,14 +3138,12 @@ bool handleAdminPromptEvent(
 
     if (auto* mb = event.getIf<sf::Event::MouseButtonPressed>()) {
         if (mb->button == sf::Mouse::Button::Left) {
-            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
-
+            const float uiW = 1920.f;
+            const float uiH = 1080.f;
             const float boxW = 540.f;
             const float boxH = 290.f;
-            unsigned int width = window.getSize().x;
-            unsigned int height = window.getSize().y;
-            const float boxX = ((float)width - boxW) / 2.f;
-            const float boxY = ((float)height - boxH) / 2.f;
+            const float boxX = (uiW - boxW) / 2.f;
+            const float boxY = (uiH - boxH) / 2.f;
             const float btnW = 160.f;
             const float btnH = 42.f;
             const float btnY = boxY + boxH - 62.f;
@@ -3073,7 +3160,7 @@ bool handleAdminPromptEvent(
                 return true;
             }
 
-            adminReasonInput.setFocus(true);
+            adminReasonInput.processEvent(event, mousePos);
             return true;
         }
     }

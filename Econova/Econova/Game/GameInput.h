@@ -113,7 +113,8 @@ bool handleChatCommandsAndInput(
     std::string* adminPromptTarget = nullptr,
     std::string* adminPromptDuration = nullptr,
     int* adminPromptMuteMinutes = nullptr,
-    TextInput* adminReasonInput = nullptr
+    TextInput* adminReasonInput = nullptr,
+    sf::Clock* adminPromptClock = nullptr
 );
 
 void drawAdminActionPrompt(
@@ -140,7 +141,8 @@ bool handleAdminPromptEvent(
     AuthManager& authManager,
     const std::string& currentUsername,
     std::string& latestPlayerMsg,
-    float& bubbleTimer
+    float& bubbleTimer,
+    sf::Clock& adminPromptClock
 );
 bool handleWrenchMenuClicks(
     sf::Vector2f uiPos,
@@ -229,7 +231,8 @@ bool handleKeyAndTextInputs(
     std::string* adminPromptTarget = nullptr,
     std::string* adminPromptDuration = nullptr,
     int* adminPromptMuteMinutes = nullptr,
-    TextInput* adminReasonInput = nullptr
+    TextInput* adminReasonInput = nullptr,
+    sf::Clock* adminPromptClock = nullptr
 );
 
 bool handleMouseDragAndScroll(

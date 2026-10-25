@@ -668,6 +668,7 @@ int main(int argc, char** argv) {
         std::string errorMsg;
         std::string username;
         PlayerStats stats{};
+        BanInfo banInfo;
     };
     std::atomic<bool>   authDone(false);
     AsyncAuthResult     authResult;
@@ -711,6 +712,8 @@ int main(int argc, char** argv) {
                 sql::SQLString(u.c_str()), sql::SQLString(p.c_str()), r.errorMsg)) {
                 r.stats = AuthManager::getInstance().loadPlayerStats(sql::SQLString(u.c_str()));
                 r.success = true;
+            } else {
+                r.banInfo = AuthManager::getInstance().getCachedBanInfo();
             }
             {
                 std::lock_guard<std::mutex> lk(authResultMutex);
@@ -762,16 +765,18 @@ int main(int argc, char** argv) {
             if (showBanModal) {
                 if (const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>()) {
                     if (mouse->button == sf::Mouse::Button::Left) {
+                        const float uiW = 1920.f;
+                        const float uiH = 1080.f;
                         const float boxW = 540.f;
                         const float boxH = 340.f;
-                        const float boxX = (static_cast<float>(width) - boxW) / 2.f;
-                        const float boxY = (static_cast<float>(height) - boxH) / 2.f;
+                        const float boxX = (uiW - boxW) / 2.f;
+                        const float boxY = (uiH - boxH) / 2.f;
                         const float btnW = 160.f;
                         const float btnH = 44.f;
                         const float btnX = boxX + (boxW - btnW) / 2.f;
                         const float btnY = boxY + boxH - 65.f;
                         sf::FloatRect okRect({ btnX, btnY }, { btnW, btnH });
-                        sf::Vector2f mPos(static_cast<float>(mouse->position.x), static_cast<float>(mouse->position.y));
+                        sf::Vector2f mPos = window->mapPixelToCoords(mouse->position, GetUIView(window));
                         if (okRect.contains(mPos)) {
                             showBanModal = false;
                             state = MenuState::Login;
@@ -1236,8 +1241,28 @@ int main(int argc, char** argv) {
                 }
                 else {
                     BanInfo checkBanned = AuthManager::getInstance().getBanInfo(localResult.username);
-                    if (checkBanned.isBanned) {
+                    BanInfo cached = AuthManager::getInstance().getCachedBanInfo();
+                    if (localResult.banInfo.isBanned) {
+                        activeBanInfo = localResult.banInfo;
+                        showBanModal = true;
+                        state = MenuState::Login;
+                    }
+                    else if (cached.isBanned) {
+                        activeBanInfo = cached;
+                        showBanModal = true;
+                        state = MenuState::Login;
+                    }
+                    else if (checkBanned.isBanned) {
                         activeBanInfo = checkBanned;
+                        showBanModal = true;
+                        state = MenuState::Login;
+                    }
+                    else if (localResult.errorMsg.find("banned") != std::string::npos ||
+                             localResult.errorMsg.find("Banned") != std::string::npos) {
+                        activeBanInfo.isBanned = true;
+                        activeBanInfo.reason = "Violation of Community Guidelines";
+                        activeBanInfo.isPermanent = (localResult.errorMsg.find("permanently") != std::string::npos);
+                        activeBanInfo.remainingSeconds = activeBanInfo.isPermanent ? -1 : 86400;
                         showBanModal = true;
                         state = MenuState::Login;
                     }
@@ -1404,16 +1429,22 @@ int main(int argc, char** argv) {
         }
 
         if (showBanModal) {
+            sf::View prevView = window->getView();
+            window->setView(GetUIView(window));
+
+            const float uiW = 1920.f;
+            const float uiH = 1080.f;
+
             // Dark modal backdrop
-            sf::RectangleShape overlay({ static_cast<float>(width), static_cast<float>(height) });
+            sf::RectangleShape overlay({ uiW, uiH });
             overlay.setFillColor(sf::Color(0, 0, 0, 210));
             window->draw(overlay);
 
             // Dialog panel
             const float boxW = 540.f;
             const float boxH = 340.f;
-            const float boxX = (static_cast<float>(width) - boxW) / 2.f;
-            const float boxY = (static_cast<float>(height) - boxH) / 2.f;
+            const float boxX = (uiW - boxW) / 2.f;
+            const float boxY = (uiH - boxH) / 2.f;
 
             // Box shadow
             sf::RectangleShape shadow({ boxW + 8.f, boxH + 8.f });
@@ -1481,8 +1512,7 @@ int main(int argc, char** argv) {
             const float btnY = boxY + boxH - 65.f;
             sf::FloatRect okRect({ btnX, btnY }, { btnW, btnH });
 
-            sf::Vector2i mousePixel = sf::Mouse::getPosition(*window);
-            sf::Vector2f mousePos(static_cast<float>(mousePixel.x), static_cast<float>(mousePixel.y));
+            sf::Vector2f mousePos = window->mapPixelToCoords(sf::Mouse::getPosition(*window), GetUIView(window));
             bool okHover = okRect.contains(mousePos);
 
             sf::RectangleShape okBtn({ btnW, btnH });
@@ -1498,6 +1528,8 @@ int main(int argc, char** argv) {
             auto ob = okTxt.getLocalBounds();
             okTxt.setPosition({ btnX + (btnW - ob.size.x) / 2.f, btnY + (btnH - ob.size.y) / 2.f - 4.f });
             window->draw(okTxt);
+
+            window->setView(prevView);
         }
 
         drawBrightnessOverlay(*window, width, height, static_cast<float>(globalSettings.brightness));

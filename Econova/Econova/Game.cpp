@@ -594,6 +594,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::string adminPromptTarget = "";
     std::string adminPromptDuration = "";
     int adminPromptMuteMinutes = 60;
+    sf::Clock adminPromptClock;
     TextInput adminReasonInput(font, { ((float)width - 480.f) / 2.f, ((float)height - 42.f) / 2.f }, { 480.f, 42.f });
     bool isChatting = false;
     bool chatActive = false;
@@ -1301,7 +1302,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 authManager,
                 username,
                 latestPlayerMsg,
-                bubbleTimer
+                bubbleTimer,
+                adminPromptClock
             )) {
                 continue;
             }
@@ -1399,7 +1401,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 &adminPromptTarget,
                 &adminPromptDuration,
                 &adminPromptMuteMinutes,
-                &adminReasonInput
+                &adminReasonInput,
+                &adminPromptClock
             )) {
                 continue;
             }

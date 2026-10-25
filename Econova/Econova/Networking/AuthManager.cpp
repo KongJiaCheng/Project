@@ -2099,7 +2099,24 @@ BanInfo AuthManager::getBanInfo(const std::string& username) {
         }
         if (!pstmt) return info;
         pstmt->setString(1, username);
-        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        std::unique_ptr<sql::ResultSet> res;
+        try {
+            res.reset(pstmt->executeQuery());
+        } catch (sql::SQLException& e) {
+            hasSecCols = false;
+            try {
+                pstmt.reset(con->prepareStatement(
+                    "SELECT (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+                    "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+                    "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date "
+                    "FROM Accounts WHERE Username = ?"
+                ));
+                if (pstmt) {
+                    pstmt->setString(1, username);
+                    res.reset(pstmt->executeQuery());
+                }
+            } catch (...) {}
+        }
         if (res && res->next()) {
             bool isBanned = res->getBoolean("is_banned");
             if (isBanned) {
@@ -2157,7 +2174,24 @@ MuteInfo AuthManager::getMuteStatus(const std::string& username) {
         }
         if (!pstmt) return info;
         pstmt->setString(1, username);
-        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        std::unique_ptr<sql::ResultSet> res;
+        try {
+            res.reset(pstmt->executeQuery());
+        } catch (sql::SQLException& e) {
+            hasSecCols = false;
+            try {
+                pstmt.reset(con->prepareStatement(
+                    "SELECT (muted_until > CURRENT_TIMESTAMP) AS is_muted, "
+                    "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, muted_until) AS rem_sec, "
+                    "DATE_FORMAT(muted_until, '%Y-%m-%d %H:%i:%S') as mute_date "
+                    "FROM Accounts WHERE Username = ?"
+                ));
+                if (pstmt) {
+                    pstmt->setString(1, username);
+                    res.reset(pstmt->executeQuery());
+                }
+            } catch (...) {}
+        }
         if (res && res->next()) {
             bool isMuted = res->getBoolean("is_muted");
             if (isMuted) {
