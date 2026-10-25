@@ -91,6 +91,32 @@ struct P2PTradeState {
 };
 
 // ── Scheduled disaster from admin panel ──────────────────────────────────────
+struct BanInfo {
+    bool isBanned = false;
+    std::string reason = "Violation of Community Guidelines";
+    long long remainingSeconds = 0;
+    bool isPermanent = false;
+    std::string banDate = "";
+    std::string bannedBy = "";
+};
+
+struct MuteInfo {
+    bool isMuted = false;
+    long long remainingSeconds = 0;
+    std::string muteDate = "";
+    std::string reason = "Violation of Community Guidelines";
+    std::string mutedBy = "";
+};
+
+struct ActiveDisasterInfo {
+    bool active = false;
+    int eventID = -1;
+    std::string type = "";
+    float remainingSeconds = 0.f;
+    int totalDuration = 0;
+    std::string createdBy = "";
+};
+
 struct DisasterEvent {
     int  eventID     = -1;
     std::string type = "";          // "diarrhea" | "drought"
@@ -145,9 +171,15 @@ public:
 
     std::string getUserRole(const sql::SQLString& username);
     bool setUserRole(const std::string& username, const std::string& roles);
-    bool banUser(const std::string& target, const std::string& durationStr, std::string& outMsg);
+    BanInfo getBanInfo(const std::string& username);
+    MuteInfo getMuteStatus(const std::string& username);
+    ActiveDisasterInfo getActiveDisaster();
+    bool triggerDisaster(const std::string& type, const std::string& triggeredBy, std::string& outMsg);
+    bool stopActiveDisaster(const std::string& triggeredBy, std::string& outMsg);
+
+    bool banUser(const std::string& target, const std::string& durationStr, std::string& outMsg, const std::string& reason = "Violation of Community Guidelines", const std::string& adminUser = "admin");
     bool unbanUser(const std::string& target, std::string& outMsg);
-    bool muteUser(const std::string& target, int minutes, std::string& outMsg);
+    bool muteUser(const std::string& target, int minutes, std::string& outMsg, const std::string& reason = "Violation of Community Guidelines", const std::string& adminUser = "admin");
     bool unmuteUser(const std::string& target, std::string& outMsg);
     sql::SQLString generateForgotOTP(const sql::SQLString& email);
     bool resetPassword(const sql::SQLString& email, const sql::SQLString& otp, const sql::SQLString& newPassword);
@@ -210,4 +242,5 @@ private:
     std::string currentConnectedHost = "";
     std::mutex chatNotifMutex;
     std::string pendingChatNotification = "";
+    BanInfo cachedBanInfo;
 };

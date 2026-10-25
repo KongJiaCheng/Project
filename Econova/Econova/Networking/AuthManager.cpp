@@ -241,6 +241,55 @@ bool AuthManager::initDB(bool forceLocal) {
                     catch (...) {}
                     try { stmt->execute("ALTER TABLE Accounts ADD COLUMN muted_until DATETIME DEFAULT NULL"); }
                     catch (...) {}
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN ban_reason VARCHAR(255) DEFAULT 'Violation of Community Guidelines'"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN banned_by VARCHAR(50) DEFAULT 'admin'"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN ban_start TIMESTAMP NULL DEFAULT NULL"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN mute_reason VARCHAR(255) DEFAULT 'Violation of Community Guidelines'"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN muted_by VARCHAR(50) DEFAULT 'admin'"); }
+                    catch (...) {}
+                    try { stmt->execute("ALTER TABLE Accounts ADD COLUMN mute_start TIMESTAMP NULL DEFAULT NULL"); }
+                    catch (...) {}
+                    try {
+                        stmt->execute("CREATE TABLE IF NOT EXISTS disaster_events ("
+                            "event_id INT AUTO_INCREMENT PRIMARY KEY, "
+                            "type VARCHAR(50) NOT NULL, "
+                            "scheduled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                            "activated_at TIMESTAMP NULL DEFAULT NULL, "
+                            "end_time TIMESTAMP NULL DEFAULT NULL, "
+                            "completed_at TIMESTAMP NULL DEFAULT NULL, "
+                            "duration_sec INT NOT NULL DEFAULT 600, "
+                            "status VARCHAR(20) NOT NULL DEFAULT 'pending', "
+                            "created_by VARCHAR(50) DEFAULT ''"
+                            ")");
+                        try { stmt->execute("ALTER TABLE disaster_events ADD COLUMN end_time TIMESTAMP NULL DEFAULT NULL"); } catch (...) {}
+                        try { stmt->execute("ALTER TABLE disaster_events ADD COLUMN activated_at TIMESTAMP NULL DEFAULT NULL"); } catch (...) {}
+                    } catch (...) {}
+                    try {
+                        stmt->execute("CREATE TABLE IF NOT EXISTS ban_records ("
+                            "id INT AUTO_INCREMENT PRIMARY KEY, "
+                            "username VARCHAR(50) NOT NULL, "
+                            "banned_by VARCHAR(50) DEFAULT 'admin', "
+                            "ban_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                            "ban_end DATETIME NULL DEFAULT NULL, "
+                            "reason VARCHAR(255) DEFAULT 'Violation of Community Guidelines', "
+                            "is_active TINYINT(1) DEFAULT 1"
+                            ")");
+                    } catch (...) {}
+                    try {
+                        stmt->execute("CREATE TABLE IF NOT EXISTS mute_records ("
+                            "id INT AUTO_INCREMENT PRIMARY KEY, "
+                            "username VARCHAR(50) NOT NULL, "
+                            "muted_by VARCHAR(50) DEFAULT 'admin', "
+                            "mute_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                            "mute_end DATETIME NULL DEFAULT NULL, "
+                            "reason VARCHAR(255) DEFAULT 'Violation of Community Guidelines', "
+                            "is_active TINYINT(1) DEFAULT 1"
+                            ")");
+                    } catch (...) {}
 
                     // Force tutorial reset for everyone for this update (v2)
                     stmt->execute("UPDATE Accounts SET isFirstTime=1, tutorialVersion=2 WHERE tutorialVersion < 2");
@@ -560,7 +609,9 @@ bool AuthManager::loginUser(const sql::SQLString& username, const sql::SQLString
         // Fetch stored hash (or plaintext) by username only â€” verify in C++
         std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
             "SELECT Password, roles, (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
-            "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date "
+            "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+            "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date, "
+            "ban_reason, banned_by "
             "FROM Accounts WHERE Username = ?"
         ));
         if (!pstmt) {
@@ -596,14 +647,25 @@ bool AuthManager::loginUser(const sql::SQLString& username, const sql::SQLString
 
             bool isBanned = res->getBoolean("is_banned");
             if (isBanned) {
-                std::string banDate = std::string(res->getString("ban_date"));
-                if (banDate.find("9999") == 0) {
+                std::string banDate = res->isNull("ban_date") ? "" : std::string(res->getString("ban_date"));
+                std::string reason = res->isNull("ban_reason") ? "Violation of Community Guidelines" : std::string(res->getString("ban_reason"));
+                std::string bannedBy = res->isNull("banned_by") ? "admin" : std::string(res->getString("banned_by"));
+                long long remSec = res->getInt64("rem_sec");
+                bool isPerm = (banDate.find("9999") == 0);
+                cachedBanInfo.isBanned = true;
+                cachedBanInfo.reason = reason;
+                cachedBanInfo.remainingSeconds = remSec;
+                cachedBanInfo.isPermanent = isPerm;
+                cachedBanInfo.banDate = banDate;
+                cachedBanInfo.bannedBy = bannedBy;
+                if (isPerm) {
                     errMessage = "You are permanently banned!";
                 } else {
                     errMessage = "You are banned until: " + banDate;
                 }
                 return false;
             }
+            cachedBanInfo.isBanned = false;
 
             std::string uStr = std::string(username);
             std::string currentRole = std::string(res->getString("roles"));
@@ -1372,7 +1434,13 @@ bool AuthManager::sendChatMessage(const sql::SQLString& username, const sql::SQL
         }
         // Mute check
         std::unique_ptr<sql::PreparedStatement> pstmtMute(
-            con->prepareStatement("SELECT (muted_until > CURRENT_TIMESTAMP) AS is_muted, DATE_FORMAT(muted_until, '%Y-%m-%d %H:%i:%S') as mute_date FROM Accounts WHERE Username = ?")
+            con->prepareStatement(
+                "SELECT (muted_until > CURRENT_TIMESTAMP) AS is_muted, "
+                "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, muted_until) as rem_sec, "
+                "DATE_FORMAT(muted_until, '%Y-%m-%d %H:%i:%S') as mute_date, "
+                "mute_reason "
+                "FROM Accounts WHERE Username = ?"
+            )
         );
         if (pstmtMute) {
             pstmtMute->setString(1, username);
@@ -1380,7 +1448,17 @@ bool AuthManager::sendChatMessage(const sql::SQLString& username, const sql::SQL
             if (resMute && resMute->next()) {
                 bool isMuted = resMute->getBoolean("is_muted");
                 if (isMuted) {
-                    outError = "You are muted until: " + std::string(resMute->getString("mute_date"));
+                    long long remSec = resMute->getInt64("rem_sec");
+                    std::string muteDate = std::string(resMute->getString("mute_date"));
+                    std::string remStr;
+                    if (remSec >= 3600) {
+                        remStr = std::to_string(remSec / 3600) + "h " + std::to_string((remSec % 3600) / 60) + "m";
+                    } else if (remSec >= 60) {
+                        remStr = std::to_string(remSec / 60) + "m " + std::to_string(remSec % 60) + "s";
+                    } else {
+                        remStr = std::to_string(remSec) + "s";
+                    }
+                    outError = "You are muted! (Remaining: " + remStr + " - until " + muteDate + ")";
                     return false;
                 }
             }
@@ -1917,8 +1995,243 @@ bool AuthManager::setUserRole(const std::string& username, const std::string& ro
     return false;
 }
 
-bool AuthManager::banUser(const std::string& target, const std::string& durationStr, std::string& outMsg) {
+BanInfo AuthManager::getBanInfo(const std::string& username) {
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().getBanInfo(username);
+    }
+    BanInfo info;
+    if (!con) return info;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "SELECT (banned_until > CURRENT_TIMESTAMP) AS is_banned, "
+            "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, banned_until) AS rem_sec, "
+            "DATE_FORMAT(banned_until, '%Y-%m-%d %H:%i:%S') as ban_date, "
+            "ban_reason, banned_by "
+            "FROM Accounts WHERE Username = ?"
+        ));
+        if (!pstmt) return info;
+        pstmt->setString(1, username);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        if (res && res->next()) {
+            bool isBanned = res->getBoolean("is_banned");
+            if (isBanned) {
+                info.isBanned = true;
+                info.banDate = res->isNull("ban_date") ? "" : std::string(res->getString("ban_date"));
+                info.reason = res->isNull("ban_reason") ? "Violation of Community Guidelines" : std::string(res->getString("ban_reason"));
+                info.bannedBy = res->isNull("banned_by") ? "admin" : std::string(res->getString("banned_by"));
+                info.remainingSeconds = res->getInt64("rem_sec");
+                info.isPermanent = (info.banDate.find("9999") == 0);
+            }
+        }
+    }
+    catch (...) {}
+    return info;
+}
+
+MuteInfo AuthManager::getMuteStatus(const std::string& username) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().getMuteStatus(username);
+    }
+    MuteInfo info;
+    if (!con) return info;
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "SELECT (muted_until > CURRENT_TIMESTAMP) AS is_muted, "
+            "TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, muted_until) AS rem_sec, "
+            "DATE_FORMAT(muted_until, '%Y-%m-%d %H:%i:%S') as mute_date, "
+            "mute_reason, muted_by "
+            "FROM Accounts WHERE Username = ?"
+        ));
+        if (!pstmt) return info;
+        pstmt->setString(1, username);
+        std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+        if (res && res->next()) {
+            bool isMuted = res->getBoolean("is_muted");
+            if (isMuted) {
+                info.isMuted = true;
+                info.muteDate = res->isNull("mute_date") ? "" : std::string(res->getString("mute_date"));
+                info.reason = res->isNull("mute_reason") ? "Violation of Community Guidelines" : std::string(res->getString("mute_reason"));
+                info.mutedBy = res->isNull("muted_by") ? "admin" : std::string(res->getString("muted_by"));
+                info.remainingSeconds = res->getInt64("rem_sec");
+            }
+        }
+    }
+    catch (...) {}
+    return info;
+}
+
+ActiveDisasterInfo AuthManager::getActiveDisaster() {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().getActiveDisaster();
+    }
+    ActiveDisasterInfo info;
+    if (!con) return info;
+    try {
+        // 1. Auto-complete any expired disasters in DB
+        try {
+            std::unique_ptr<sql::Statement> stmtExp(con->createStatement());
+            if (stmtExp) {
+                stmtExp->executeUpdate(
+                    "UPDATE disaster_events SET status = 'completed', completed_at = UTC_TIMESTAMP() "
+                    "WHERE status = 'active' AND end_time IS NOT NULL AND end_time <= UTC_TIMESTAMP()"
+                );
+            }
+        } catch (...) {}
+
+        // 2. Activate any pending scheduled disasters whose scheduled_at <= UTC_TIMESTAMP()
+        try {
+            std::unique_ptr<sql::Statement> stmtPend(con->createStatement());
+            if (stmtPend) {
+                stmtPend->executeUpdate(
+                    "UPDATE disaster_events SET status = 'active', activated_at = UTC_TIMESTAMP(), "
+                    "end_time = UTC_TIMESTAMP() + INTERVAL duration_sec SECOND "
+                    "WHERE status = 'pending' AND scheduled_at <= UTC_TIMESTAMP()"
+                );
+            }
+        } catch (...) {}
+
+        // 3. Query authoritative active disaster
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "SELECT event_id, type, duration_sec, "
+            "TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), end_time) AS rem_sec, "
+            "created_by "
+            "FROM disaster_events "
+            "WHERE status = 'active' AND end_time > UTC_TIMESTAMP() "
+            "ORDER BY event_id DESC LIMIT 1"
+        ));
+        if (pstmt) {
+            std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+            if (res && res->next()) {
+                long long rem = res->getInt64("rem_sec");
+                if (rem > 0) {
+                    info.active = true;
+                    info.eventID = res->getInt("event_id");
+                    info.type = std::string(res->getString("type"));
+                    info.totalDuration = res->getInt("duration_sec");
+                    info.remainingSeconds = static_cast<float>(rem);
+                    info.createdBy = res->isNull("created_by") ? "" : std::string(res->getString("created_by"));
+                }
+            }
+        }
+    }
+    catch (sql::SQLException& e) {
+        std::cerr << "[Disaster] getActiveDisaster error: " << e.what() << "\n";
+    }
+    return info;
+}
+
+bool AuthManager::triggerDisaster(const std::string& type, const std::string& triggeredBy, std::string& outMsg) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().triggerDisaster(type, triggeredBy, outMsg);
+    }
+    if (!con) {
+        outMsg = "Database connection error.";
+        return false;
+    }
+    try {
+        std::string role = getUserRole(triggeredBy.c_str());
+        std::string lowerRole = role;
+        for (char& c : lowerRole) c = (char)::tolower((unsigned char)c);
+        if (lowerRole != "admin" && lowerRole != "administrator" && !isTargetedAdmin(triggeredBy, "")) {
+            outMsg = "Error: Access denied. Administrator permissions required.";
+            return false;
+        }
+
+        std::string lowerType = type;
+        for (char& c : lowerType) c = (char)::tolower((unsigned char)c);
+        int durationSec = 600;
+        if (lowerType == "diarrhea") {
+            durationSec = 600; // Exactly 10 minutes
+        } else if (lowerType == "drought") {
+            durationSec = 180; // Exactly 3 minutes (180 seconds)
+        } else {
+            outMsg = "Unknown disaster: '" + type + "'. Available: diarrhea, drought, stop.";
+            return false;
+        }
+
+        ActiveDisasterInfo current = getActiveDisaster();
+        if (current.active && current.remainingSeconds > 0.f) {
+            outMsg = "Cannot trigger disaster: An active disaster ('" + current.type + "') is already in progress with " +
+                     std::to_string((int)current.remainingSeconds) + "s remaining. Use /disaster stop first.";
+            return false;
+        }
+
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "INSERT INTO disaster_events (type, scheduled_at, activated_at, end_time, duration_sec, status, created_by) "
+            "VALUES (?, UTC_TIMESTAMP(), UTC_TIMESTAMP(), UTC_TIMESTAMP() + INTERVAL ? SECOND, ?, 'active', ?)"
+        ));
+        if (!pstmt) {
+            outMsg = "Failed to prepare disaster statement.";
+            return false;
+        }
+        pstmt->setString(1, lowerType);
+        pstmt->setInt(2, durationSec);
+        pstmt->setInt(3, durationSec);
+        pstmt->setString(4, triggeredBy);
+        pstmt->executeUpdate();
+
+        std::string durStr = (durationSec == 600) ? "10m (600s)" : "3m (180s)";
+        outMsg = "[STAFF] " + ((lowerType == "drought") ? std::string("Severe Drought") : std::string("Acute Diarrhea")) +
+                 " disaster activated across all players! Duration: " + durStr + ".";
+        std::cout << "[DISASTER] " << outMsg << " Triggered by: " << triggeredBy << "\n";
+        return true;
+    }
+    catch (sql::SQLException& e) {
+        outMsg = "Database error: " + std::string(e.what());
+        return false;
+    }
+}
+
+bool AuthManager::stopActiveDisaster(const std::string& triggeredBy, std::string& outMsg) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().stopActiveDisaster(triggeredBy, outMsg);
+    }
+    if (!con) {
+        outMsg = "Database connection error.";
+        return false;
+    }
+    try {
+        std::string role = getUserRole(triggeredBy.c_str());
+        std::string lowerRole = role;
+        for (char& c : lowerRole) c = (char)::tolower((unsigned char)c);
+        if (lowerRole != "admin" && lowerRole != "administrator" && !isTargetedAdmin(triggeredBy, "")) {
+            outMsg = "Error: Access denied. Administrator permissions required.";
+            return false;
+        }
+
+        ActiveDisasterInfo current = getActiveDisaster();
+        if (!current.active) {
+            outMsg = "No natural disaster is currently active.";
+            return false;
+        }
+
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "UPDATE disaster_events SET status = 'completed', completed_at = UTC_TIMESTAMP() "
+            "WHERE status = 'active'"
+        ));
+        if (pstmt) {
+            pstmt->executeUpdate();
+        }
+        outMsg = "[STAFF] Natural Disaster stopped manually across all players. Environment and prices restored.";
+        std::cout << "[DISASTER] " << outMsg << " Stopped by: " << triggeredBy << "\n";
+        return true;
+    }
+    catch (sql::SQLException& e) {
+        outMsg = "Database error: " + std::string(e.what());
+        return false;
+    }
+}
+
+bool AuthManager::banUser(const std::string& target, const std::string& durationStr, std::string& outMsg, const std::string& reason, const std::string& adminUser) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().banUser(target, durationStr, outMsg, reason, adminUser);
+    }
     if (!con) return false;
     try {
         std::unique_ptr<sql::PreparedStatement> pstmtCheck(con->prepareStatement("SELECT Username FROM Accounts WHERE Username = ?"));
@@ -1942,20 +2255,58 @@ bool AuthManager::banUser(const std::string& target, const std::string& duration
             return false;
         }
 
+        std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+        std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
+
         if (isPerm) {
-            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("UPDATE Accounts SET banned_until = '9999-12-31 23:59:59' WHERE Username = ?"));
+            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+                "UPDATE Accounts SET banned_until = '9999-12-31 23:59:59', ban_reason = ?, banned_by = ?, ban_start = CURRENT_TIMESTAMP WHERE Username = ?"
+            ));
             if (!pstmt) return false;
-            pstmt->setString(1, target);
+            pstmt->setString(1, finalReason);
+            pstmt->setString(2, finalAdmin);
+            pstmt->setString(3, target);
             pstmt->executeUpdate();
-            outMsg = "Successfully permanently banned " + target + ".";
+
+            try {
+                std::unique_ptr<sql::PreparedStatement> pRec(con->prepareStatement(
+                    "INSERT INTO ban_records (username, banned_by, ban_start, ban_end, reason, is_active) VALUES (?, ?, CURRENT_TIMESTAMP, '9999-12-31 23:59:59', ?, 1)"
+                ));
+                if (pRec) {
+                    pRec->setString(1, target);
+                    pRec->setString(2, finalAdmin);
+                    pRec->setString(3, finalReason);
+                    pRec->executeUpdate();
+                }
+            } catch (...) {}
+
+            outMsg = "Successfully permanently banned " + target + ". Reason: " + finalReason;
         }
         else {
-            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("UPDATE Accounts SET banned_until = CURRENT_TIMESTAMP + INTERVAL ? DAY WHERE Username = ?"));
+            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+                "UPDATE Accounts SET banned_until = CURRENT_TIMESTAMP + INTERVAL ? DAY, ban_reason = ?, banned_by = ?, ban_start = CURRENT_TIMESTAMP WHERE Username = ?"
+            ));
             if (!pstmt) return false;
             pstmt->setInt(1, days);
-            pstmt->setString(2, target);
+            pstmt->setString(2, finalReason);
+            pstmt->setString(3, finalAdmin);
+            pstmt->setString(4, target);
             pstmt->executeUpdate();
-            outMsg = "Successfully banned " + target + " for " + durationStr + " days.";
+
+            try {
+                std::unique_ptr<sql::PreparedStatement> pRec(con->prepareStatement(
+                    "INSERT INTO ban_records (username, banned_by, ban_start, ban_end, reason, is_active) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL ? DAY, ?, 1)"
+                ));
+                if (pRec) {
+                    pRec->setString(1, target);
+                    pRec->setString(2, finalAdmin);
+                    pRec->setInt(3, days);
+                    pRec->setString(4, finalReason);
+                    pRec->executeUpdate();
+                }
+            } catch (...) {}
+
+            outMsg = "Successfully banned " + target + " for " + durationStr + " days. Reason: " + finalReason;
         }
         return true;
     }
@@ -1967,6 +2318,9 @@ bool AuthManager::banUser(const std::string& target, const std::string& duration
 
 bool AuthManager::unbanUser(const std::string& target, std::string& outMsg) {
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().unbanUser(target, outMsg);
+    }
     if (!con) return false;
     try {
         std::unique_ptr<sql::PreparedStatement> pstmtCheck(con->prepareStatement("SELECT Username FROM Accounts WHERE Username = ?"));
@@ -1978,10 +2332,23 @@ bool AuthManager::unbanUser(const std::string& target, std::string& outMsg) {
             return false;
         }
 
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("UPDATE Accounts SET banned_until = NULL WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "UPDATE Accounts SET banned_until = NULL, ban_reason = NULL, banned_by = NULL, ban_start = NULL WHERE Username = ?"
+        ));
         if (!pstmt) return false;
         pstmt->setString(1, target);
         pstmt->executeUpdate();
+
+        try {
+            std::unique_ptr<sql::PreparedStatement> pRec(con->prepareStatement(
+                "UPDATE ban_records SET is_active = 0 WHERE username = ?"
+            ));
+            if (pRec) {
+                pRec->setString(1, target);
+                pRec->executeUpdate();
+            }
+        } catch (...) {}
+
         outMsg = "Successfully unbanned " + target + ".";
         return true;
     }
@@ -1991,8 +2358,11 @@ bool AuthManager::unbanUser(const std::string& target, std::string& outMsg) {
     }
 }
 
-bool AuthManager::muteUser(const std::string& target, int minutes, std::string& outMsg) {
+bool AuthManager::muteUser(const std::string& target, int minutes, std::string& outMsg, const std::string& reason, const std::string& adminUser) {
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().muteUser(target, minutes, outMsg, reason, adminUser);
+    }
     if (!con) return false;
     try {
         std::unique_ptr<sql::PreparedStatement> pstmtCheck(con->prepareStatement("SELECT Username FROM Accounts WHERE Username = ?"));
@@ -2004,12 +2374,33 @@ bool AuthManager::muteUser(const std::string& target, int minutes, std::string& 
             return false;
         }
 
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("UPDATE Accounts SET muted_until = CURRENT_TIMESTAMP + INTERVAL ? MINUTE WHERE Username = ?"));
+        std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+        std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
+
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "UPDATE Accounts SET muted_until = CURRENT_TIMESTAMP + INTERVAL ? MINUTE, mute_reason = ?, muted_by = ?, mute_start = CURRENT_TIMESTAMP WHERE Username = ?"
+        ));
         if (!pstmt) return false;
         pstmt->setInt(1, minutes);
-        pstmt->setString(2, target);
+        pstmt->setString(2, finalReason);
+        pstmt->setString(3, finalAdmin);
+        pstmt->setString(4, target);
         pstmt->executeUpdate();
-        outMsg = "Successfully muted " + target + " for " + std::to_string(minutes) + " minutes.";
+
+        try {
+            std::unique_ptr<sql::PreparedStatement> pRec(con->prepareStatement(
+                "INSERT INTO mute_records (username, muted_by, mute_start, mute_end, reason, is_active) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL ? MINUTE, ?, 1)"
+            ));
+            if (pRec) {
+                pRec->setString(1, target);
+                pRec->setString(2, finalAdmin);
+                pRec->setInt(3, minutes);
+                pRec->setString(4, finalReason);
+                pRec->executeUpdate();
+            }
+        } catch (...) {}
+
+        outMsg = "Successfully muted " + target + " for " + std::to_string(minutes) + " minutes. Reason: " + finalReason;
         return true;
     }
     catch (sql::SQLException& e) {
@@ -2020,6 +2411,9 @@ bool AuthManager::muteUser(const std::string& target, int minutes, std::string& 
 
 bool AuthManager::unmuteUser(const std::string& target, std::string& outMsg) {
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().unmuteUser(target, outMsg);
+    }
     if (!con) return false;
     try {
         std::unique_ptr<sql::PreparedStatement> pstmtCheck(con->prepareStatement("SELECT Username FROM Accounts WHERE Username = ?"));
@@ -2031,10 +2425,23 @@ bool AuthManager::unmuteUser(const std::string& target, std::string& outMsg) {
             return false;
         }
 
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("UPDATE Accounts SET muted_until = NULL WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+            "UPDATE Accounts SET muted_until = NULL, mute_reason = NULL, muted_by = NULL, mute_start = NULL WHERE Username = ?"
+        ));
         if (!pstmt) return false;
         pstmt->setString(1, target);
         pstmt->executeUpdate();
+
+        try {
+            std::unique_ptr<sql::PreparedStatement> pRec(con->prepareStatement(
+                "UPDATE mute_records SET is_active = 0 WHERE username = ?"
+            ));
+            if (pRec) {
+                pRec->setString(1, target);
+                pRec->executeUpdate();
+            }
+        } catch (...) {}
+
         outMsg = "Successfully unmuted " + target + ".";
         return true;
     }
@@ -2043,7 +2450,6 @@ bool AuthManager::unmuteUser(const std::string& target, std::string& outMsg) {
         return false;
     }
 }
-
 float AuthManager::loadMarketPrice(int itemID)
 {
     std::lock_guard<std::recursive_mutex> lock(dbMutex);

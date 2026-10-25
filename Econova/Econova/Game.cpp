@@ -69,7 +69,7 @@ const float GLOBAL_SHEAR = -0.5f;
 const int MAP_WIDTH = 50000;
 const int MAP_HEIGHT = 50000;
 
-void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTimeFlag)
+void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTimeFlag, BanInfo* outBanKick)
 {
 
     std::cout << "[DEBUG] Entering gameLoop. isFirstTime: " << isFirstTimeFlag << "\n";
@@ -325,6 +325,13 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     std::string disasterBannerMessage = "";
     std::string currentDisasterType = "diarrhea";
 
+    // Authoritative security and disaster sync state
+    BanInfo selfBanInfo;
+    MuteInfo localMuteInfo = authManager.getMuteStatus(username);
+    ActiveDisasterInfo serverDisasterInfo;
+    bool serverDisasterUpdated = false;
+
+
     // DB-scheduled disaster polling
     sf::Clock disasterPollClock;          // polls DB every 15 s
     int  activeScheduledEventID = -1;     // event_id from disaster_events currently running (-1 = none)
@@ -332,6 +339,23 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
     std::vector<StockItem> stockMarket;
     initStockMarket(stockMarket, timedLoadAllMarketPrices);
+
+    // Load initial authoritative disaster state from DB upon connect/login
+    ActiveDisasterInfo initDisaster = authManager.getActiveDisaster();
+    if (initDisaster.active && initDisaster.remainingSeconds > 0.f) {
+        disasterActive = true;
+        currentDisasterType = initDisaster.type;
+        disasterRemaining = initDisaster.remainingSeconds;
+        activeScheduledEventID = initDisaster.eventID;
+        disasterBannerTimer = 5.f;
+        if (currentDisasterType == "drought") {
+            disasterBannerMessage = "NATURAL DISASTER: Severe Drought strikes! Ponds dried up! Flora & Fauna withering!";
+            applyDroughtMarketImpact(stockMarket, authManager);
+        } else {
+            disasterBannerMessage = "NATURAL DISASTER: Acute Diarrhea strikes! Raw food is POISONOUS! Cooked food in high demand!";
+            applyDisasterFoodMarketImpact(stockMarket, authManager);
+        }
+    }
 
     std::string userRole = authManager.getUserRole(username.c_str());
     std::string lowerRole = userRole;
@@ -355,81 +379,75 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             std::string lowerArg = args;
             for (char& c : lowerArg) c = (char)::tolower((unsigned char)c);
             if (lowerArg == "diarrhea" || lowerArg == "start diarrhea") {
-                currentDisasterType = "diarrhea";
-                disasterActive = true;
-                disasterRemaining = 600.f; // 10 minutes
-                disasterBannerTimer = 7.f;
-                disasterBannerMessage = "[STAFF TRIGGER] NATURAL DISASTER: Acute Diarrhea strikes! Raw meat POISONED! Cooked food prices surging!";
-                applyDisasterFoodMarketImpact(stockMarket, authManager);
-                inventory.showBanner("[STAFF] Natural Disaster ACTIVATED! Raw food is now poisonous! (10m)");
-                feedback = "[STAFF] Acute Diarrhea Outbreak started (10 min). Raw meat is poisoned!";
-                std::cout << "[DISASTER CMD] Diarrhea activated by " << username << " (" << userRole << "). Duration: 600s\n";
+                bool ok = authManager.triggerDisaster("diarrhea", username, feedback);
+                if (ok) {
+                    currentDisasterType = "diarrhea";
+                    disasterActive = true;
+                    disasterRemaining = 600.f; // Exactly 10 minutes (600s)
+                    disasterBannerTimer = 7.f;
+                    disasterBannerMessage = "[STAFF TRIGGER] NATURAL DISASTER: Acute Diarrhea strikes! Raw meat POISONED! Cooked food prices surging!";
+                    applyDisasterFoodMarketImpact(stockMarket, authManager);
+                    inventory.showBanner("[STAFF] Acute Diarrhea Outbreak ACTIVATED! (10m)");
+                }
                 return true;
             }
             else if (lowerArg == "drought" || lowerArg == "start drought") {
-                currentDisasterType = "drought";
-                disasterActive = true;
-                disasterRemaining = 600.f; // 10 minutes
-                disasterBannerTimer = 7.f;
-                disasterBannerMessage = "[STAFF TRIGGER] NATURAL DISASTER: Severe Drought strikes! Ponds dried up! Trees & Wildlife dying! Wood & Meat prices surging!";
+                bool ok = authManager.triggerDisaster("drought", username, feedback);
+                if (ok) {
+                    currentDisasterType = "drought";
+                    disasterActive = true;
+                    disasterRemaining = 180.f; // Exactly 3 minutes (180 seconds)!
+                    disasterBannerTimer = 7.f;
+                    disasterBannerMessage = "[STAFF TRIGGER] NATURAL DISASTER: Severe Drought strikes! Ponds dried up! Trees & Wildlife dying! Wood & Meat prices surging!";
 
-                // 1. Cull 65% of trees
-                auto& items = itemManager.getItems();
-                std::vector<Item> keptItems;
-                keptItems.reserve(items.size());
-                for (auto& it : items) {
-                    if (it.id == ITEM_TREE) {
-                        if ((rand() % 100) < 65) continue; // withered away
+                    // 1. Cull 65% of trees
+                    auto& items = itemManager.getItems();
+                    std::vector<Item> keptItems;
+                    keptItems.reserve(items.size());
+                    for (auto& it : items) {
+                        if (it.id == ITEM_TREE) {
+                            if ((rand() % 100) < 65) continue;
+                        }
+                        keptItems.push_back(std::move(it));
                     }
-                    keptItems.push_back(std::move(it));
-                }
-                items = std::move(keptItems);
-                itemManager.rebuildSpatialGrid();
+                    items = std::move(keptItems);
+                    itemManager.rebuildSpatialGrid();
 
-                // 2. Cull 70% of animals
-                std::vector<std::unique_ptr<Animal>> keptAnimals;
-                keptAnimals.reserve(animals.size());
-                for (auto& a : animals) {
-                    if ((rand() % 100) < 70) continue; // perished from dehydration
-                }
-                animals = std::move(keptAnimals);
+                    // 2. Cull 70% of animals
+                    std::vector<std::unique_ptr<Animal>> keptAnimals;
+                    keptAnimals.reserve(animals.size());
+                    for (auto& a : animals) {
+                        if ((rand() % 100) < 70) continue;
+                    }
+                    animals = std::move(keptAnimals);
 
-                // 3. Apply market impact: Wood and all meat prices (raw & cooked) surge
-                applyDroughtMarketImpact(stockMarket, authManager);
-                inventory.showBanner("[STAFF] Severe Drought ACTIVATED! Ponds dried up! Wood & Meat prices surged! (10m)");
-                feedback = "[STAFF] Severe Drought Outbreak started (10 min). Ponds dried up, wood & meat prices surging!";
-                std::cout << "[DISASTER CMD] Severe Drought activated by " << username << " (" << userRole << "). Duration: 600s\n";
+                    applyDroughtMarketImpact(stockMarket, authManager);
+                    inventory.showBanner("[STAFF] Severe Drought ACTIVATED! Ponds dried up! (3m)");
+                }
                 return true;
             }
             else if (lowerArg == "stop" || lowerArg == "clear" || lowerArg == "end") {
-                if (!disasterActive) {
-                    feedback = "No natural disaster is currently active.";
-                    return true;
-                }
-                if (currentDisasterType == "drought") {
-                    restoreDroughtMarketImpact(stockMarket, authManager);
-                    inventory.showBanner("[STAFF] Severe Drought STOPPED! Ponds restored, wood & meat prices normalized.");
-                    feedback = "[STAFF] Severe Drought stopped. Ponds restored, food and wood prices normalized.";
-                }
-                else {
-                    restoreDisasterFoodMarketImpact(stockMarket, authManager);
-                    inventory.showBanner("[STAFF] Natural Disaster STOPPED! Meat prices normalized.");
-                    feedback = "[STAFF] Natural Disaster stopped. Food prices restored to normal.";
-                }
-                disasterActive = false;
-                disasterRemaining = 0.f;
-                disasterBannerTimer = 5.f;
-                disasterBannerMessage = "[STAFF TRIGGER] Natural Disaster ended manually. Environment and prices restored.";
-                std::cout << "[DISASTER CMD] Disaster '" << currentDisasterType << "' stopped manually by " << username << " (" << userRole << ").\n";
-                // If this was a DB-scheduled event, mark it completed/cancelled
-                if (activeScheduledEventID >= 0) {
-                    authManager.markDisasterCompleted(activeScheduledEventID);
+                bool ok = authManager.stopActiveDisaster(username, feedback);
+                if (ok || disasterActive) {
+                    if (currentDisasterType == "drought") {
+                        restoreDroughtMarketImpact(stockMarket, authManager);
+                        inventory.showBanner("[STAFF] Severe Drought STOPPED! Ponds restored, wood & meat prices normalized.");
+                    }
+                    else {
+                        restoreDisasterFoodMarketImpact(stockMarket, authManager);
+                        inventory.showBanner("[STAFF] Natural Disaster STOPPED! Meat prices normalized.");
+                    }
+                    disasterActive = false;
+                    disasterRemaining = 0.f;
+                    disasterBannerTimer = 5.f;
+                    disasterBannerMessage = "[STAFF TRIGGER] Natural Disaster ended manually across all players.";
+                    if (!ok) feedback = "[STAFF] Natural Disaster stopped.";
                     activeScheduledEventID = -1;
                 }
                 return true;
             }
             else {
-                feedback = "Unknown disaster: '" + args + "'. Available: diarrhea, drought, stop. (Future: blizzard)";
+                feedback = "Unknown disaster: '" + args + "'. Available: diarrhea, drought, stop.";
                 return false;
             }
         }
@@ -2297,8 +2315,78 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             p2pState,
             p2pPartner,
             p2pStatusMsg,
-            snapToGrid
+            snapToGrid,
+            &selfBanInfo,
+            &localMuteInfo,
+            &serverDisasterInfo,
+            &serverDisasterUpdated
         );
+
+        // Immediate kick if banned online
+        if (selfBanInfo.isBanned) {
+            std::cout << "[BAN KICK] Player " << username << " has been banned while online. Disconnecting immediately.\n";
+            if (outBanKick) {
+                *outBanKick = selfBanInfo;
+            }
+            break;
+        }
+
+        // Keep chat input mute status up to date
+        chatInput.setMuted(localMuteInfo.isMuted);
+
+        // Process server disaster sync
+        if (serverDisasterUpdated) {
+            serverDisasterUpdated = false;
+            if (serverDisasterInfo.active && serverDisasterInfo.remainingSeconds > 0.f) {
+                if (!disasterActive || currentDisasterType != serverDisasterInfo.type) {
+                    currentDisasterType = serverDisasterInfo.type;
+                    disasterActive = true;
+                    disasterRemaining = serverDisasterInfo.remainingSeconds;
+                    activeScheduledEventID = serverDisasterInfo.eventID;
+                    disasterBannerTimer = 7.f;
+                    if (currentDisasterType == "drought") {
+                        disasterBannerMessage = "NATURAL DISASTER: Severe Drought strikes! Ponds dried up! Flora & Fauna withering!";
+                        auto& dItems = itemManager.getItems();
+                        std::vector<Item> keptItems;
+                        keptItems.reserve(dItems.size());
+                        for (auto& it : dItems) {
+                            if (it.id == ITEM_TREE) { if ((rand() % 100) < 65) continue; }
+                            keptItems.push_back(it);
+                        }
+                        dItems = std::move(keptItems);
+                        itemManager.rebuildSpatialGrid();
+                        std::vector<std::unique_ptr<Animal>> keptAnimals;
+                        for (auto& a : animals)
+                            if ((rand() % 100) < 70) keptAnimals.push_back(std::move(a));
+                        animals = std::move(keptAnimals);
+                        applyDroughtMarketImpact(stockMarket, authManager);
+                    } else {
+                        disasterBannerMessage = "NATURAL DISASTER: Acute Diarrhea strikes! Raw food POISONOUS! Cooked food in demand!";
+                        applyDisasterFoodMarketImpact(stockMarket, authManager);
+                    }
+                    inventory.showBanner("[DISASTER] " + currentDisasterType + " activated! (" + std::to_string((int)disasterRemaining) + "s)");
+                } else {
+                    if (std::abs(disasterRemaining - serverDisasterInfo.remainingSeconds) > 2.0f) {
+                        disasterRemaining = serverDisasterInfo.remainingSeconds;
+                    }
+                }
+            } else {
+                if (disasterActive) {
+                    disasterActive = false;
+                    disasterRemaining = 0.f;
+                    disasterBannerTimer = 5.f;
+                    if (currentDisasterType == "drought") {
+                        disasterBannerMessage = "The Drought has ended. Rain has returned, ponds are refilled, and prices normalized.";
+                        restoreDroughtMarketImpact(stockMarket, authManager);
+                    } else {
+                        disasterBannerMessage = "The Diarrhea outbreak has subsided. Meat prices have returned to normal.";
+                        restoreDisasterFoodMarketImpact(stockMarket, authManager);
+                    }
+                    inventory.showBanner("Natural Disaster ended. Prices restored to normal.");
+                    activeScheduledEventID = -1;
+                }
+            }
+        }
     }
 
     // Update Stock Market Prices only when market stats or admin simulator is opened (not in background when closed)

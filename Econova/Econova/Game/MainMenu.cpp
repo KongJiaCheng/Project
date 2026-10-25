@@ -57,6 +57,40 @@ sf::RectangleShape createButton(float x, float y, float w, float h, sf::Color co
 }
 
 
+static std::string formatBanDuration(long long totalSeconds, bool isPermanent) {
+    if (isPermanent || totalSeconds < 0) {
+        return "Permanent";
+    }
+    if (totalSeconds == 0) {
+        return "Expired";
+    }
+
+    long long days = totalSeconds / 86400;
+    long long rem = totalSeconds % 86400;
+    long long hours = rem / 3600;
+    rem %= 3600;
+    long long minutes = rem / 60;
+    long long seconds = rem % 60;
+
+    std::string result;
+    if (days > 0) {
+        result += std::to_string(days) + (days == 1 ? " day" : " days");
+    }
+    if (hours > 0) {
+        if (!result.empty()) result += ", ";
+        result += std::to_string(hours) + (hours == 1 ? " hour" : " hours");
+    }
+    if (minutes > 0) {
+        if (!result.empty()) result += ", ";
+        result += std::to_string(minutes) + (minutes == 1 ? " minute" : " minutes");
+    }
+    if (seconds > 0 || result.empty()) {
+        if (!result.empty()) result += ", ";
+        result += std::to_string(seconds) + (seconds == 1 ? " second" : " seconds");
+    }
+    return result;
+}
+
 int main(int argc, char** argv) {
 #if defined(_WIN32)
     char path[MAX_PATH] = { 0 };
@@ -653,6 +687,8 @@ int main(int argc, char** argv) {
     sf::Clock           loadingCompleteClock;
     int                 loadingDotCount = 0;
     bool                loadingCompleteShown = false;
+    bool showBanModal = false;
+    BanInfo activeBanInfo;
     bool                launchGameRequested = false;
     std::string         launchGameUsername;
     bool                launchGameIsFirstTime = false;
@@ -723,6 +759,33 @@ int main(int argc, char** argv) {
 
     while (window->isOpen()) {
         while (const std::optional event = window->pollEvent()) {
+            if (showBanModal) {
+                if (const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>()) {
+                    if (mouse->button == sf::Mouse::Button::Left) {
+                        const float boxW = 540.f;
+                        const float boxH = 340.f;
+                        const float boxX = (static_cast<float>(width) - boxW) / 2.f;
+                        const float boxY = (static_cast<float>(height) - boxH) / 2.f;
+                        const float btnW = 160.f;
+                        const float btnH = 44.f;
+                        const float btnX = boxX + (boxW - btnW) / 2.f;
+                        const float btnY = boxY + boxH - 65.f;
+                        sf::FloatRect okRect({ btnX, btnY }, { btnW, btnH });
+                        sf::Vector2f mPos(static_cast<float>(mouse->position.x), static_cast<float>(mouse->position.y));
+                        if (okRect.contains(mPos)) {
+                            showBanModal = false;
+                            state = MenuState::Login;
+                        }
+                    }
+                }
+                else if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
+                    if (key->code == sf::Keyboard::Key::Escape || key->code == sf::Keyboard::Key::Enter) {
+                        showBanModal = false;
+                        state = MenuState::Login;
+                    }
+                }
+                continue;
+            }
             if (event->is<sf::Event::Closed>()) {
                 window->close();
             }
@@ -989,7 +1052,8 @@ int main(int argc, char** argv) {
                 std::ofstream f("mainmenu_transition_trace.log", std::ios::app);
                 if (f.is_open()) f << "before_gameLoop\n";
             }
-            gameLoop(*window, width, height, launchGameUsername, launchGameIsFirstTime);
+            BanInfo banKickInfo;
+            gameLoop(*window, width, height, launchGameUsername, launchGameIsFirstTime, &banKickInfo);
             {
                 std::ofstream f("mainmenu_transition_trace.log", std::ios::app);
                 if (f.is_open()) f << "after_gameLoop\n";
@@ -997,7 +1061,7 @@ int main(int argc, char** argv) {
             AuthManager::getInstance().clearPlayerChatMessages(launchGameUsername.c_str());
             AuthManager::getInstance().setPlayerOffline(launchGameUsername.c_str());
             launchGameRequested = false;
-            state = MenuState::MainMenu;
+            if (banKickInfo.isBanned) { activeBanInfo = banKickInfo; showBanModal = true; state = MenuState::Login; } else { state = MenuState::MainMenu; }
             if (menuMusicLoaded) {
                 menuMusic.setVolume(static_cast<float>(globalSettings.volume));
                 currentActiveMusic = &menuMusic;
@@ -1171,10 +1235,18 @@ int main(int argc, char** argv) {
                     loadingIsFirstTime = localResult.stats.isFirstTime;
                 }
                 else {
-                    errorMessage = localResult.errorMsg.empty()
-                        ? (isReg ? "Registration failed! Username may exist." : "Invalid Credentials!")
-                        : localResult.errorMsg;
-                    state = isReg ? MenuState::Register : MenuState::Login;
+                    BanInfo checkBanned = AuthManager::getInstance().getBanInfo(localResult.username);
+                    if (checkBanned.isBanned) {
+                        activeBanInfo = checkBanned;
+                        showBanModal = true;
+                        state = MenuState::Login;
+                    }
+                    else {
+                        errorMessage = localResult.errorMsg.empty()
+                            ? (isReg ? "Registration failed! Username may exist." : "Invalid Credentials!")
+                            : localResult.errorMsg;
+                        state = isReg ? MenuState::Register : MenuState::Login;
+                    }
                 }
             }
             else if (authClock.getElapsedTime().asSeconds() > AUTH_TIMEOUT_SECS) {
@@ -1329,6 +1401,103 @@ int main(int argc, char** argv) {
             barFg.setFillColor(loadingCompleteShown ? sf::Color(46, 204, 113) : sf::Color(52, 152, 219));
             barFg.setPosition({ barX, barY });
             window->draw(barFg);
+        }
+
+        if (showBanModal) {
+            // Dark modal backdrop
+            sf::RectangleShape overlay({ static_cast<float>(width), static_cast<float>(height) });
+            overlay.setFillColor(sf::Color(0, 0, 0, 210));
+            window->draw(overlay);
+
+            // Dialog panel
+            const float boxW = 540.f;
+            const float boxH = 340.f;
+            const float boxX = (static_cast<float>(width) - boxW) / 2.f;
+            const float boxY = (static_cast<float>(height) - boxH) / 2.f;
+
+            // Box shadow
+            sf::RectangleShape shadow({ boxW + 8.f, boxH + 8.f });
+            shadow.setPosition({ boxX - 4.f, boxY + 4.f });
+            shadow.setFillColor(sf::Color(0, 0, 0, 150));
+            window->draw(shadow);
+
+            sf::RectangleShape box({ boxW, boxH });
+            box.setPosition({ boxX, boxY });
+            box.setFillColor(sf::Color(26, 22, 22, 252));
+            box.setOutlineThickness(3.f);
+            box.setOutlineColor(sf::Color(220, 50, 50));
+            window->draw(box);
+
+            // Header bar
+            sf::RectangleShape header({ boxW, 55.f });
+            header.setPosition({ boxX, boxY });
+            header.setFillColor(sf::Color(75, 20, 20));
+            window->draw(header);
+
+            sf::RectangleShape divH({ boxW, 2.f });
+            divH.setPosition({ boxX, boxY + 55.f });
+            divH.setFillColor(sf::Color(220, 50, 50));
+            window->draw(divH);
+
+            // Title: "You Have Been Banned"
+            sf::Text title(font, "You Have Been Banned", 24);
+            title.setStyle(sf::Text::Bold);
+            title.setFillColor(sf::Color(255, 80, 80));
+            auto tb = title.getLocalBounds();
+            title.setPosition({ boxX + (boxW - tb.size.x) / 2.f, boxY + 12.f });
+            window->draw(title);
+
+            // Reason
+            sf::Text reasonLbl(font, "Reason:", 16);
+            reasonLbl.setStyle(sf::Text::Bold);
+            reasonLbl.setFillColor(sf::Color(240, 200, 100));
+            reasonLbl.setPosition({ boxX + 40.f, boxY + 80.f });
+            window->draw(reasonLbl);
+
+            std::string reasonText = activeBanInfo.reason.empty() ? "Violation of Community Guidelines" : activeBanInfo.reason;
+            sf::Text reasonVal(font, reasonText, 16);
+            reasonVal.setFillColor(sf::Color::White);
+            reasonVal.setPosition({ boxX + 40.f, boxY + 108.f });
+            window->draw(reasonVal);
+
+            // Remaining ban duration
+            sf::Text durLbl(font, "Ban Duration Remaining:", 16);
+            durLbl.setStyle(sf::Text::Bold);
+            durLbl.setFillColor(sf::Color(240, 200, 100));
+            durLbl.setPosition({ boxX + 40.f, boxY + 155.f });
+            window->draw(durLbl);
+
+            std::string durStr = formatBanDuration(activeBanInfo.remainingSeconds, activeBanInfo.isPermanent);
+            sf::Text durVal(font, durStr, 18);
+            durVal.setStyle(sf::Text::Bold);
+            durVal.setFillColor(sf::Color(255, 215, 0));
+            durVal.setPosition({ boxX + 40.f, boxY + 185.f });
+            window->draw(durVal);
+
+            // OK Button
+            const float btnW = 160.f;
+            const float btnH = 44.f;
+            const float btnX = boxX + (boxW - btnW) / 2.f;
+            const float btnY = boxY + boxH - 65.f;
+            sf::FloatRect okRect({ btnX, btnY }, { btnW, btnH });
+
+            sf::Vector2i mousePixel = sf::Mouse::getPosition(*window);
+            sf::Vector2f mousePos(static_cast<float>(mousePixel.x), static_cast<float>(mousePixel.y));
+            bool okHover = okRect.contains(mousePos);
+
+            sf::RectangleShape okBtn({ btnW, btnH });
+            okBtn.setPosition({ btnX, btnY });
+            okBtn.setFillColor(okHover ? sf::Color(210, 50, 50) : sf::Color(160, 35, 35));
+            okBtn.setOutlineThickness(2.f);
+            okBtn.setOutlineColor(okHover ? sf::Color(255, 140, 140) : sf::Color(220, 60, 60));
+            window->draw(okBtn);
+
+            sf::Text okTxt(font, "OK", 18);
+            okTxt.setStyle(sf::Text::Bold);
+            okTxt.setFillColor(sf::Color::White);
+            auto ob = okTxt.getLocalBounds();
+            okTxt.setPosition({ btnX + (btnW - ob.size.x) / 2.f, btnY + (btnH - ob.size.y) / 2.f - 4.f });
+            window->draw(okTxt);
         }
 
         drawBrightnessOverlay(*window, width, height, static_cast<float>(globalSettings.brightness));

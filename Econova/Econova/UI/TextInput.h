@@ -14,6 +14,8 @@ public:
     void clear();
     void setText(const std::string& text);
     void setPosition(sf::Vector2f position);
+    void setMuted(bool muted);
+    bool isMuted() const;
 
 private:
     sf::RectangleShape background;
@@ -21,4 +23,5 @@ private:
     std::string inputString;
     bool focused;
     bool isPasswordBox;
+    bool isMutedBox = false;
 };

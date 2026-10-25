@@ -4,6 +4,7 @@
 #include <map>
 #include <mutex>
 #include "sqlite3.h"
+#include "AuthManager.h"
 
 struct PlayerStats;
 struct StoredStructure;
@@ -66,6 +67,17 @@ public:
 
     // World Seed
     int getOrCreateWorldSeed();
+
+    // Ban & Mute & Disasters
+    BanInfo getBanInfo(const std::string& username);
+    MuteInfo getMuteStatus(const std::string& username);
+    ActiveDisasterInfo getActiveDisaster();
+    bool triggerDisaster(const std::string& type, const std::string& triggeredBy, std::string& outMsg);
+    bool stopActiveDisaster(const std::string& triggeredBy, std::string& outMsg);
+    bool banUser(const std::string& target, const std::string& durationStr, std::string& outMsg, const std::string& reason = "Violation of Community Guidelines", const std::string& adminUser = "admin");
+    bool unbanUser(const std::string& target, std::string& outMsg);
+    bool muteUser(const std::string& target, int minutes, std::string& outMsg, const std::string& reason = "Violation of Community Guidelines", const std::string& adminUser = "admin");
+    bool unmuteUser(const std::string& target, std::string& outMsg);
 
     // Scheduled Disasters
     int scheduleDisaster(const std::string& type, long long scheduledAtEpoch, int durationSeconds, const std::string& createdBy);

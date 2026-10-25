@@ -197,6 +197,26 @@ void SQLiteManager::createTables() {
         "created_by TEXT DEFAULT ''"
         ");"
 
+                "CREATE TABLE IF NOT EXISTS ban_records ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "username TEXT COLLATE NOCASE, "
+        "banned_by TEXT, "
+        "ban_start TEXT DEFAULT CURRENT_TIMESTAMP, "
+        "ban_end TEXT, "
+        "reason TEXT, "
+        "is_active INTEGER DEFAULT 1"
+        ");"
+
+        "CREATE TABLE IF NOT EXISTS mute_records ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "username TEXT COLLATE NOCASE, "
+        "muted_by TEXT, "
+        "mute_start TEXT DEFAULT CURRENT_TIMESTAMP, "
+        "mute_end TEXT, "
+        "reason TEXT, "
+        "is_active INTEGER DEFAULT 1"
+        ");"
+
         "CREATE TABLE IF NOT EXISTS WorldSeed ("
         "id INTEGER PRIMARY KEY CHECK (id = 1), "
         "seed INTEGER NOT NULL"
@@ -208,6 +228,15 @@ void SQLiteManager::createTables() {
         std::cerr << "[SQLITE SCHEMA ERROR] " << (errMsg ? errMsg : "Unknown error") << "\n";
         if (errMsg) sqlite3_free(errMsg);
     }
+
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN ban_reason TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN banned_by TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN ban_start TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN mute_reason TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN muted_by TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE Accounts ADD COLUMN mute_start TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE scheduled_disasters ADD COLUMN activated_at INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE scheduled_disasters ADD COLUMN end_time INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
 }
 
 bool SQLiteManager::registerUser(const std::string& username, const std::string& hashedPassword, const std::string& email, const std::string& role) {
@@ -235,7 +264,10 @@ bool SQLiteManager::loginUser(const std::string& username, const std::string& pl
     }
 
     sqlite3_stmt* rawStmt = nullptr;
-    const char* sql = "SELECT Password, roles, banned_until FROM Accounts WHERE Username = ?";
+    const char* sql = "SELECT Password, roles, banned_until, ban_reason, "
+                      "CASE WHEN banned_until IS NOT NULL AND (banned_until LIKE '9999%' OR strftime('%s', banned_until) > strftime('%s', 'now')) THEN 1 ELSE 0 END AS is_banned, "
+                      "CASE WHEN banned_until LIKE '9999%' THEN 315360000 ELSE (strftime('%s', banned_until) - strftime('%s', 'now')) END AS rem_sec "
+                      "FROM Accounts WHERE Username = ?";
     if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
         errMessage = "Query preparation failed.";
         return false;
@@ -251,6 +283,19 @@ bool SQLiteManager::loginUser(const std::string& username, const std::string& pl
 
         if (!verifySQLitePassword(plainPassword, storedHash)) {
             errMessage = "Invalid Credentials!";
+            return false;
+        }
+
+        int isBanned = sqlite3_column_int(stmt.get(), 4);
+        long long remSec = sqlite3_column_int64(stmt.get(), 5);
+        if (isBanned == 1 && remSec > 0) {
+            const unsigned char* bUntil = sqlite3_column_text(stmt.get(), 2);
+            std::string bStr = bUntil ? reinterpret_cast<const char*>(bUntil) : "";
+            if (bStr.find("9999") == 0) {
+                errMessage = "You are permanently banned!";
+            } else {
+                errMessage = "You are banned until: " + bStr;
+            }
             return false;
         }
         return true;
@@ -1022,4 +1067,385 @@ void SQLiteManager::clearPlayerData(const std::string& username) {
         sqlite3_finalize(rst);
     }
     std::cout << "[DEATH] Cleared all data for player: " << username << "\n";
+}
+
+// =========================================================
+// BAN, MUTE & DISASTER IMPLEMENTATIONS
+// =========================================================
+
+BanInfo SQLiteManager::getBanInfo(const std::string& username) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    BanInfo info;
+    if (!db) return info;
+
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql =
+        "SELECT (CASE WHEN banned_until IS NOT NULL AND (banned_until LIKE '9999%' OR strftime('%s', banned_until) > strftime('%s', 'now')) THEN 1 ELSE 0 END) AS is_banned, "
+        "(CASE WHEN banned_until LIKE '9999%' THEN 315360000 ELSE (strftime('%s', banned_until) - strftime('%s', 'now')) END) AS rem_sec, "
+        "banned_until, ban_reason, banned_by "
+        "FROM Accounts WHERE Username = ?";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return info;
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_text(stmt.get(), 1, username.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        if (sqlite3_column_int(stmt.get(), 0) == 1) {
+            info.isBanned = true;
+            info.remainingSeconds = sqlite3_column_int64(stmt.get(), 1);
+            const unsigned char* bd = sqlite3_column_text(stmt.get(), 2);
+            info.banDate = bd ? reinterpret_cast<const char*>(bd) : "";
+            const unsigned char* br = sqlite3_column_text(stmt.get(), 3);
+            info.reason = br ? reinterpret_cast<const char*>(br) : "Violation of Community Guidelines";
+            const unsigned char* bb = sqlite3_column_text(stmt.get(), 4);
+            info.bannedBy = bb ? reinterpret_cast<const char*>(bb) : "admin";
+            info.isPermanent = (info.banDate.find("9999") == 0);
+        }
+    }
+    return info;
+}
+
+MuteInfo SQLiteManager::getMuteStatus(const std::string& username) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    MuteInfo info;
+    if (!db) return info;
+
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql =
+        "SELECT (CASE WHEN muted_until IS NOT NULL AND strftime('%s', muted_until) > strftime('%s', 'now') THEN 1 ELSE 0 END) AS is_muted, "
+        "(strftime('%s', muted_until) - strftime('%s', 'now')) AS rem_sec, "
+        "muted_until, mute_reason, muted_by "
+        "FROM Accounts WHERE Username = ?";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return info;
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_text(stmt.get(), 1, username.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        if (sqlite3_column_int(stmt.get(), 0) == 1) {
+            info.isMuted = true;
+            info.remainingSeconds = sqlite3_column_int64(stmt.get(), 1);
+            const unsigned char* md = sqlite3_column_text(stmt.get(), 2);
+            info.muteDate = md ? reinterpret_cast<const char*>(md) : "";
+            const unsigned char* mr = sqlite3_column_text(stmt.get(), 3);
+            info.reason = mr ? reinterpret_cast<const char*>(mr) : "Violation of Community Guidelines";
+            const unsigned char* mb = sqlite3_column_text(stmt.get(), 4);
+            info.mutedBy = mb ? reinterpret_cast<const char*>(mb) : "admin";
+        }
+    }
+    return info;
+}
+
+ActiveDisasterInfo SQLiteManager::getActiveDisaster() {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    ActiveDisasterInfo info;
+    if (!db) return info;
+
+    long long now = (long long)std::time(nullptr);
+    // 1. Auto-complete expired active disasters
+    {
+        sqlite3_stmt* stmtExp = nullptr;
+        if (sqlite3_prepare_v2(db, "UPDATE scheduled_disasters SET status = 'COMPLETED' WHERE status = 'ACTIVE' AND end_time IS NOT NULL AND end_time <= ?", -1, &stmtExp, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int64(stmtExp, 1, now);
+            sqlite3_step(stmtExp);
+            sqlite3_finalize(stmtExp);
+        }
+    }
+
+    // 2. Query authoritative active disaster
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql =
+        "SELECT id, disaster_type, duration_seconds, (end_time - ?), created_by "
+        "FROM scheduled_disasters "
+        "WHERE status = 'ACTIVE' AND end_time > ? "
+        "ORDER BY id DESC LIMIT 1";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) == SQLITE_OK) {
+        StmtGuard stmt(rawStmt);
+        sqlite3_bind_int64(stmt.get(), 1, now);
+        sqlite3_bind_int64(stmt.get(), 2, now);
+        if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+            long long rem = sqlite3_column_int64(stmt.get(), 3);
+            if (rem > 0) {
+                info.active = true;
+                info.eventID = sqlite3_column_int(stmt.get(), 0);
+                const unsigned char* t = sqlite3_column_text(stmt.get(), 1);
+                info.type = t ? reinterpret_cast<const char*>(t) : "";
+                info.totalDuration = sqlite3_column_int(stmt.get(), 2);
+                info.remainingSeconds = static_cast<float>(rem);
+                const unsigned char* c = sqlite3_column_text(stmt.get(), 4);
+                info.createdBy = c ? reinterpret_cast<const char*>(c) : "";
+            }
+        }
+    }
+    return info;
+}
+
+bool SQLiteManager::triggerDisaster(const std::string& type, const std::string& triggeredBy, std::string& outMsg) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) {
+        outMsg = "Database error.";
+        return false;
+    }
+
+    std::string lowerType = type;
+    for (char& c : lowerType) c = (char)::tolower((unsigned char)c);
+    int durationSec = 600;
+    if (lowerType == "diarrhea") {
+        durationSec = 600;
+    } else if (lowerType == "drought") {
+        durationSec = 180;
+    } else {
+        outMsg = "Unknown disaster: '" + type + "'. Available: diarrhea, drought, stop.";
+        return false;
+    }
+
+    ActiveDisasterInfo current = getActiveDisaster();
+    if (current.active && current.remainingSeconds > 0.f) {
+        outMsg = "Cannot trigger disaster: An active disaster ('" + current.type + "') is already in progress with " +
+                 std::to_string((int)current.remainingSeconds) + "s remaining. Use /disaster stop first.";
+        return false;
+    }
+
+    long long now = (long long)std::time(nullptr);
+    long long endTime = now + durationSec;
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql =
+        "INSERT INTO scheduled_disasters (disaster_type, scheduled_time, duration_seconds, status, created_by, activated_at, end_time) "
+        "VALUES (?, ?, ?, 'ACTIVE', ?, ?, ?)";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) {
+        outMsg = "Failed to prepare disaster statement.";
+        return false;
+    }
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_text(stmt.get(), 1, lowerType.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 2, now);
+    sqlite3_bind_int(stmt.get(), 3, durationSec);
+    sqlite3_bind_text(stmt.get(), 4, triggeredBy.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 5, now);
+    sqlite3_bind_int64(stmt.get(), 6, endTime);
+
+    if (sqlite3_step(stmt.get()) == SQLITE_DONE) {
+        std::string durStr = (durationSec == 600) ? "10m (600s)" : "3m (180s)";
+        outMsg = "[STAFF] " + ((lowerType == "drought") ? std::string("Severe Drought") : std::string("Acute Diarrhea")) +
+                 " disaster activated across all players! Duration: " + durStr + ".";
+        return true;
+    }
+    outMsg = "Database insert error.";
+    return false;
+}
+
+bool SQLiteManager::stopActiveDisaster(const std::string& triggeredBy, std::string& outMsg) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) {
+        outMsg = "Database error.";
+        return false;
+    }
+
+    ActiveDisasterInfo current = getActiveDisaster();
+    if (!current.active) {
+        outMsg = "No natural disaster is currently active.";
+        return false;
+    }
+
+    sqlite3_stmt* rawStmt = nullptr;
+    if (sqlite3_prepare_v2(db, "UPDATE scheduled_disasters SET status = 'COMPLETED' WHERE status = 'ACTIVE'", -1, &rawStmt, nullptr) == SQLITE_OK) {
+        StmtGuard stmt(rawStmt);
+        sqlite3_step(stmt.get());
+    }
+    outMsg = "[STAFF] Natural Disaster stopped manually across all players. Environment and prices restored.";
+    return true;
+}
+
+bool SQLiteManager::banUser(const std::string& target, const std::string& durationStr, std::string& outMsg, const std::string& reason, const std::string& adminUser) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) {
+        outMsg = "Database not open.";
+        return false;
+    }
+
+    // Check user exists
+    {
+        sqlite3_stmt* chk = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT Username FROM Accounts WHERE Username = ?", -1, &chk, nullptr) != SQLITE_OK) return false;
+        StmtGuard stmt(chk);
+        sqlite3_bind_text(stmt.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt.get()) != SQLITE_ROW) {
+            outMsg = "Error: User '" + target + "' does not exist.";
+            return false;
+        }
+    }
+
+    int days = 0;
+    bool isPerm = false;
+    if (durationStr == "3") days = 3;
+    else if (durationStr == "7") days = 7;
+    else if (durationStr == "14") days = 14;
+    else if (durationStr == "30") days = 30;
+    else if (durationStr == "perm" || durationStr == "permanent") isPerm = true;
+    else {
+        outMsg = "Error: Invalid duration. Use 3, 7, 14, 30, or perm.";
+        return false;
+    }
+
+    std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+    std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
+
+    if (isPerm) {
+        sqlite3_stmt* rawStmt = nullptr;
+        const char* sql = "UPDATE Accounts SET banned_until = '9999-12-31 23:59:59', ban_reason = ?, banned_by = ?, ban_start = datetime('now') WHERE Username = ?";
+        if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
+        StmtGuard stmt(rawStmt);
+        sqlite3_bind_text(stmt.get(), 1, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 3, target.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt.get());
+
+        sqlite3_stmt* pRec = nullptr;
+        if (sqlite3_prepare_v2(db, "INSERT INTO ban_records (username, banned_by, ban_start, ban_end, reason, is_active) VALUES (?, ?, datetime('now'), '9999-12-31 23:59:59', ?, 1)", -1, &pRec, nullptr) == SQLITE_OK) {
+            StmtGuard sRec(pRec);
+            sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(sRec.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(sRec.get(), 3, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(sRec.get());
+        }
+
+        outMsg = "Successfully permanently banned " + target + ". Reason: " + finalReason;
+    } else {
+        sqlite3_stmt* rawStmt = nullptr;
+        std::string durExpr = "+" + std::to_string(days) + " days";
+        const char* sql = "UPDATE Accounts SET banned_until = datetime('now', ?), ban_reason = ?, banned_by = ?, ban_start = datetime('now') WHERE Username = ?";
+        if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
+        StmtGuard stmt(rawStmt);
+        sqlite3_bind_text(stmt.get(), 1, durExpr.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 2, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 3, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 4, target.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt.get());
+
+        sqlite3_stmt* pRec = nullptr;
+        if (sqlite3_prepare_v2(db, "INSERT INTO ban_records (username, banned_by, ban_start, ban_end, reason, is_active) VALUES (?, ?, datetime('now'), datetime('now', ?), ?, 1)", -1, &pRec, nullptr) == SQLITE_OK) {
+            StmtGuard sRec(pRec);
+            sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(sRec.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(sRec.get(), 3, durExpr.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(sRec.get(), 4, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(sRec.get());
+        }
+
+        outMsg = "Successfully banned " + target + " for " + durationStr + " days. Reason: " + finalReason;
+    }
+    return true;
+}
+
+bool SQLiteManager::unbanUser(const std::string& target, std::string& outMsg) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) return false;
+
+    // Check user exists
+    {
+        sqlite3_stmt* chk = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT Username FROM Accounts WHERE Username = ?", -1, &chk, nullptr) != SQLITE_OK) return false;
+        StmtGuard stmt(chk);
+        sqlite3_bind_text(stmt.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt.get()) != SQLITE_ROW) {
+            outMsg = "Error: User '" + target + "' does not exist.";
+            return false;
+        }
+    }
+
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql = "UPDATE Accounts SET banned_until = NULL, ban_reason = NULL, banned_by = NULL, ban_start = NULL WHERE Username = ?";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_text(stmt.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt.get());
+
+    sqlite3_stmt* pRec = nullptr;
+    if (sqlite3_prepare_v2(db, "UPDATE ban_records SET is_active = 0 WHERE username = ?", -1, &pRec, nullptr) == SQLITE_OK) {
+        StmtGuard sRec(pRec);
+        sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(sRec.get());
+    }
+
+    outMsg = "Successfully unbanned " + target + ".";
+    return true;
+}
+
+bool SQLiteManager::muteUser(const std::string& target, int minutes, std::string& outMsg, const std::string& reason, const std::string& adminUser) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) return false;
+
+    // Check user exists
+    {
+        sqlite3_stmt* chk = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT Username FROM Accounts WHERE Username = ?", -1, &chk, nullptr) != SQLITE_OK) return false;
+        StmtGuard stmt(chk);
+        sqlite3_bind_text(stmt.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt.get()) != SQLITE_ROW) {
+            outMsg = "Error: User '" + target + "' does not exist.";
+            return false;
+        }
+    }
+
+    std::string finalReason = reason.empty() ? "Violation of Community Guidelines" : reason;
+    std::string finalAdmin = adminUser.empty() ? "admin" : adminUser;
+    std::string durExpr = "+" + std::to_string(minutes) + " minutes";
+
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql = "UPDATE Accounts SET muted_until = datetime('now', ?), mute_reason = ?, muted_by = ?, mute_start = datetime('now') WHERE Username = ?";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_text(stmt.get(), 1, durExpr.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 4, target.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt.get());
+
+    sqlite3_stmt* pRec = nullptr;
+    if (sqlite3_prepare_v2(db, "INSERT INTO mute_records (username, muted_by, mute_start, mute_end, reason, is_active) VALUES (?, ?, datetime('now'), datetime('now', ?), ?, 1)", -1, &pRec, nullptr) == SQLITE_OK) {
+        StmtGuard sRec(pRec);
+        sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(sRec.get(), 2, finalAdmin.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(sRec.get(), 3, durExpr.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(sRec.get(), 4, finalReason.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(sRec.get());
+    }
+
+    outMsg = "Successfully muted " + target + " for " + std::to_string(minutes) + " minutes. Reason: " + finalReason;
+    return true;
+}
+
+bool SQLiteManager::unmuteUser(const std::string& target, std::string& outMsg) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) return false;
+
+    // Check user exists
+    {
+        sqlite3_stmt* chk = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT Username FROM Accounts WHERE Username = ?", -1, &chk, nullptr) != SQLITE_OK) return false;
+        StmtGuard stmt(chk);
+        sqlite3_bind_text(stmt.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt.get()) != SQLITE_ROW) {
+            outMsg = "Error: User '" + target + "' does not exist.";
+            return false;
+        }
+    }
+
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql = "UPDATE Accounts SET muted_until = NULL, mute_reason = NULL, muted_by = NULL, mute_start = NULL WHERE Username = ?";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_text(stmt.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt.get());
+
+    sqlite3_stmt* pRec = nullptr;
+    if (sqlite3_prepare_v2(db, "UPDATE mute_records SET is_active = 0 WHERE username = ?", -1, &pRec, nullptr) == SQLITE_OK) {
+        StmtGuard sRec(pRec);
+        sqlite3_bind_text(sRec.get(), 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(sRec.get());
+    }
+
+    outMsg = "Successfully unmuted " + target + ".";
+    return true;
 }

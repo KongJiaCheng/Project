@@ -29,6 +29,11 @@ struct SyncResult {
     std::vector<StoredStructure> otherStructures;
     std::vector<StoredCampfire>  otherCampfires;
     bool structuresUpdated = false;
+    // Security & Disaster sync fields
+    BanInfo selfBanInfo;
+    MuteInfo selfMuteInfo;
+    ActiveDisasterInfo disasterInfo;
+    bool disasterSyncUpdated = false;
 };
 
 #include <map>
@@ -73,7 +78,11 @@ void syncAndRenderOnlinePlayers(
     P2PTradeState& p2pState,
     std::string& p2pPartner,
     std::string& p2pStatusMsg,
-    std::function<sf::Vector2f(sf::Vector2f)> snapGridFunc
+    std::function<sf::Vector2f(sf::Vector2f)> snapGridFunc,
+    BanInfo* selfBanInfo = nullptr,
+    MuteInfo* selfMuteInfo = nullptr,
+    ActiveDisasterInfo* serverDisasterInfo = nullptr,
+    bool* serverDisasterUpdated = nullptr
 );
 
 #include "Inventory.h"

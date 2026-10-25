@@ -2,7 +2,7 @@
 #include <cstdint>
 
 TextInput::TextInput(sf::Font& font, sf::Vector2f position, sf::Vector2f size, bool isPassword) 
-    : textDisplay(font), focused(false), isPasswordBox(isPassword) {
+    : textDisplay(font), focused(false), isPasswordBox(isPassword), isMutedBox(false) {
     background.setPosition(position);
     background.setSize(size);
     background.setFillColor(sf::Color::White);
@@ -31,7 +31,13 @@ void TextInput::processEvent(const sf::Event& event, const sf::Vector2f& mousePo
             if (unicode == 8 && !inputString.empty()) { // Backspace
                 inputString.pop_back();
             } else if (unicode >= 32 && unicode < 128) { // Printable characters
-                inputString += static_cast<char>(unicode);
+                if (isMutedBox) {
+                    static const char GIBBERISH_POOL[] = "mfmfmfmfmmfmmmf";
+                    char gib = GIBBERISH_POOL[inputString.length() % (sizeof(GIBBERISH_POOL) - 1)];
+                    inputString += gib;
+                } else {
+                    inputString += static_cast<char>(unicode);
+                }
             }
             
             std::string displayStr = isPasswordBox ? std::string(inputString.length(), '*') : inputString;
@@ -72,4 +78,12 @@ void TextInput::setText(const std::string& text) {
 void TextInput::setPosition(sf::Vector2f position) {
     background.setPosition(position);
     textDisplay.setPosition({ position.x + 5.f, position.y + (background.getSize().y - textDisplay.getCharacterSize()) / 2.f - 5.f });
+}
+
+void TextInput::setMuted(bool muted) {
+    isMutedBox = muted;
+}
+
+bool TextInput::isMuted() const {
+    return isMutedBox;
 }

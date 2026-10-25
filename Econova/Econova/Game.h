@@ -2,7 +2,8 @@
 #include <SFML/Graphics.hpp>
 #include <string>
 
-void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTime);
+#include "Networking/AuthManager.h"
+void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTime, BanInfo* outBanKick = nullptr);
 
 // Slanted rhombus grid: e1=(500,0) horizontal, e2=(250,-250) at 45° up-right
 // World position for cell (gx,gy): x = gx*500 + gy*250, y = -gy*250

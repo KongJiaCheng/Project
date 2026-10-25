@@ -202,12 +202,17 @@ void syncAndRenderOnlinePlayers(
     P2PTradeState& p2pState,
     std::string& p2pPartner,
     std::string& p2pStatusMsg,
-    std::function<sf::Vector2f(sf::Vector2f)> snapGridFunc
+    std::function<sf::Vector2f(sf::Vector2f)> snapGridFunc,
+    BanInfo* selfBanInfo,
+    MuteInfo* selfMuteInfo,
+    ActiveDisasterInfo* serverDisasterInfo,
+    bool* serverDisasterUpdated
 ) {
     if (!dbStartupEnabled) return;
 
     static sf::Clock syncClock;
     if (!syncInFlight && syncClock.getElapsedTime().asSeconds() > 0.4f) {
+        syncClock.restart();
         syncInFlight = true;
 
         float px = sprite.getPosition().x;
@@ -269,6 +274,17 @@ void syncAndRenderOnlinePlayers(
             if (syncFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
                 SyncResult res = syncFuture.get();
                 otherPlayers = res.players;
+
+                if (selfBanInfo && res.selfBanInfo.isBanned) {
+                    *selfBanInfo = res.selfBanInfo;
+                }
+                if (selfMuteInfo && (res.selfMuteInfo.isMuted || selfMuteInfo->isMuted)) {
+                    *selfMuteInfo = res.selfMuteInfo;
+                }
+                if (serverDisasterInfo && res.disasterSyncUpdated) {
+                    *serverDisasterInfo = res.disasterInfo;
+                    if (serverDisasterUpdated) *serverDisasterUpdated = true;
+                }
 
                 if (res.serverEpoch > 0) serverEpochCache = res.serverEpoch;
 
