@@ -351,32 +351,14 @@ bool handleQuantityPromptEvent(
         return true;
     };
 
-    const float boxW = 480.f;
-    const float boxH = 260.f;
+    const float boxW = 420.f;
+    const float boxH = 200.f;
     const float boxX = (1920.f - boxW) / 2.f;
     const float boxY = (1080.f - boxH) / 2.f;
 
-    const float minusW = 44.f, minusH = 38.f;
-    const float minusX = boxX + 30.f, inputY = boxY + 84.f;
-    sf::FloatRect minusRect({ minusX, inputY }, { minusW, minusH });
-
-    const float inputW = boxW - 60.f - (minusW * 2.f) - 16.f;
-    const float inputX = minusX + minusW + 8.f;
-    sf::FloatRect inputRect({ inputX, inputY }, { inputW, minusH });
-
-    const float plusX = inputX + inputW + 8.f;
-    sf::FloatRect plusRect({ plusX, inputY }, { minusW, minusH });
-
-    const float preY = boxY + 132.f;
-    const float preW = (boxW - 60.f - 16.f) / 3.f;
-    const float preH = 32.f;
-    sf::FloatRect btn1Rect({ boxX + 30.f, preY }, { preW, preH });
-    sf::FloatRect btnHRect({ boxX + 30.f + preW + 8.f, preY }, { preW, preH });
-    sf::FloatRect btnARect({ boxX + 30.f + (preW + 8.f) * 2.f, preY }, { preW, preH });
-
-    const float actY = boxY + 180.f;
+    const float actY = boxY + 134.f;
     const float actW = (boxW - 60.f - 16.f) / 2.f;
-    const float actH = 42.f;
+    const float actH = 40.f;
     sf::FloatRect confirmBtnRect({ boxX + 30.f, actY }, { actW, actH });
     sf::FloatRect cancelBtnRect({ boxX + 30.f + actW + 16.f, actY }, { actW, actH });
 
@@ -413,22 +395,6 @@ bool handleQuantityPromptEvent(
             keyEvent->scancode == sf::Keyboard::Scancode::Enter) {
             return applyQuantityConfirm();
         }
-        if (keyEvent->code == sf::Keyboard::Key::Up ||
-            keyEvent->scancode == sf::Keyboard::Scancode::Up) {
-            int cur = 1;
-            try { cur = std::stoi(quantityInput.getText()); } catch (...) { cur = 1; }
-            cur = std::min(quantityPromptMax > 0 ? quantityPromptMax : 99, cur + 1);
-            quantityInput.setText(std::to_string(cur));
-            return true;
-        }
-        if (keyEvent->code == sf::Keyboard::Key::Down ||
-            keyEvent->scancode == sf::Keyboard::Scancode::Down) {
-            int cur = 1;
-            try { cur = std::stoi(quantityInput.getText()); } catch (...) { cur = 1; }
-            cur = std::max(1, cur - 1);
-            quantityInput.setText(std::to_string(cur));
-            return true;
-        }
         // Consume keys while modal prompt is open
         return true;
     }
@@ -436,43 +402,6 @@ bool handleQuantityPromptEvent(
     if (auto* mouseButtonEvent = event.getIf<sf::Event::MouseButtonPressed>()) {
         if (mouseButtonEvent->button == sf::Mouse::Button::Left) {
             sf::Vector2f uiPos = window.mapPixelToCoords(mouseButtonEvent->position, GetUIView(&window));
-
-            // Decrement button [-]
-            if (minusRect.contains(uiPos)) {
-                int cur = 1;
-                try { cur = std::stoi(quantityInput.getText()); } catch (...) { cur = 1; }
-                cur = std::max(1, cur - 1);
-                quantityInput.setText(std::to_string(cur));
-                return true;
-            }
-
-            // Increment button [+]
-            if (plusRect.contains(uiPos)) {
-                int cur = 1;
-                try { cur = std::stoi(quantityInput.getText()); } catch (...) { cur = 1; }
-                cur = std::min(quantityPromptMax > 0 ? quantityPromptMax : 99, cur + 1);
-                quantityInput.setText(std::to_string(cur));
-                return true;
-            }
-
-            // Quick preset [ 1 ]
-            if (btn1Rect.contains(uiPos)) {
-                quantityInput.setText("1");
-                return true;
-            }
-
-            // Quick preset [ Half ]
-            if (btnHRect.contains(uiPos)) {
-                int halfVal = std::max(1, quantityPromptMax / 2);
-                quantityInput.setText(std::to_string(halfVal));
-                return true;
-            }
-
-            // Quick preset [ All ]
-            if (btnARect.contains(uiPos)) {
-                quantityInput.setText(std::to_string(quantityPromptMax));
-                return true;
-            }
 
             // Confirm button
             if (confirmBtnRect.contains(uiPos)) {

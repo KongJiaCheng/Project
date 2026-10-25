@@ -877,8 +877,8 @@ void drawQuantityPrompt(
     backdrop.setFillColor(sf::Color(0, 0, 0, 160));
     window.draw(backdrop);
 
-    const float boxW = 480.f;
-    const float boxH = 260.f;
+    const float boxW = 420.f;
+    const float boxH = 200.f;
     const float boxX = (uiW - boxW) / 2.f;
     const float boxY = (uiH - boxH) / 2.f;
 
@@ -897,16 +897,16 @@ void drawQuantityPrompt(
     window.draw(qBox);
 
     // Header bar
-    sf::RectangleShape header({ boxW, 44.f });
+    sf::RectangleShape header({ boxW, 40.f });
     header.setPosition({ boxX, boxY });
     header.setFillColor(isRetrieve ? sf::Color(65, 45, 15) : sf::Color(15, 55, 65));
     window.draw(header);
 
-    sf::Text qTitle(uiFont, isRetrieve ? "RETRIEVE QUANTITY" : "STORE / PLACE QUANTITY", 18);
+    sf::Text qTitle(uiFont, isRetrieve ? "RETRIEVE QUANTITY" : "STORE / PLACE QUANTITY", 17);
     qTitle.setStyle(sf::Text::Bold);
     qTitle.setFillColor(isRetrieve ? sf::Color(255, 205, 80) : sf::Color(0, 242, 254));
     auto tb = qTitle.getLocalBounds();
-    qTitle.setPosition({ boxX + (boxW - tb.size.x) / 2.f, boxY + 10.f });
+    qTitle.setPosition({ boxX + (boxW - tb.size.x) / 2.f, boxY + 8.f });
     window.draw(qTitle);
 
     // Context label
@@ -926,111 +926,23 @@ void drawQuantityPrompt(
     }
     sf::Text qLabel(uiFont, labelText + " (Max: " + std::to_string(maxAmount) + "):", 13);
     qLabel.setFillColor(sf::Color(210, 215, 225));
-    qLabel.setPosition({ boxX + 30.f, boxY + 56.f });
+    qLabel.setPosition({ boxX + 30.f, boxY + 52.f });
     window.draw(qLabel);
 
     sf::Vector2f mousePos = window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window));
 
-    // [-] Decrement button
-    const float minusW = 44.f, minusH = 38.f;
-    const float minusX = boxX + 30.f, inputY = boxY + 84.f;
-    sf::FloatRect minusRect({ minusX, inputY }, { minusW, minusH });
-    bool minusHov = minusRect.contains(mousePos);
-    sf::RectangleShape minusBtn({ minusW, minusH });
-    minusBtn.setPosition({ minusX, inputY });
-    minusBtn.setFillColor(minusHov ? sf::Color(65, 75, 95) : sf::Color(42, 48, 62));
-    minusBtn.setOutlineThickness(1.5f);
-    minusBtn.setOutlineColor(sf::Color(100, 115, 140));
-    window.draw(minusBtn);
-    sf::Text minusTxt(uiFont, "-", 20);
-    minusTxt.setStyle(sf::Text::Bold);
-    minusTxt.setFillColor(sf::Color::White);
-    auto mb = minusTxt.getLocalBounds();
-    minusTxt.setPosition({ minusX + (minusW - mb.size.x) / 2.f, inputY + (minusH - mb.size.y) / 2.f - 4.f });
-    window.draw(minusTxt);
-
-    // Text Input box (centered between - and +)
-    const float inputW = boxW - 60.f - (minusW * 2.f) - 16.f;
-    const float inputX = minusX + minusW + 8.f;
+    // Full-width Text Input box
+    const float inputW = boxW - 60.f;
+    const float inputX = boxX + 30.f;
+    const float inputY = boxY + 78.f;
     quantityInput.setFocus(true);
     quantityInput.setPosition({ inputX, inputY });
     quantityInput.draw(window);
 
-    // [+] Increment button
-    const float plusX = inputX + inputW + 8.f;
-    sf::FloatRect plusRect({ plusX, inputY }, { minusW, minusH });
-    bool plusHov = plusRect.contains(mousePos);
-    sf::RectangleShape plusBtn({ minusW, minusH });
-    plusBtn.setPosition({ plusX, inputY });
-    plusBtn.setFillColor(plusHov ? sf::Color(65, 75, 95) : sf::Color(42, 48, 62));
-    plusBtn.setOutlineThickness(1.5f);
-    plusBtn.setOutlineColor(sf::Color(100, 115, 140));
-    window.draw(plusBtn);
-    sf::Text plusTxt(uiFont, "+", 20);
-    plusTxt.setStyle(sf::Text::Bold);
-    plusTxt.setFillColor(sf::Color::White);
-    auto pb = plusTxt.getLocalBounds();
-    plusTxt.setPosition({ plusX + (minusW - pb.size.x) / 2.f, inputY + (minusH - pb.size.y) / 2.f - 4.f });
-    window.draw(plusTxt);
-
-    // Quick preset buttons row: [1]  [Half]  [All]
-    const float preY = boxY + 132.f;
-    const float preW = (boxW - 60.f - 16.f) / 3.f;
-    const float preH = 32.f;
-
-    // [1]
-    sf::FloatRect btn1Rect({ boxX + 30.f, preY }, { preW, preH });
-    bool hov1 = btn1Rect.contains(mousePos);
-    sf::RectangleShape btn1({ preW, preH });
-    btn1.setPosition({ boxX + 30.f, preY });
-    btn1.setFillColor(hov1 ? sf::Color(55, 75, 95) : sf::Color(35, 48, 62));
-    btn1.setOutlineThickness(1.f);
-    btn1.setOutlineColor(sf::Color(80, 110, 140));
-    window.draw(btn1);
-    sf::Text txt1(uiFont, "1", 14);
-    txt1.setStyle(sf::Text::Bold);
-    txt1.setFillColor(sf::Color::White);
-    auto b1b = txt1.getLocalBounds();
-    txt1.setPosition({ boxX + 30.f + (preW - b1b.size.x) / 2.f, preY + (preH - b1b.size.y) / 2.f - 3.f });
-    window.draw(txt1);
-
-    // [Half]
-    sf::FloatRect btnHRect({ boxX + 30.f + preW + 8.f, preY }, { preW, preH });
-    bool hovH = btnHRect.contains(mousePos);
-    sf::RectangleShape btnH({ preW, preH });
-    btnH.setPosition({ boxX + 30.f + preW + 8.f, preY });
-    btnH.setFillColor(hovH ? sf::Color(55, 75, 95) : sf::Color(35, 48, 62));
-    btnH.setOutlineThickness(1.f);
-    btnH.setOutlineColor(sf::Color(80, 110, 140));
-    window.draw(btnH);
-    int halfVal = std::max(1, maxAmount / 2);
-    sf::Text txtH(uiFont, "Half (" + std::to_string(halfVal) + ")", 14);
-    txtH.setStyle(sf::Text::Bold);
-    txtH.setFillColor(sf::Color::White);
-    auto bhb = txtH.getLocalBounds();
-    txtH.setPosition({ boxX + 30.f + preW + 8.f + (preW - bhb.size.x) / 2.f, preY + (preH - bhb.size.y) / 2.f - 3.f });
-    window.draw(txtH);
-
-    // [All]
-    sf::FloatRect btnARect({ boxX + 30.f + (preW + 8.f) * 2.f, preY }, { preW, preH });
-    bool hovA = btnARect.contains(mousePos);
-    sf::RectangleShape btnA({ preW, preH });
-    btnA.setPosition({ boxX + 30.f + (preW + 8.f) * 2.f, preY });
-    btnA.setFillColor(hovA ? sf::Color(55, 75, 95) : sf::Color(35, 48, 62));
-    btnA.setOutlineThickness(1.f);
-    btnA.setOutlineColor(sf::Color(80, 110, 140));
-    window.draw(btnA);
-    sf::Text txtA(uiFont, "All (" + std::to_string(maxAmount) + ")", 14);
-    txtA.setStyle(sf::Text::Bold);
-    txtA.setFillColor(sf::Color::White);
-    auto bab = txtA.getLocalBounds();
-    txtA.setPosition({ boxX + 30.f + (preW + 8.f) * 2.f + (preW - bab.size.x) / 2.f, preY + (preH - bab.size.y) / 2.f - 3.f });
-    window.draw(txtA);
-
     // Bottom Action buttons: [Confirm / Retrieve]  [Cancel]
-    const float actY = boxY + 180.f;
+    const float actY = boxY + 134.f;
     const float actW = (boxW - 60.f - 16.f) / 2.f;
-    const float actH = 42.f;
+    const float actH = 40.f;
 
     // Confirm button
     sf::FloatRect confirmBtnRect({ boxX + 30.f, actY }, { actW, actH });
@@ -1047,7 +959,7 @@ void drawQuantityPrompt(
     confirmBtn.setOutlineThickness(1.5f);
     window.draw(confirmBtn);
 
-    sf::Text confirmTxt(uiFont, isRetrieve ? "Retrieve" : "Confirm", 16);
+    sf::Text confirmTxt(uiFont, isRetrieve ? "Retrieve" : "Confirm", 15);
     confirmTxt.setStyle(sf::Text::Bold);
     confirmTxt.setFillColor(sf::Color::White);
     auto cb = confirmTxt.getLocalBounds();
@@ -1064,7 +976,7 @@ void drawQuantityPrompt(
     cancelBtn.setOutlineColor(cancelHover ? sf::Color(230, 90, 90) : sf::Color(170, 50, 50));
     window.draw(cancelBtn);
 
-    sf::Text cancelTxt(uiFont, "Cancel", 16);
+    sf::Text cancelTxt(uiFont, "Cancel", 15);
     cancelTxt.setStyle(sf::Text::Bold);
     cancelTxt.setFillColor(sf::Color::White);
     auto cnb = cancelTxt.getLocalBounds();

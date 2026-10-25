@@ -126,4 +126,4 @@ void saveAllGameDataAndClose(
     const std::vector<PlacedStructure>& structures,
     const std::vector<PlacedCampfire>& campfires
 );
-
+
