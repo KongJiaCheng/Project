@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "Monster.h"
 #include "ItemID.h"
 #include "ZombieFlesh.h"
@@ -35,6 +35,7 @@ public:
         speed = 80.f;
         attackDamage = 15.f;
         attackCooldown = 1.2f;
+        attackTimer = attackCooldown;
 
         loadSharedTextures();
         animSouth.sharedFrames = &sharedSouth;
@@ -117,9 +118,9 @@ public:
         // Charge attack timer when within contact range (120px world units).
         // Cap (don't zero) when out of range — brief retreats don't reset full charge,
         // but cap at cooldown so zombies can't insta-hit on very first re-entry from far away.
-        if (len <= 120.f)
-            attackTimer += dt;
-        else if (attackTimer > attackCooldown)
+        attackTimer += dt;
+        if (attackTimer > attackCooldown)
             attackTimer = attackCooldown;
+
     }
 };

@@ -939,8 +939,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             return isWorldPositionBlocked(pos, structures, isDrought ? emptyPonds : ponds);
         };
 
-        // Update nearby animals and monsters ONLY when NO section or menu is undergoing
-        if (!spawnOverlayActive && !isMenuOpen)
+        // Update nearby animals and monsters (always — monsters must attack even when menus are open)
+        if (!spawnOverlayActive)
         {
             updateNearbyEntities(animals, monsters, playerPos, dt, isBlocked, cameraBounds);
         }

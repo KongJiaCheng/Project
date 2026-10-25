@@ -24,7 +24,7 @@ public:
 
     float attackDamage = 8.f;
     float attackCooldown = 1.2f;
-    float attackTimer = 0.f;
+    float attackTimer = 1.2f;
 
     bool droppedLoot = false;
     bool isHurt = false;
@@ -109,10 +109,10 @@ public:
         // Charge attack timer when within contact range (120px world units).
         // Cap (don't zero) when out of range — brief retreats don't reset full charge,
         // but cap at cooldown so zombies can't insta-hit on very first re-entry from far away.
-        if (len <= 130.f)
-            attackTimer += dt;
-        else if (attackTimer > attackCooldown)
+        attackTimer += dt;
+        if (attackTimer > attackCooldown)
             attackTimer = attackCooldown;
+
     }
 
     void applyCurrentTexture()

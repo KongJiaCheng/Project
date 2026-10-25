@@ -750,8 +750,12 @@ void renderWorldDepthScene(
 
     if (isPlayerHurt) {
         playerHurtTimer -= dt;
-        if (playerHurtTimer <= 0.f) isPlayerHurt = false;
-        sprite.setColor(sf::Color(255, 100, 100));
+        if (playerHurtTimer <= 0.f) {
+            isPlayerHurt = false;
+            sprite.setColor(sf::Color::White);
+        } else {
+            sprite.setColor(sf::Color(255, 100, 100));
+        }
     }
     else {
         sprite.setColor(sf::Color::White);

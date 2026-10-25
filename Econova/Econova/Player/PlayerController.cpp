@@ -171,7 +171,7 @@ void updateMonstersCombat(
             float dy = zCenter.y - pCenter.y;
             float dist = std::sqrt(dx * dx + dy * dy);
 
-            bool hit = dist < 120.f;
+            bool hit = dist <= 120.f;
             if (!introActive && hit) {
                 if (m->attackTimer >= m->attackCooldown) {
                     if (!tutorialActive) {
@@ -193,7 +193,7 @@ void updateMonstersCombat(
                     }
                     m->attackTimer = 0.f;
                     isPlayerHurt = true;
-                    playerHurtTimer = 0.8f;
+                    playerHurtTimer = 0.25f;
 
                     sf::Vector2f pushDir = playerSprite.getPosition() - m->sprite.getPosition();
                     float len = std::sqrt(pushDir.x * pushDir.x + pushDir.y * pushDir.y);
@@ -1418,17 +1418,17 @@ void updateSurvivalStatsAndQuests(
                 hp = std::max(0.f, hp - DAMAGE_RATE * dt);
             }
         }
-        else if (hunger < maxHunger * 0.2f)
+        else if (hunger < maxHunger * 0.2f || hungerMultiplier >= 2)
         {
             hp = std::min(maxHP, hp + 5.f * dt);
         }
 
-        // Passive HP regen when hunger multiplier is X2 or above (well-fed bonus)
-        if (hungerMultiplier >= 2)
-        {
-            float regenRate = 2.f * (float)(hungerMultiplier - 1); // X2=2hp/s, X3=4hp/s, etc.
-            hp = std::min(maxHP, hp + regenRate * dt);
-        }
+
+
+
+
+
+
     }
 
     int nextLevelExp = level * 100;
