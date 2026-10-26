@@ -1238,6 +1238,64 @@ bool handleStructurePlacementClicks(
     sf::FloatRect rotateBtn({ sX + btnW + gap, yP }, { btnW, btnH });
     sf::FloatRect cancelBtn({ sX + (btnW + gap) * 2.f, yP }, { btnW, btnH });
 
+    // Compute max floor level unlocked by existing stairs
+    int maxFloorUnlocked = 0;
+    for (const auto& s : structures) {
+        if (s.id == ITEM_WOOD_STAIRS) {
+            int sf = (int)s.shearY;
+            if (sf + 1 > maxFloorUnlocked) {
+                maxFloorUnlocked = sf + 1;
+            }
+        }
+    }
+
+    // Determine target floor and snapped cell from cursor world position
+    float targetFloor = 0.f;
+    sf::Vector2f targetPlacementPos = snapGridFunc(worldPos);
+
+    if (maxFloorUnlocked > 0) {
+        for (int F = maxFloorUnlocked; F >= 1; --F) {
+            float elev = F * 180.f;
+            sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
+            sf::Vector2f cellBase = snapGridFunc(compM);
+
+            if (placementItemID == ITEM_WOOD_TILE) {
+                bool hasSupport = false;
+                for (const auto& s : structures) {
+                    if (s.sprite.has_value() &&
+                        std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
+                        std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
+                        if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == F - 1) {
+                            hasSupport = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasSupport) {
+                    targetFloor = (float)F;
+                    targetPlacementPos = cellBase;
+                    break;
+                }
+            } else {
+                bool hasFloorOnThisLevel = false;
+                for (const auto& s : structures) {
+                    if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == F) {
+                        if (std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
+                            std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
+                            hasFloorOnThisLevel = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasFloorOnThisLevel) {
+                    targetFloor = (float)F;
+                    targetPlacementPos = cellBase;
+                    break;
+                }
+            }
+        }
+    }
+
     if (placeBtn.contains(uiPos)) {
         if (placementItemID == ITEM_NONE) {
             for (const auto& it : structures) {
@@ -1262,7 +1320,7 @@ bool handleStructurePlacementClicks(
             PlacedCampfire pc;
             pc.position = placementPos;
             pc.timeRemaining = 0.f;
-            pc.isCrafted = true;   // immediately usable — wrench works right away
+            pc.isCrafted = true;
             pc.currentFrame = 0;
             pc.frameTimer = 0.f;
             pc.owner = username;
@@ -1278,24 +1336,36 @@ bool handleStructurePlacementClicks(
             placementMode = false;
         }
         else {
-            // ── Overlap guard for wall / door ─────────────────────────────────
-            // Wall and door are mutually exclusive: never place one on top of the other.
-            if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
-                for (const auto& it : structures) {
-                    if (!it.sprite.has_value()) continue;
-                    if (it.sprite->getPosition() != placementPos) continue;
-                    if (it.id == ITEM_WOOD_WALL || it.id == ITEM_WOOD_DOOR) {
-                        // Cell already occupied — refuse placement
-                        return true;
+            // ── Overlap & Duplicate Guard ──────────────────────────────────────
+            // Walls/doors on the same floor only overlap if they share the same rotation.
+            // Different floor structures do not overlap.
+            bool duplicateOverlap = false;
+            for (const auto& it : structures) {
+                if (!it.sprite.has_value()) continue;
+                if (std::abs(it.sprite->getPosition().x - placementPos.x) >= 1.f ||
+                    std::abs(it.sprite->getPosition().y - placementPos.y) >= 1.f) continue;
+                if ((int)it.shearY != (int)targetFloor) continue;
+
+                if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+                    if ((it.id == ITEM_WOOD_WALL || it.id == ITEM_WOOD_DOOR) && it.rotation == placementRotation) {
+                        duplicateOverlap = true;
+                        break;
                     }
+                } else if (it.id == placementItemID) {
+                    duplicateOverlap = true;
+                    break;
                 }
             }
+            if (duplicateOverlap) {
+                inventory.showBanner("This position already has a structure with the same orientation!");
+                return true;
+            }
 
-            // ── Guard for wooden stairs: must be placed on top of an existing wood tile ──
+            // ── Stairs validation: must be placed on a wooden floor tile ───
             if (placementItemID == ITEM_WOOD_STAIRS) {
                 bool hasTileUnder = false;
                 for (const auto& it : structures) {
-                    if (it.id == ITEM_WOOD_TILE && it.sprite.has_value()) {
+                    if (it.id == ITEM_WOOD_TILE && it.sprite.has_value() && (int)it.shearY == (int)targetFloor) {
                         if (std::abs(it.sprite->getPosition().x - placementPos.x) < 1.f &&
                             std::abs(it.sprite->getPosition().y - placementPos.y) < 1.f) {
                             hasTileUnder = true;
@@ -1304,38 +1374,33 @@ bool handleStructurePlacementClicks(
                     }
                 }
                 if (!hasTileUnder) {
-                    // Cannot place stairs without a wood tile underneath!
+                    inventory.showBanner("Stairs must be placed on an existing wooden floor tile!");
                     return true;
                 }
             }
 
-            // ── Second-floor wood tile logic ──────────────────────────────────
-            float targetFloor = 0.f;
-            if (placementItemID == ITEM_WOOD_TILE) {
-                bool hasStairsBuilt = false;
-                bool hasGroundTileAtPos = false;
-                bool hasSecondFloorTileAtPos = false;
+            // ── Upper-floor tile validation: must have support beneath ─────
+            if (placementItemID == ITEM_WOOD_TILE && targetFloor >= 1.f) {
+                bool hasSupport = false;
                 for (const auto& s : structures) {
-                    if (s.id == ITEM_WOOD_STAIRS) hasStairsBuilt = true;
-                    if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
-                        if (std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
-                            std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
-                            if (s.shearY >= 1.f) hasSecondFloorTileAtPos = true;
-                            else hasGroundTileAtPos = true;
+                    if (s.sprite.has_value() &&
+                        std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
+                        std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
+                        if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == (int)targetFloor - 1) {
+                            hasSupport = true;
+                            break;
                         }
                     }
                 }
-                if (hasStairsBuilt && hasGroundTileAtPos) {
-                    if (hasSecondFloorTileAtPos) {
-                        // Both ground and second floor tiles already exist here
-                        return true;
-                    }
-                    targetFloor = 1.f;
+                if (!hasSupport) {
+                    inventory.showBanner("Upper floor tiles must be supported by a lower floor or stairs!");
+                    return true;
                 }
             }
 
+            // ── Ownership check ───────────────────────────────────────────────
             for (const auto& it : structures) {
-                if (it.sprite.has_value() && it.sprite->getPosition() == placementPos) {
+                if (it.sprite.has_value() && it.sprite->getPosition() == placementPos && (int)it.shearY == (int)targetFloor) {
                     if (!it.owner.empty() && it.owner != username) {
                         inventory.showBanner("This belongs to " + it.owner + "! You cannot build over other players' structures.");
                         return true;
@@ -1354,23 +1419,17 @@ bool handleStructurePlacementClicks(
             if (placementFromInventorySlot != -1) {
                 inventory.consumeItem(placementFromInventorySlot);
             }
-            bool structureRemoved = false;
 
+            bool structureRemoved = false;
             for (auto it = structures.begin(); it != structures.end(); ) {
-                if (it->sprite.has_value() && it->sprite->getPosition() == placementPos) {
+                if (it->sprite.has_value() &&
+                    std::abs(it->sprite->getPosition().x - placementPos.x) < 1.f &&
+                    std::abs(it->sprite->getPosition().y - placementPos.y) < 1.f &&
+                    (int)it->shearY == (int)targetFloor) {
                     bool shouldRemove = false;
                     if (placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_WALL) {
-                        if (it->id == ITEM_WOOD_WALL || it->id == ITEM_WOOD_DOOR) {
+                        if ((it->id == ITEM_WOOD_WALL || it->id == ITEM_WOOD_DOOR) && it->rotation == placementRotation) {
                             shouldRemove = true;
-                        }
-                    } else if (placementItemID == ITEM_WOOD_TILE) {
-                        // Only remove tile on the same floor level
-                        if (it->id == ITEM_WOOD_TILE) {
-                            bool itIs2ndFloor = (it->shearY >= 1.f);
-                            bool targetIs2ndFloor = (targetFloor >= 1.f);
-                            if (itIs2ndFloor == targetIs2ndFloor) {
-                                shouldRemove = true;
-                            }
                         }
                     } else if (it->id == placementItemID) {
                         shouldRemove = true;
@@ -1388,6 +1447,7 @@ bool handleStructurePlacementClicks(
             if (structureRemoved) {
                 syncSaveCallback();
             }
+
             if (placementItemID == ITEM_FURNACE) structures.emplace_back(ITEM_FURNACE, furnaceTex, placementRotation, false);
             else if (placementItemID == ITEM_WOOD_TILE) structures.emplace_back(ITEM_WOOD_TILE, woodTileTex, placementRotation, false);
             else if (placementItemID == ITEM_WOOD_WALL) structures.emplace_back(ITEM_WOOD_WALL, woodWallTex, placementRotation, false);
@@ -1400,10 +1460,9 @@ bool handleStructurePlacementClicks(
             auto& newS = structures.back();
             newS.owner = username;
             newS.shearY = targetFloor;
+            newS.rotation = placementRotation;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
-            // Wall, door, and stairs: origin = bottom-left so the sprite's left edge
-            // aligns precisely with the rhombus cell's BL corner (snapToGrid result).
-            // All other structures: origin = bottom-center.
+
             if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
             } else {
@@ -1417,12 +1476,9 @@ bool handleStructurePlacementClicks(
         return true;
     }
     else if (rotateBtn.contains(uiPos)) {
-        if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
-            // Wall and door: two orientations only (horizontal / diagonal)
-            placementRotation = (placementRotation == 0.f) ? 90.f : 0.f;
-        } else {
-            placementRotation = (placementRotation == 0.f) ? 90.f : ((placementRotation == 90.f) ? 180.f : 0.f);
-        }
+        // Full 4-way rotation supported for all structures (0, 90, 180, 270)
+        placementRotation += 90.f;
+        if (placementRotation >= 360.f) placementRotation = 0.f;
         return true;
     }
     else if (cancelBtn.contains(uiPos)) {
@@ -1432,21 +1488,16 @@ bool handleStructurePlacementClicks(
     else {
         placementFollowingCursor = !placementFollowingCursor;
 
-        // Snap placement position based on item footprint
         if (placementItemID == ITEM_NONE) {
-            // Campfire: place inside the grid cell, not at the border
-            sf::Vector2f corner = snapToGrid(worldPos);
+            sf::Vector2f corner = snapGridFunc(worldPos);
             placementPos = { corner.x + 375.f, corner.y - 125.f };
         }
         else {
-            // All structures snap to grid cell corner
-            placementPos = snapToGrid(worldPos);
+            placementPos = targetPlacementPos;
         }
         return true;
     }
 }
-
-
 
 bool handleWorldInteractionClicks(
     sf::Vector2f worldPos,
@@ -1485,7 +1536,9 @@ bool handleWorldInteractionClicks(
     // Check Bed Interaction Button & Wrench Click
     for (auto& s : structures) {
         if (s.id == ITEM_BED && s.sprite.has_value()) {
+            int bFloor = (int)s.shearY;
             sf::Vector2f bPos = s.sprite->getPosition();
+            if (bFloor > 0) bPos.y -= bFloor * 180.f;
             sf::FloatRect wrenchBtnBounds({ bPos.x - 25.f, bPos.y - 105.f }, { 50.f, 50.f });
             sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
             if (wrenchBtnBounds.contains(worldPos) || bedBounds.contains(worldPos)) {
@@ -1503,10 +1556,12 @@ bool handleWorldInteractionClicks(
         }
     }
 
-    // Check Furnace Wrench — wrench icon only, not furnace body click
+    // Check Furnace Wrench - wrench icon only, not furnace body click
     for (auto& s : structures) {
         if (s.id == ITEM_FURNACE && s.sprite.has_value()) {
+            int fFloor = (int)s.shearY;
             sf::Vector2f fPos = s.sprite->getPosition();
+            if (fFloor > 0) fPos.y -= fFloor * 180.f;
             sf::FloatRect wrenchBtnBounds({ fPos.x - 25.f, fPos.y - 175.f }, { 50.f, 50.f });
             if (wrenchBtnBounds.contains(worldPos)) {
                 if (!s.owner.empty() && s.owner != username) {
@@ -1526,12 +1581,13 @@ bool handleWorldInteractionClicks(
     PlacedStructure* nearestDoor = nullptr;
     float minDist = 300.f;
     for (auto& s : structures) {
-        if (s.id == ITEM_WOOD_DOOR) {
-            sf::Vector2f dPos = s.sprite->getPosition();
-            sf::Vector2f pPos = playerSprite.getPosition();
-            int doorFloor = getFloorLevelFromY(dPos.y);
+        if (s.id == ITEM_WOOD_DOOR && s.sprite.has_value()) {
+            int doorFloor = (int)s.shearY;
             if (doorFloor == playerFloorLevel) {
-                float dy = (dPos.y + doorFloor * 180.f) - pPos.y;
+                sf::Vector2f dPos = s.sprite->getPosition();
+                if (doorFloor > 0) dPos.y -= doorFloor * 180.f;
+                sf::Vector2f pPos = playerSprite.getPosition();
+                float dy = dPos.y - pPos.y;
                 float dx = dPos.x - pPos.x;
                 float d = std::sqrt(dx * dx + dy * dy);
                 if (d < minDist) {
@@ -1541,8 +1597,23 @@ bool handleWorldInteractionClicks(
             }
         }
     }
-    if (nearestDoor) {
-        sf::FloatRect doorBtnBounds({ nearestDoor->sprite->getPosition().x - 100.f, nearestDoor->sprite->getPosition().y - 120.f }, { 200.f, 60.f });
+    if (nearestDoor && nearestDoor->sprite.has_value()) {
+        int dFloor = (int)nearestDoor->shearY;
+        sf::Vector2f dPos = nearestDoor->sprite->getPosition();
+        if (dFloor > 0) dPos.y -= dFloor * 180.f;
+        float doorCenterX = dPos.x + 250.f;
+        float doorCenterY = dPos.y;
+        if (nearestDoor->rotation == 90.f) {
+            doorCenterX = dPos.x + 125.f;
+            doorCenterY = dPos.y - 125.f;
+        } else if (nearestDoor->rotation == 180.f) {
+            doorCenterX = dPos.x - 250.f;
+            doorCenterY = dPos.y;
+        } else if (nearestDoor->rotation == 270.f) {
+            doorCenterX = dPos.x - 125.f;
+            doorCenterY = dPos.y + 125.f;
+        }
+        sf::FloatRect doorBtnBounds({ doorCenterX - 100.f, doorCenterY - 120.f }, { 200.f, 60.f });
         if (doorBtnBounds.contains(worldPos)) {
             if (!nearestDoor->owner.empty() && nearestDoor->owner != username) {
                 inventory.showBanner("This belongs to " + nearestDoor->owner + "! You cannot wrench other players' items.");
@@ -1560,12 +1631,13 @@ bool handleWorldInteractionClicks(
     PlacedStructure* nearestChest = nullptr;
     float minChestDist = 200.f;
     for (auto& s : structures) {
-        if (s.id == ITEM_CHEST) {
-            sf::Vector2f cPos = s.sprite->getPosition();
-            sf::Vector2f pPos = playerSprite.getPosition();
-            int chestFloor = getFloorLevelFromY(cPos.y);
+        if (s.id == ITEM_CHEST && s.sprite.has_value()) {
+            int chestFloor = (int)s.shearY;
             if (chestFloor == playerFloorLevel) {
-                float dy = (cPos.y + chestFloor * 200.f) - pPos.y;
+                sf::Vector2f cPos = s.sprite->getPosition();
+                if (chestFloor > 0) cPos.y -= chestFloor * 180.f;
+                sf::Vector2f pPos = playerSprite.getPosition();
+                float dy = cPos.y - pPos.y;
                 float dx = cPos.x - pPos.x;
                 float d = std::sqrt(dx * dx + dy * dy);
                 if (d < minChestDist) {
@@ -1575,8 +1647,11 @@ bool handleWorldInteractionClicks(
             }
         }
     }
-    if (nearestChest && !chestMenuOpen) {
-        sf::FloatRect chestBtnBounds({ nearestChest->sprite->getPosition().x - 100.f, nearestChest->sprite->getPosition().y - 120.f }, { 200.f, 60.f });
+    if (nearestChest && !chestMenuOpen && nearestChest->sprite.has_value()) {
+        int cFloor = (int)nearestChest->shearY;
+        sf::Vector2f cPos = nearestChest->sprite->getPosition();
+        if (cFloor > 0) cPos.y -= cFloor * 180.f;
+        sf::FloatRect chestBtnBounds({ cPos.x - 100.f, cPos.y - 120.f }, { 200.f, 60.f });
         if (chestBtnBounds.contains(worldPos)) {
             if (!nearestChest->owner.empty() && nearestChest->owner != username) {
                 inventory.showBanner("This belongs to " + nearestChest->owner + "! You cannot wrench other players' items.");
@@ -1698,19 +1773,65 @@ void updateAndDrawPlacementPreview(
 
     if (placementFollowingCursor) {
         if (placementItemID == ITEM_NONE) {
-            // Campfire: place inside the grid cell, not at the border
             sf::Vector2f corner = snapToGrid(worldPos);
             placementPos = { corner.x + 375.f, corner.y - 125.f };
         }
         else {
-            placementPos = snapToGrid(worldPos);
+            // Check upper floor elevation targeting
+            int maxFloorUnlocked = 0;
+            for (const auto& s : structures) {
+                if (s.id == ITEM_WOOD_STAIRS) {
+                    int sf = (int)s.shearY;
+                    if (sf + 1 > maxFloorUnlocked) {
+                        maxFloorUnlocked = sf + 1;
+                    }
+                }
+            }
+
+            sf::Vector2f targetPos = snapToGrid(worldPos);
+            if (maxFloorUnlocked > 0) {
+                for (int F = maxFloorUnlocked; F >= 1; --F) {
+                    float elev = F * 180.f;
+                    sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
+                    sf::Vector2f cellBase = snapToGrid(compM);
+
+                    if (placementItemID == ITEM_WOOD_TILE) {
+                        bool hasSupport = false;
+                        for (const auto& s : structures) {
+                            if (s.sprite.has_value() &&
+                                std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
+                                std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
+                                if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == F - 1) {
+                                    hasSupport = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasSupport) {
+                            targetPos = cellBase;
+                            break;
+                        }
+                    } else {
+                        bool hasFloorOnThisLevel = false;
+                        for (const auto& s : structures) {
+                            if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == F) {
+                                if (std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
+                                    std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
+                                    hasFloorOnThisLevel = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasFloorOnThisLevel) {
+                            targetPos = cellBase;
+                            break;
+                        }
+                    }
+                }
+            }
+            placementPos = targetPos;
         }
     }
 
     drawPlacementPreview(window, placementItemID, placementRotation, placementPos, campfireFrames, furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex, chestTex, structures);
 }
-
-
-
-
-

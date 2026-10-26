@@ -31,9 +31,11 @@ bool isPositionBlocked(
     for (const auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
             sf::Vector2f sPos = s.sprite->getPosition();
+            int sFloor = (int)s.shearY;
+            float sElev = sFloor * 180.f;
             const float margin = 150.f;
-            float zoneTop    = sPos.y - 250.f - margin;
-            float zoneBottom = sPos.y + margin;
+            float zoneTop    = sPos.y - 250.f - margin - sElev;
+            float zoneBottom = sPos.y + margin - sElev;
             float zoneLeft   = sPos.x - margin;
             float zoneRight  = sPos.x + 500.f + margin;
             if (targetPos.y >= zoneTop && targetPos.y <= zoneBottom &&
@@ -43,8 +45,9 @@ bool isPositionBlocked(
     }
     if (!targetElevated) {
         for (const auto& etf : elevatedTileFloors) {
-            if (targetFeet.y >= etf.pos.y - 250.f - 40.f && targetFeet.y <= etf.pos.y + 40.f) {
-                float xShift = etf.pos.y - targetFeet.y;
+            float eElev = etf.floorLevel * 180.f;
+            if (targetFeet.y >= etf.pos.y - 250.f - 40.f - eElev && targetFeet.y <= etf.pos.y + 40.f - eElev) {
+                float xShift = (etf.pos.y - eElev) - targetFeet.y;
                 if (targetFeet.x >= etf.pos.x + xShift - 40.f && targetFeet.x <= etf.pos.x + 500.f + xShift + 40.f) {
                     targetElevated = true;
                     break;
@@ -57,22 +60,30 @@ bool isPositionBlocked(
     const float STRUCT_CULL_SQ = 600.f * 600.f;
     for (const auto& s : structures) {
         if (!s.sprite.has_value()) continue;
+        int sFloor = (int)s.shearY;
+        if (targetElevated && sFloor == 0) continue;
+        if (!targetElevated && sFloor > 0) continue;
+
         sf::Vector2f sPos = s.sprite->getPosition();
+        if (sFloor > 0) sPos.y -= sFloor * 180.f;
+
         float sdx = sPos.x - targetPos.x;
         float sdy = sPos.y - targetPos.y;
         if (sdx * sdx + sdy * sdy > STRUCT_CULL_SQ) continue;
 
         if (s.id == ITEM_WOOD_WALL || (s.id == ITEM_WOOD_DOOR && !s.isOpen)) {
-            if (targetElevated) continue;
             sf::Vector2f A = sPos;
-            sf::Vector2f B = (s.rotation == 90.f)
-                ? sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f)
-                : sf::Vector2f(sPos.x + 500.f, sPos.y);
+            sf::Vector2f B;
+            if (s.rotation == 90.f)       B = sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f);
+            else if (s.rotation == 180.f) B = sf::Vector2f(sPos.x - 500.f, sPos.y);
+            else if (s.rotation == 270.f) B = sf::Vector2f(sPos.x - 250.f, sPos.y + 250.f);
+            else                          B = sf::Vector2f(sPos.x + 500.f, sPos.y);
+
             if (distanceToSegment(targetPos, A, B) < 40.f) return true;
         }
         else if (s.id == ITEM_FURNACE || s.id == ITEM_BED) {
-            if (targetElevated) continue;
             sf::FloatRect b = s.sprite->getGlobalBounds();
+            if (sFloor > 0) b.position.y -= sFloor * 180.f;
             b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
             b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
             if (b.contains(targetPos)) return true;
@@ -101,13 +112,19 @@ bool isWorldPositionBlocked(
             if (sdx * sdx + sdy * sdy > BLOCK_CULL_SQ) continue;
 
             if (structure.id == ITEM_WOOD_WALL || (structure.id == ITEM_WOOD_DOOR && !structure.isOpen)) {
+                int sFloor = (int)structure.shearY;
                 sf::Vector2f sPos = structure.sprite->getPosition();
+                if (sFloor > 0) sPos.y -= sFloor * 180.f;
+
                 // Primary segment along the wall face
                 sf::Vector2f A = sPos;
-                sf::Vector2f B = (structure.rotation == 90.f)
-                    ? sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f)
-                    : sf::Vector2f(sPos.x + 500.f, sPos.y);
-                // Secondary segment: wall has depth — block entities approaching from either side
+                sf::Vector2f B;
+                if (structure.rotation == 90.f)       B = sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f);
+                else if (structure.rotation == 180.f) B = sf::Vector2f(sPos.x - 500.f, sPos.y);
+                else if (structure.rotation == 270.f) B = sf::Vector2f(sPos.x - 250.f, sPos.y + 250.f);
+                else                                  B = sf::Vector2f(sPos.x + 500.f, sPos.y);
+
+                // Secondary segment: wall has depth - block entities approaching from either side
                 sf::Vector2f A2(A.x, A.y - 80.f);
                 sf::Vector2f B2(B.x, B.y - 80.f);
                 if (distanceToSegment(pos, A, B) < 80.f ||

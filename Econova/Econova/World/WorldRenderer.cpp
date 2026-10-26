@@ -96,22 +96,28 @@ void drawSecondFloorGrid(
     const std::vector<PlacedStructure>& structures,
     int playerFloorLevel
 ) {
-    // Only active when at least one staircase has been built
-    bool hasStairs = false;
-    for (const auto& s : structures)
-        if (s.id == ITEM_WOOD_STAIRS) { hasStairs = true; break; }
-    if (!hasStairs) return;
+    // Determine maximum floor unlocked by stairs
+    int maxFloorUnlocked = 0;
+    for (const auto& s : structures) {
+        if (s.id == ITEM_WOOD_STAIRS) {
+            int sf = (int)s.shearY;
+            if (sf + 1 > maxFloorUnlocked) {
+                maxFloorUnlocked = sf + 1;
+            }
+        }
+    }
+    if (maxFloorUnlocked < 1) return;
 
     constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
     constexpr float FLOOR_STEP = 180.f;   // visual Y lift per floor
 
-    // Per-floor color palette.  Index 0 = floor 2 (targetFloor=1), 1 = floor 3, 2 = floor 4+
+    // Per-floor color palette. Index 0 = floor 2 (targetFloor=1), 1 = floor 3, 2 = floor 4+
     struct FloorColors { sf::Color outline, hover, filled; };
     const FloorColors palette[] = {
         // Floor 2 — green
-        { sf::Color( 40, 220,  80, 170),   // outline
-          sf::Color( 60, 255, 100, 235),   // hover
-          sf::Color( 40, 200,  80,  70) }, // already-placed tint
+        { sf::Color( 40, 220,  80, 170),
+          sf::Color( 60, 255, 100, 235),
+          sf::Color( 40, 200,  80,  70) },
         // Floor 3 — blue
         { sf::Color( 40, 130, 255, 170),
           sf::Color(100, 180, 255, 235),
@@ -122,32 +128,37 @@ void drawSecondFloorGrid(
           sf::Color(130,  40, 200,  70) },
     };
 
-    // Draw a grid for every floor that has source tiles (i.e. the floor below it exists)
-    // targetFloor 1 = 2nd floor grid, 2 = 3rd floor grid, etc.
-    for (int targetFloor = 1; targetFloor <= 3; ++targetFloor) {
-        float sourceShearY  = static_cast<float>(targetFloor - 1);   // shearY of the floor below
+    for (int targetFloor = 1; targetFloor <= maxFloorUnlocked; ++targetFloor) {
         float targetShearY  = static_cast<float>(targetFloor);
         float elevOffset    = targetFloor * FLOOR_STEP;
 
-        // Collect source tile positions (the floor directly below the one we're drawing)
+        // Collect source tiles from the floor directly below
         std::vector<sf::Vector2f> sourceTiles;
         for (const auto& s : structures) {
-            if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
+            if (s.sprite.has_value()) {
                 float sy = s.shearY;
                 bool isSource = (targetFloor == 1)
-                    ? (sy < 1.f)                          // ground tiles feed floor 2
-                    : (sy >= targetShearY - 1.f && sy < targetShearY); // upper floors
-                if (isSource)
-                    sourceTiles.push_back(s.sprite->getPosition());
+                    ? (sy < 1.f && (s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS))
+                    : (sy >= targetShearY - 1.f && sy < targetShearY && (s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS));
+                if (isSource) {
+                    bool alreadyAdded = false;
+                    for (const auto& pt : sourceTiles) {
+                        if (std::abs(pt.x - s.sprite->getPosition().x) < 1.f &&
+                            std::abs(pt.y - s.sprite->getPosition().y) < 1.f) {
+                            alreadyAdded = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyAdded) {
+                        sourceTiles.push_back(s.sprite->getPosition());
+                    }
+                }
             }
         }
-        if (sourceTiles.empty()) break;   // no source tiles → no higher floors possible
+        if (sourceTiles.empty()) continue;
 
-        // For floor 3+ we also need the floor below to have tiles, checked above.
-        // For floor 4+ we cap at palette[2].
         const FloorColors& col = palette[std::min(targetFloor - 1, 2)];
 
-        // Pre-collect placed tile positions on this target floor to avoid O(N^2) loop
         std::vector<sf::Vector2f> placedOnTargetFloor;
         for (const auto& s : structures) {
             if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
@@ -164,10 +175,9 @@ void drawSecondFloorGrid(
             return false;
         };
 
-        // Mouse hover cell — adjust for this floor's visual elevation
         sf::Vector2i pixelMouse = sf::Mouse::getPosition(window);
         sf::Vector2f worldM = window.mapPixelToCoords(pixelMouse);
-        worldM.y += elevOffset;   // compensate for upward shift
+        worldM.y += elevOffset;
         int hGy = static_cast<int>(std::round(-worldM.y / SY));
         int hGx = static_cast<int>(std::round((worldM.x - hGy * SX) / CELL));
         sf::Vector2f hoverBase(hGx * CELL + hGy * SX, -hGy * SY);
@@ -293,13 +303,25 @@ void drawWall(
 
     sf::Vector2f BL, BR, TR, TL;
     if (rotation == 90.f) {
-        // Sheared grid position: along e2 = (SX, -SY)
+        // Diagonal along +e2 = (SX, -SY)
         BL = pos;
         BR = { pos.x + SX, pos.y - SY };
         TR = { pos.x + SX, pos.y - SY - WALL_HEIGHT };
         TL = { pos.x,      pos.y - WALL_HEIGHT };
+    } else if (rotation == 180.f) {
+        // Horizontal along -e1 = (-CELL, 0)
+        BL = { pos.x - CELL, pos.y };
+        BR = pos;
+        TR = { pos.x,        pos.y - WALL_HEIGHT };
+        TL = { pos.x - CELL, pos.y - WALL_HEIGHT };
+    } else if (rotation == 270.f) {
+        // Diagonal along -e2 = (-SX, SY)
+        BL = { pos.x - SX, pos.y + SY };
+        BR = pos;
+        TR = { pos.x,        pos.y - WALL_HEIGHT };
+        TL = { pos.x - SX, pos.y + SY - WALL_HEIGHT };
     } else {
-        // Horizontal grid position: along e1 = (CELL, 0)
+        // Default (0.f): Horizontal along +e1 = (CELL, 0)
         BL = pos;
         BR = { pos.x + CELL, pos.y };
         TR = { pos.x + CELL, pos.y - WALL_HEIGHT };
@@ -334,13 +356,21 @@ void drawDoor(
 
     sf::Vector2f BL, BR, TR, TL;
     if (rotation == 90.f) {
-        // Sheared grid position: along e2 = (SX, -SY)
         BL = pos;
         BR = { pos.x + SX, pos.y - SY };
         TR = { pos.x + SX, pos.y - SY - doorHeight };
         TL = { pos.x,      pos.y - doorHeight };
+    } else if (rotation == 180.f) {
+        BL = { pos.x - CELL, pos.y };
+        BR = pos;
+        TR = { pos.x,        pos.y - doorHeight };
+        TL = { pos.x - CELL, pos.y - doorHeight };
+    } else if (rotation == 270.f) {
+        BL = { pos.x - SX, pos.y + SY };
+        BR = pos;
+        TR = { pos.x,        pos.y - doorHeight };
+        TL = { pos.x - SX, pos.y + SY - doorHeight };
     } else {
-        // Horizontal grid position: along e1 = (CELL, 0)
         BL = pos;
         BR = { pos.x + CELL, pos.y };
         TR = { pos.x + CELL, pos.y - doorHeight };
@@ -395,7 +425,6 @@ void drawPlacementPreview(
     else if (placementItemID == ITEM_CHEST) preview.setTexture(chestTex, true);
 
     sf::Vector2u pts = preview.getTexture().getSize();
-    // Wall, door, and stairs anchor to BL corner — use bottom-left origin to match placed sprite
     if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_STAIRS) {
         preview.setOrigin({ 0.f, (float)pts.y });
     } else {
@@ -405,58 +434,98 @@ void drawPlacementPreview(
     float previewShear = 0.f;
     applyStructureScale(preview, placementItemID, placementRotation, false, previewShear);
 
-    bool hasTileUnder = false;
-    bool hasStairsBuilt = false;
-    bool hasGroundTileAtPos = false;
-    bool hasSecondFloorTileAtPos = false;
-
+    // Compute max floor unlocked by existing stairs
+    int maxFloorUnlocked = 0;
     for (const auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS) {
-            hasStairsBuilt = true;
+            int sf = (int)s.shearY;
+            if (sf + 1 > maxFloorUnlocked) {
+                maxFloorUnlocked = sf + 1;
+            }
         }
-        if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
-            if (std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
-                std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
-                if (s.shearY >= 1.f) {
-                    hasSecondFloorTileAtPos = true;
-                } else {
-                    hasGroundTileAtPos = true;
-                    hasTileUnder = true;
+    }
+
+    // Determine target floor from position
+    float targetFloor = 0.f;
+    if (maxFloorUnlocked > 0) {
+        for (int F = maxFloorUnlocked; F >= 1; --F) {
+            if (placementItemID == ITEM_WOOD_TILE) {
+                bool hasSupport = false;
+                for (const auto& s : structures) {
+                    if (s.sprite.has_value() &&
+                        std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
+                        std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
+                        if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == F - 1) {
+                            hasSupport = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasSupport) {
+                    targetFloor = (float)F;
+                    break;
+                }
+            } else {
+                bool hasFloorOnThisLevel = false;
+                for (const auto& s : structures) {
+                    if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == F) {
+                        if (std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
+                            std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
+                            hasFloorOnThisLevel = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasFloorOnThisLevel) {
+                    targetFloor = (float)F;
+                    break;
                 }
             }
         }
     }
 
+    float elevOffset = targetFloor * 180.f;
+    sf::Vector2f elevatedPos = { placementPos.x, placementPos.y - elevOffset };
+
     if (placementItemID == ITEM_WOOD_STAIRS) {
+        bool hasTileUnder = false;
+        for (const auto& s : structures) {
+            if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == (int)targetFloor) {
+                if (std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
+                    std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
+                    hasTileUnder = true;
+                    break;
+                }
+            }
+        }
         if (!hasTileUnder) {
-            preview.setColor(sf::Color(255, 100, 100, 180)); // Red tint: requires wood tile under!
+            preview.setColor(sf::Color(255, 100, 100, 180));
         } else {
             preview.setColor(sf::Color(255, 255, 255, 180));
         }
     } else {
         preview.setColor(sf::Color(255, 255, 255, 180));
     }
-    preview.setPosition(placementPos);
+
+    preview.setPosition(elevatedPos);
 
     if (placementItemID == ITEM_WOOD_TILE) {
-        if (hasStairsBuilt && hasGroundTileAtPos) {
-            if (hasSecondFloorTileAtPos) {
-                drawRhombusTile(window, preview.getTexture(), { placementPos.x, placementPos.y - 180.f },
-                                sf::Color(255, 100, 100, 160));
-            } else {
-                drawRhombusTile(window, preview.getTexture(), { placementPos.x, placementPos.y - 180.f },
-                                sf::Color(180, 220, 255, 180));
-            }
-        } else {
-            drawRhombusTile(window, preview.getTexture(), placementPos,
-                            sf::Color(255, 255, 255, 160));
-        }
+        drawRhombusTile(window, preview.getTexture(), elevatedPos,
+                        (targetFloor > 0.f) ? sf::Color(180, 220, 255, 180) : sf::Color(255, 255, 255, 160));
     } else if (placementItemID == ITEM_WOOD_WALL) {
-        drawWall(window, preview.getTexture(), placementPos, placementRotation,
+        drawWall(window, preview.getTexture(), elevatedPos, placementRotation,
                  sf::Color(255, 255, 255, 180));
     } else if (placementItemID == ITEM_WOOD_DOOR) {
-        drawDoor(window, preview.getTexture(), placementPos, placementRotation, false,
+        drawDoor(window, preview.getTexture(), elevatedPos, placementRotation, false,
                  sf::Color(255, 255, 255, 180));
+    } else if (placementItemID == ITEM_WOOD_STAIRS) {
+        preview.setRotation(sf::degrees(placementRotation));
+        window.draw(preview);
+    } else if (placementItemID == ITEM_WOOD_ROOF) {
+        sf::Vector2f roofPos = { elevatedPos.x, elevatedPos.y - 120.f };
+        preview.setPosition(roofPos);
+        preview.setRotation(sf::degrees(placementRotation));
+        window.draw(preview);
     } else {
         window.draw(preview);
     }
@@ -533,27 +602,27 @@ void renderWorldDepthScene(
     playerFloorLevel = 0;
     bool playerOnStairs = false;
 
+    // Check elevated floor tiles
     for (auto& etf : elevatedTileFloors) {
-        if (isPointInRhombus(pFeetGlobal, etf.pos)) {
+        float eElev = etf.floorLevel * 180.f;
+        sf::Vector2f elevatedPos = { etf.pos.x, etf.pos.y - eElev };
+        if (isPointInRhombus(pFeetGlobal, elevatedPos)) {
             if (etf.floorLevel > playerFloorLevel) {
                 playerFloorLevel = etf.floorLevel;
             }
         }
     }
 
+    // Check stairs interaction and elevation
     for (auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
-            // Stair grid position (BL corner of the 500×500 rhombus cell)
             sf::Vector2f sPos = s.sprite->getPosition();
+            int sFloor = (int)s.shearY;
+            float sElev = sFloor * 180.f;
 
-            // Stair zone: a wide rhombus area the player walks through.
-            // The stair occupies the rhombus cell at sPos.
-            // We detect the player being in this cell via Y-range + X-range check.
-            // sPos.y is the bottom of the rhombus; the cell goes from sPos.y-250 (top) to sPos.y (bottom).
-            // We extend generously: 100 unit margin so the player can enter from ground level.
             const float margin = 150.f;
-            float stairZoneTop    = sPos.y - 250.f - margin;
-            float stairZoneBottom = sPos.y + margin;
+            float stairZoneTop    = sPos.y - 250.f - margin - sElev;
+            float stairZoneBottom = sPos.y + margin - sElev;
             float stairZoneLeft   = sPos.x - margin;
             float stairZoneRight  = sPos.x + 500.f + margin;
 
@@ -563,20 +632,21 @@ void renderWorldDepthScene(
                 playerOnStairs = true;
                 float progress = 0.f;
                 if (s.rotation == 90.f) {
-                    // Diagonal stair: progress increases left→right
                     progress = (pPos.x - sPos.x) / 500.f;
                 } else if (s.rotation == 180.f) {
-                    // Reversed diagonal
+                    progress = (pPos.y - (stairZoneTop + margin)) / 250.f;
+                } else if (s.rotation == 270.f) {
                     progress = 1.0f - (pPos.x - sPos.x) / 500.f;
                 } else {
-                    // Default: player walks upward (decreasing Y) through the stair zone.
-                    // At bottom of zone (sPos.y): progress=0 (ground). At top (sPos.y-250): progress=1 (top floor).
-                    progress = 1.0f - (pPos.y - (sPos.y - 250.f)) / 250.f;
+                    progress = 1.0f - (pPos.y - (sPos.y - 250.f - sElev)) / 250.f;
                 }
-                if (progress < 0.f) progress = 0.f;
-                if (progress > 1.f) progress = 1.f;
-                float baseOffset = -(float)playerFloorLevel * 180.f;
-                stairOffset = baseOffset + progress * -180.f;
+                progress = std::clamp(progress, 0.f, 1.f);
+                stairOffset = -(sFloor + progress) * 180.f;
+                if (progress > 0.5f) {
+                    playerFloorLevel = sFloor + 1;
+                } else {
+                    playerFloorLevel = sFloor;
+                }
             }
         }
     }
@@ -585,16 +655,20 @@ void renderWorldDepthScene(
         stairOffset = -(float)playerFloorLevel * 180.f;
     }
 
+    // Check if player is under an upper floor (for transparency)
     bool isUnderElevatedFloor = false;
     for (auto& etf : elevatedTileFloors) {
         if (etf.floorLevel > playerFloorLevel) {
-            if (isPointInRhombus(pPos, etf.pos, 0.f)) {
+            float eElev = etf.floorLevel * 180.f;
+            sf::Vector2f elevatedPos = { etf.pos.x, etf.pos.y - eElev };
+            if (isPointInRhombus(pPos, elevatedPos, 0.f)) {
                 isUnderElevatedFloor = true;
                 break;
             }
         }
     }
 
+    // Check roof bounds
     for (auto& s : structures) {
         if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL) {
             if (!s.sprite.has_value()) continue;
@@ -611,57 +685,31 @@ void renderWorldDepthScene(
         }
     }
 
+    // Set structure transparency when player is underneath
     for (auto& s : structures) {
         if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
             if (!s.sprite.has_value()) continue;
-            float dx = s.sprite->getPosition().x - pPos.x;
-            float dy = s.sprite->getPosition().y - pPos.y;
-            if (dx * dx + dy * dy > 2000.f * 2000.f) continue;
-
-            if (s.rotation == 0.f && (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR)) {
-                bool isBackWall = false;
-                sf::Vector2f sPos = s.sprite->getPosition();
-                for (auto& t : structures) {
-                    if (t.id == ITEM_WOOD_TILE && t.sprite.has_value()) {
-                        sf::Vector2f tPos = t.sprite->getPosition();
-                        if (std::abs(tPos.x - sPos.x) < 50.f && std::abs(tPos.y - (sPos.y + 100.f)) < 50.f) {
-                            isBackWall = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (isBackWall) {
-                    if (isUnderRoof || isUnderElevatedFloor) s.sprite->setColor(sf::Color(255, 255, 255, 128));
-                    else s.sprite->setColor(sf::Color(255, 255, 255, 0));
-                }
-                else {
-                    if (isUnderRoof || isUnderElevatedFloor) s.sprite->setColor(sf::Color(255, 255, 255, 128));
-                    else s.sprite->setColor(sf::Color::White);
-                }
-            }
-            else {
-                if (isUnderRoof || isUnderElevatedFloor) s.sprite->setColor(sf::Color(255, 255, 255, 128));
-                else s.sprite->setColor(sf::Color::White);
-            }
-        }
-    }
-
-    for (auto& s : structures) {
-        if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
-            if (isUnderElevatedFloor && s.shearY >= 1.f) {
+            int sFloor = (int)s.shearY;
+            if (sFloor > playerFloorLevel && isUnderElevatedFloor) {
                 s.sprite->setColor(sf::Color(255, 255, 255, 128));
+            } else if (isUnderRoof) {
+                s.sprite->setColor(sf::Color(255, 255, 255, 128));
+            } else {
+                s.sprite->setColor(sf::Color::White);
             }
-            else {
+        } else if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
+            int sFloor = (int)s.shearY;
+            if (sFloor > playerFloorLevel && isUnderElevatedFloor) {
+                s.sprite->setColor(sf::Color(255, 255, 255, 128));
+            } else {
                 s.sprite->setColor(sf::Color::White);
             }
         }
     }
 
-    // Export stairOffset so Game.cpp can offset the movement collision probe
     outStairOffset = stairOffset;
 
-    // 1. Draw ground-floor tiles first (as rhombus quads)
+    // 1. Draw ground-floor tiles first (floor 0)
     for (auto& s : structures) {
         if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
             if (s.shearY >= 1.f) continue;
@@ -674,8 +722,13 @@ void renderWorldDepthScene(
         }
     }
 
-    // 2. Depth sort and draw
-    struct Drawable { float groundY; float z; int priority; std::function<void()> draw; };
+    // 2. Multi-floor depth-sorted drawables
+    struct Drawable {
+        int floor;
+        float sortY;
+        int priority; // 0 = floor tile, 1 = wall/stair/entity/furniture, 2 = roof
+        std::function<void()> draw;
+    };
     std::vector<Drawable> depthDrawables;
 
     for (auto& s : structures) {
@@ -684,15 +737,13 @@ void renderWorldDepthScene(
         float dy = s.sprite->getPosition().y - sprite.getPosition().y;
         if (dx * dx + dy * dy >= 3000000.f) continue;
 
-        float sPos_y = s.sprite->getPosition().y;
-        int sFloor = (s.shearY >= 1.f) ? (int)s.shearY : getFloorLevelFromY(sPos_y);
-        float sGroundY = sPos_y + sFloor * 180.f;
-        float sZ = sFloor * 180.f;
+        int sFloor = (int)s.shearY;
+        float elevOffset = sFloor * 180.f;
+        sf::Vector2f elevatedPos = { s.sprite->getPosition().x, s.sprite->getPosition().y - elevOffset };
 
         if (s.id == ITEM_WOOD_TILE) {
             if (s.shearY >= 1.f) {
-                sf::Vector2f elevatedPos = { s.sprite->getPosition().x, s.sprite->getPosition().y - 180.f * s.shearY };
-                depthDrawables.push_back({ sGroundY, sZ, 0, [structPtr = &s, elevatedPos, &window]() {
+                depthDrawables.push_back({ sFloor, elevatedPos.y, 0, [structPtr = &s, elevatedPos, &window]() {
                     if (structPtr->sprite.has_value())
                         drawRhombusTile(window, structPtr->sprite->getTexture(),
                                         elevatedPos, structPtr->sprite->getColor());
@@ -700,23 +751,47 @@ void renderWorldDepthScene(
             }
         }
         else if (s.id == ITEM_WOOD_WALL) {
-            depthDrawables.push_back({ sGroundY, sZ, 1, [structPtr = &s, &window]() {
+            depthDrawables.push_back({ sFloor, elevatedPos.y, 1, [structPtr = &s, elevatedPos, &window]() {
                 if (structPtr->sprite.has_value())
                     drawWall(window, structPtr->sprite->getTexture(),
-                             structPtr->sprite->getPosition(), structPtr->rotation, structPtr->sprite->getColor());
+                             elevatedPos, structPtr->rotation, structPtr->sprite->getColor());
             } });
         }
         else if (s.id == ITEM_WOOD_DOOR) {
-            depthDrawables.push_back({ sGroundY, sZ, 1, [structPtr = &s, &window]() {
+            depthDrawables.push_back({ sFloor, elevatedPos.y, 1, [structPtr = &s, elevatedPos, &window]() {
                 if (structPtr->sprite.has_value())
                     drawDoor(window, structPtr->sprite->getTexture(),
-                             structPtr->sprite->getPosition(), structPtr->rotation, structPtr->isOpen, structPtr->sprite->getColor());
+                             elevatedPos, structPtr->rotation, structPtr->isOpen, structPtr->sprite->getColor());
+            } });
+        }
+        else if (s.id == ITEM_WOOD_STAIRS) {
+            depthDrawables.push_back({ sFloor, elevatedPos.y, 1, [structPtr = &s, elevatedPos, &window]() {
+                if (structPtr->sprite.has_value()) {
+                    sf::Sprite copy = *structPtr->sprite;
+                    copy.setPosition(elevatedPos);
+                    copy.setRotation(sf::degrees(structPtr->rotation));
+                    window.draw(copy);
+                }
+            } });
+        }
+        else if (s.id == ITEM_WOOD_ROOF) {
+            sf::Vector2f roofPos = { elevatedPos.x, elevatedPos.y - 120.f };
+            depthDrawables.push_back({ sFloor, roofPos.y, 2, [structPtr = &s, roofPos, &window]() {
+                if (structPtr->sprite.has_value()) {
+                    sf::Sprite copy = *structPtr->sprite;
+                    copy.setPosition(roofPos);
+                    copy.setRotation(sf::degrees(structPtr->rotation));
+                    window.draw(copy);
+                }
             } });
         }
         else {
-            int priority = (s.id == ITEM_WOOD_ROOF) ? 2 : 1;
-            depthDrawables.push_back({ sGroundY, sZ, priority, [structPtr = &s, &window]() {
-                if (structPtr->sprite.has_value()) window.draw(*structPtr->sprite);
+            depthDrawables.push_back({ sFloor, elevatedPos.y, 1, [structPtr = &s, elevatedPos, &window]() {
+                if (structPtr->sprite.has_value()) {
+                    sf::Sprite copy = *structPtr->sprite;
+                    copy.setPosition(elevatedPos);
+                    window.draw(copy);
+                }
             } });
         }
     }
@@ -763,14 +838,14 @@ void renderWorldDepthScene(
 
     sf::Vector2f originalPlayerPos = sprite.getPosition();
     sprite.move({ 0.f, stairOffset });
-    depthDrawables.push_back({ originalPlayerPos.y, -stairOffset, 1, [&sprite, &window]() { window.draw(sprite); } });
+    depthDrawables.push_back({ playerFloorLevel, originalPlayerPos.y, 1, [&sprite, &window]() { window.draw(sprite); } });
 
     for (auto& a : animals) {
         if (a->health > 0) {
             float dx = a->sprite.getPosition().x - sprite.getPosition().x;
             float dy = a->sprite.getPosition().y - sprite.getPosition().y;
             if (dx * dx + dy * dy < 3000000.f) {
-                depthDrawables.push_back({ a->sprite.getPosition().y, 0.f, 1, [animalPtr = a.get(), &window]() {
+                depthDrawables.push_back({ 0, a->sprite.getPosition().y, 1, [animalPtr = a.get(), &window]() {
                     window.draw(animalPtr->sprite);
                     if (animalPtr->health < animalPtr->maxHealth) {
                         sf::FloatRect bounds = animalPtr->sprite.getGlobalBounds();
@@ -794,7 +869,7 @@ void renderWorldDepthScene(
             float dx = m->sprite.getPosition().x - sprite.getPosition().x;
             float dy = m->sprite.getPosition().y - sprite.getPosition().y;
             if (dx * dx + dy * dy < 3000000.f) {
-                depthDrawables.push_back({ m->sprite.getPosition().y, 0.f, 1, [monsterPtr = m.get(), &window]() {
+                depthDrawables.push_back({ 0, m->sprite.getPosition().y, 1, [monsterPtr = m.get(), &window]() {
                     window.draw(monsterPtr->sprite);
                     if (monsterPtr->health < monsterPtr->maxHealth) {
                         sf::FloatRect bounds = monsterPtr->sprite.getGlobalBounds();
@@ -814,12 +889,24 @@ void renderWorldDepthScene(
         }
     }
 
+    // Depth sort:
+    // 1. Lower floors render before higher floors (upper floors cover lower floors)
+    // 2. On the same floor: floor tiles (priority 0) render first, roofs (priority 2) render last
+    // 3. On the same floor and priority: sortY back-to-front
     std::sort(depthDrawables.begin(), depthDrawables.end(), [](const Drawable& a, const Drawable& b) {
-        if (std::abs(a.groundY - b.groundY) > 0.001f) {
-            return a.groundY < b.groundY;
+        if (a.floor != b.floor) {
+            return a.floor < b.floor;
         }
-        if (std::abs(a.z - b.z) > 0.001f) {
-            return a.z < b.z;
+        if (a.priority != b.priority) {
+            if ((a.priority == 0) != (b.priority == 0)) {
+                return a.priority < b.priority;
+            }
+            if ((a.priority == 2) != (b.priority == 2)) {
+                return a.priority < b.priority;
+            }
+        }
+        if (std::abs(a.sortY - b.sortY) > 0.001f) {
+            return a.sortY < b.sortY;
         }
         return a.priority < b.priority;
     });
@@ -872,7 +959,6 @@ void renderWorldDepthScene(
         }
     }
 }
-
 void drawWorldInteractions(
     sf::RenderWindow& window,
     const sf::Font& font,
@@ -921,12 +1007,13 @@ void drawWorldInteractions(
     PlacedStructure* nearestDoor = nullptr;
     float minDist = 300.f;
     for (auto& s : structures) {
-        if (s.id == ITEM_WOOD_DOOR) {
-            sf::Vector2f dPos = s.sprite->getPosition();
-            sf::Vector2f pPos = sprite.getPosition();
-            int doorFloor = getFloorLevelFromY(dPos.y);
+        if (s.id == ITEM_WOOD_DOOR && s.sprite.has_value()) {
+            int doorFloor = (int)s.shearY;
             if (doorFloor == playerFloorLevel) {
-                float dy = (dPos.y + doorFloor * 180.f) - pPos.y;
+                sf::Vector2f dPos = s.sprite->getPosition();
+                if (doorFloor > 0) dPos.y -= doorFloor * 180.f;
+                sf::Vector2f pPos = sprite.getPosition();
+                float dy = dPos.y - pPos.y;
                 float dx = dPos.x - pPos.x;
                 float d = std::sqrt(dx * dx + dy * dy);
                 if (d < minDist) {
@@ -937,10 +1024,24 @@ void drawWorldInteractions(
         }
     }
 
-    if (nearestDoor) {
+    if (nearestDoor && nearestDoor->sprite.has_value()) {
         sf::RectangleShape doorBtn({ 200.f, 60.f });
-        float doorCenterX = nearestDoor->sprite->getPosition().x + (nearestDoor->rotation == 90.f ? 125.f : 250.f);
-        float doorCenterY = nearestDoor->sprite->getPosition().y - (nearestDoor->rotation == 90.f ? 125.f : 0.f);
+        int dFloor = (int)nearestDoor->shearY;
+        sf::Vector2f dPos = nearestDoor->sprite->getPosition();
+        if (dFloor > 0) dPos.y -= dFloor * 180.f;
+
+        float doorCenterX = dPos.x + 250.f;
+        float doorCenterY = dPos.y;
+        if (nearestDoor->rotation == 90.f) {
+            doorCenterX = dPos.x + 125.f;
+            doorCenterY = dPos.y - 125.f;
+        } else if (nearestDoor->rotation == 180.f) {
+            doorCenterX = dPos.x - 250.f;
+            doorCenterY = dPos.y;
+        } else if (nearestDoor->rotation == 270.f) {
+            doorCenterX = dPos.x - 125.f;
+            doorCenterY = dPos.y + 125.f;
+        }
         doorBtn.setPosition({ doorCenterX - 100.f, doorCenterY - 120.f });
 
         sf::Vector2f mpos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
@@ -959,12 +1060,13 @@ void drawWorldInteractions(
     PlacedStructure* nearestBed = nullptr;
     float minBedDist = 180.f;
     for (auto& s : structures) {
-        if (s.id == ITEM_BED) {
-            sf::Vector2f bPos = s.sprite->getPosition();
-            sf::Vector2f pPos = sprite.getPosition();
-            int bedFloor = getFloorLevelFromY(bPos.y);
+        if (s.id == ITEM_BED && s.sprite.has_value()) {
+            int bedFloor = (int)s.shearY;
             if (bedFloor == playerFloorLevel) {
-                float dy = (bPos.y + bedFloor * 180.f) - pPos.y;
+                sf::Vector2f bPos = s.sprite->getPosition();
+                if (bedFloor > 0) bPos.y -= bedFloor * 180.f;
+                sf::Vector2f pPos = sprite.getPosition();
+                float dy = bPos.y - pPos.y;
                 float dx = bPos.x - pPos.x;
                 float d = std::sqrt(dx * dx + dy * dy);
                 if (d < minBedDist) {
@@ -975,9 +1077,12 @@ void drawWorldInteractions(
         }
     }
 
-    if (nearestBed && !isSleeping) {
+    if (nearestBed && !isSleeping && nearestBed->sprite.has_value()) {
         sf::RectangleShape sleepBtn({ 200.f, 60.f });
-        sleepBtn.setPosition({ nearestBed->sprite->getPosition().x - 100.f, nearestBed->sprite->getPosition().y - 120.f });
+        int bFloor = (int)nearestBed->shearY;
+        sf::Vector2f bPos = nearestBed->sprite->getPosition();
+        if (bFloor > 0) bPos.y -= bFloor * 180.f;
+        sleepBtn.setPosition({ bPos.x - 100.f, bPos.y - 120.f });
 
         sf::Vector2f mpos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         bool isHovered = sleepBtn.getGlobalBounds().contains(mpos);
@@ -995,12 +1100,13 @@ void drawWorldInteractions(
     PlacedStructure* nearestChest = nullptr;
     float minChestDist = 200.f;
     for (auto& s : structures) {
-        if (s.id == ITEM_CHEST) {
-            sf::Vector2f cPos = s.sprite->getPosition();
-            sf::Vector2f pPos = sprite.getPosition();
-            int chestFloor = getFloorLevelFromY(cPos.y);
+        if (s.id == ITEM_CHEST && s.sprite.has_value()) {
+            int chestFloor = (int)s.shearY;
             if (chestFloor == playerFloorLevel) {
-                float dy = (cPos.y + chestFloor * 200.f) - pPos.y;
+                sf::Vector2f cPos = s.sprite->getPosition();
+                if (chestFloor > 0) cPos.y -= chestFloor * 180.f;
+                sf::Vector2f pPos = sprite.getPosition();
+                float dy = cPos.y - pPos.y;
                 float dx = cPos.x - pPos.x;
                 float d = std::sqrt(dx * dx + dy * dy);
                 if (d < minChestDist) {
@@ -1011,9 +1117,12 @@ void drawWorldInteractions(
         }
     }
 
-    if (nearestChest && !chestMenuOpen) {
+    if (nearestChest && !chestMenuOpen && nearestChest->sprite.has_value()) {
         sf::RectangleShape chestBtn({ 200.f, 60.f });
-        chestBtn.setPosition({ nearestChest->sprite->getPosition().x - 100.f, nearestChest->sprite->getPosition().y - 120.f });
+        int cFloor = (int)nearestChest->shearY;
+        sf::Vector2f cPos = nearestChest->sprite->getPosition();
+        if (cFloor > 0) cPos.y -= cFloor * 180.f;
+        chestBtn.setPosition({ cPos.x - 100.f, cPos.y - 120.f });
 
         sf::Vector2f mpos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         bool isHovered = chestBtn.getGlobalBounds().contains(mpos);

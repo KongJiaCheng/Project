@@ -1715,7 +1715,8 @@ bool handleKeyAndTextInputs(
         }
         else if (key->scancode == globalSettings.keyRotate) {
             if (placementMode) {
-                placementRotation = (placementRotation == 0.f) ? 90.f : ((placementRotation == 90.f) ? 180.f : 0.f);
+                placementRotation += 90.f;
+                if (placementRotation >= 360.f) placementRotation = 0.f;
             }
             else if (saplingPlacementMode) {
                 saplingRotation += 90.f;
@@ -1728,11 +1729,12 @@ bool handleKeyAndTextInputs(
             float minDist = 300.f;
             for (auto& s : structures) {
                 if (s.id == ITEM_WOOD_DOOR && s.sprite.has_value()) {
-                    sf::Vector2f dPos = s.sprite->getPosition();
-                    sf::Vector2f pPos = playerSprite.getPosition();
-                    int doorFloor = getFloorLevelFromY(dPos.y);
+                    int doorFloor = (int)s.shearY;
                     if (doorFloor == playerFloorLevel) {
-                        float dy = (dPos.y + doorFloor * 180.f) - pPos.y;
+                        sf::Vector2f dPos = s.sprite->getPosition();
+                        if (doorFloor > 0) dPos.y -= doorFloor * 180.f;
+                        sf::Vector2f pPos = playerSprite.getPosition();
+                        float dy = dPos.y - pPos.y;
                         float dx = dPos.x - pPos.x;
                         float d = std::sqrt(dx*dx + dy*dy);
                         if (d < minDist) {
@@ -1912,14 +1914,28 @@ bool handleMouseDragAndScroll(
                 if (!hitWorldStructure) {
                     for (auto& s : structures) {
                         if (s.id == ITEM_WOOD_DOOR && s.sprite.has_value()) {
-                            float doorCenterX = s.sprite->getPosition().x + (s.rotation == 90.f ? 125.f : 250.f);
-                            float doorCenterY = s.sprite->getPosition().y - (s.rotation == 90.f ? 125.f : 0.f);
+                            int sFloor = (int)s.shearY;
+                            sf::Vector2f sPos = s.sprite->getPosition();
+                            if (sFloor > 0) sPos.y -= sFloor * 180.f;
+
+                            float doorCenterX = sPos.x + 250.f;
+                            float doorCenterY = sPos.y;
+                            if (s.rotation == 90.f) {
+                                doorCenterX = sPos.x + 125.f;
+                                doorCenterY = sPos.y - 125.f;
+                            } else if (s.rotation == 180.f) {
+                                doorCenterX = sPos.x - 250.f;
+                                doorCenterY = sPos.y;
+                            } else if (s.rotation == 270.f) {
+                                doorCenterX = sPos.x - 125.f;
+                                doorCenterY = sPos.y + 125.f;
+                            }
                             sf::FloatRect doorBtnBounds({ doorCenterX - 100.f, doorCenterY - 120.f }, { 200.f, 60.f });
                             sf::FloatRect doorBounds;
-                            if (s.rotation == 90.f) {
-                                doorBounds = sf::FloatRect({ s.sprite->getPosition().x, s.sprite->getPosition().y - 500.f }, { 250.f, 500.f });
+                            if (s.rotation == 90.f || s.rotation == 270.f) {
+                                doorBounds = sf::FloatRect({ std::min(sPos.x, doorCenterX - 125.f), std::min(sPos.y, doorCenterY) - 500.f }, { 250.f, 500.f });
                             } else {
-                                doorBounds = sf::FloatRect({ s.sprite->getPosition().x, s.sprite->getPosition().y - 500.f }, { 500.f, 500.f });
+                                doorBounds = sf::FloatRect({ std::min(sPos.x, doorCenterX - 250.f), sPos.y - 500.f }, { 500.f, 500.f });
                             }
                             if (doorBtnBounds.contains(curWorldPos) || doorBounds.contains(curWorldPos)) {
                                 if (!s.owner.empty() && s.owner != username) {
