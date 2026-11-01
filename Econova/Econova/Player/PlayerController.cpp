@@ -25,7 +25,7 @@ bool isPositionBlocked(
     const ItemManager& itemManager
 ) {
     const float TILE_CONNECT_DIST = 260.f;
-    sf::Vector2f targetFeet = targetPos + sf::Vector2f(0.f, 250.f);
+    sf::Vector2f targetFeet = targetPos + sf::Vector2f(0.f, 20.f);
 
     int targetFloor = 0;
     bool onStairs = false;
@@ -33,7 +33,7 @@ bool isPositionBlocked(
         if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
             sf::Vector2f sPos = s.sprite->getPosition();
             int sFloor = (int)s.shearY;
-            const float margin = 150.f;
+            const float margin = 120.f;
             float zoneTop    = sPos.y - 250.f - margin;
             float zoneBottom = sPos.y + margin;
             float zoneLeft   = sPos.x - margin;
@@ -49,9 +49,9 @@ bool isPositionBlocked(
     }
     if (!onStairs) {
         for (const auto& etf : elevatedTileFloors) {
-            if (targetFeet.y >= etf.pos.y - 250.f - 40.f && targetFeet.y <= etf.pos.y + 40.f) {
+            if (targetFeet.y >= etf.pos.y - 250.f - 60.f && targetFeet.y <= etf.pos.y + 60.f) {
                 float xShift = etf.pos.y - targetFeet.y;
-                if (targetFeet.x >= etf.pos.x + xShift - 40.f && targetFeet.x <= etf.pos.x + 500.f + xShift + 40.f) {
+                if (targetFeet.x >= etf.pos.x + xShift - 60.f && targetFeet.x <= etf.pos.x + 500.f + xShift + 60.f) {
                     if (etf.floorLevel > targetFloor) {
                         targetFloor = etf.floorLevel;
                     }
@@ -72,7 +72,6 @@ bool isPositionBlocked(
         }
 
         sf::Vector2f sPos = s.sprite->getPosition();
-        if (sFloor > 0) sPos.y -= sFloor * 180.f;
 
         float sdx = sPos.x - targetPos.x;
         float sdy = sPos.y - targetPos.y;
@@ -90,7 +89,6 @@ bool isPositionBlocked(
         }
         else if (s.id == ITEM_FURNACE || s.id == ITEM_BED) {
             sf::FloatRect b = s.sprite->getGlobalBounds();
-            if (sFloor > 0) b.position.y -= sFloor * 180.f;
             b.position.x += b.size.x * 0.2f; b.size.x *= 0.6f;
             b.position.y += b.size.y * 0.7f; b.size.y *= 0.3f;
             if (b.contains(targetPos)) return true;

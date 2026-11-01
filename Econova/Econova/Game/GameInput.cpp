@@ -1739,8 +1739,7 @@ bool handleKeyAndTextInputs(
                     int doorFloor = (int)s.shearY;
                     if (doorFloor == playerFloorLevel) {
                         sf::Vector2f dPos = s.sprite->getPosition();
-                        if (doorFloor > 0) dPos.y -= doorFloor * 180.f;
-                        sf::Vector2f pPos = playerSprite.getPosition();
+                                                sf::Vector2f pPos = playerSprite.getPosition();
                         float dy = dPos.y - pPos.y;
                         float dx = dPos.x - pPos.x;
                         float d = std::sqrt(dx*dx + dy*dy);
@@ -1923,7 +1922,7 @@ bool handleMouseDragAndScroll(
                         if (s.id == ITEM_WOOD_DOOR && s.sprite.has_value()) {
                             int sFloor = (int)s.shearY;
                             sf::Vector2f sPos = s.sprite->getPosition();
-                            if (sFloor > 0) sPos.y -= sFloor * 180.f;
+                            if (sFloor > 0) sPos.y -= sFloor * FLOOR_HEIGHT;
 
                             float doorCenterX = sPos.x + 250.f;
                             float doorCenterY = sPos.y;

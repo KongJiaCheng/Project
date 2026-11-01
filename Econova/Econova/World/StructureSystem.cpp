@@ -1117,8 +1117,13 @@ void applyStructureScale(
         spr.setScale({ 500.f / tw, 500.f / th });
     }
     else if (id == ITEM_WOOD_STAIRS) {
-        // 500×500
-        spr.setScale({ 500.f / tw, 500.f / th });
+        if (rotation == 90.f || rotation == 270.f) {
+            spr.setScale({ -500.f / tw, 500.f / th });
+            spr.setOrigin({ tw, th });
+        } else {
+            spr.setScale({ 500.f / tw, 500.f / th });
+            spr.setOrigin({ 0.f, th });
+        }
     }
     else if (id == ITEM_WOOD_ROOF) {
         // 500×500
@@ -1255,7 +1260,7 @@ bool handleStructurePlacementClicks(
 
     if (maxFloorUnlocked > 0) {
         for (int F = maxFloorUnlocked; F >= 1; --F) {
-            float elev = F * 180.f;
+            float elev = F * FLOOR_HEIGHT;
             sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
             sf::Vector2f cellBase = snapGridFunc(compM);
 
@@ -1427,7 +1432,11 @@ bool handleStructurePlacementClicks(
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
 
             if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_STAIRS) {
-                newS.sprite->setOrigin({ 0.f, (float)ts.y });
+                if (placementItemID == ITEM_WOOD_STAIRS && (placementRotation == 90.f || placementRotation == 270.f)) {
+                    newS.sprite->setOrigin({ (float)ts.x, (float)ts.y });
+                } else {
+                    newS.sprite->setOrigin({ 0.f, (float)ts.y });
+                }
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
             }
@@ -1514,7 +1523,7 @@ bool handleWorldInteractionClicks(
         if (s.id == ITEM_BED && s.sprite.has_value()) {
             int bFloor = (int)s.shearY;
             sf::Vector2f bPos = s.sprite->getPosition();
-            if (bFloor > 0) bPos.y -= bFloor * 180.f;
+            if (bFloor > 0) bPos.y -= bFloor * FLOOR_HEIGHT;
             sf::FloatRect wrenchBtnBounds({ bPos.x - 25.f, bPos.y - 105.f }, { 50.f, 50.f });
             sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
             if (wrenchBtnBounds.contains(worldPos) || bedBounds.contains(worldPos)) {
@@ -1537,7 +1546,7 @@ bool handleWorldInteractionClicks(
         if (s.id == ITEM_FURNACE && s.sprite.has_value()) {
             int fFloor = (int)s.shearY;
             sf::Vector2f fPos = s.sprite->getPosition();
-            if (fFloor > 0) fPos.y -= fFloor * 180.f;
+            if (fFloor > 0) fPos.y -= fFloor * FLOOR_HEIGHT;
             sf::FloatRect wrenchBtnBounds({ fPos.x - 25.f, fPos.y - 175.f }, { 50.f, 50.f });
             if (wrenchBtnBounds.contains(worldPos)) {
                 if (!s.owner.empty() && s.owner != username) {
@@ -1561,7 +1570,7 @@ bool handleWorldInteractionClicks(
             int doorFloor = (int)s.shearY;
             if (doorFloor == playerFloorLevel) {
                 sf::Vector2f dPos = s.sprite->getPosition();
-                if (doorFloor > 0) dPos.y -= doorFloor * 180.f;
+                if (doorFloor > 0) dPos.y -= doorFloor * FLOOR_HEIGHT;
                 sf::Vector2f pPos = playerSprite.getPosition();
                 float dy = dPos.y - pPos.y;
                 float dx = dPos.x - pPos.x;
@@ -1576,7 +1585,7 @@ bool handleWorldInteractionClicks(
     if (nearestDoor && nearestDoor->sprite.has_value()) {
         int dFloor = (int)nearestDoor->shearY;
         sf::Vector2f dPos = nearestDoor->sprite->getPosition();
-        if (dFloor > 0) dPos.y -= dFloor * 180.f;
+        if (dFloor > 0) dPos.y -= dFloor * FLOOR_HEIGHT;
         float doorCenterX = dPos.x + 250.f;
         float doorCenterY = dPos.y;
         if (nearestDoor->rotation == 90.f) {
@@ -1611,7 +1620,7 @@ bool handleWorldInteractionClicks(
             int chestFloor = (int)s.shearY;
             if (chestFloor == playerFloorLevel) {
                 sf::Vector2f cPos = s.sprite->getPosition();
-                if (chestFloor > 0) cPos.y -= chestFloor * 180.f;
+                if (chestFloor > 0) cPos.y -= chestFloor * FLOOR_HEIGHT;
                 sf::Vector2f pPos = playerSprite.getPosition();
                 float dy = cPos.y - pPos.y;
                 float dx = cPos.x - pPos.x;
@@ -1626,7 +1635,7 @@ bool handleWorldInteractionClicks(
     if (nearestChest && !chestMenuOpen && nearestChest->sprite.has_value()) {
         int cFloor = (int)nearestChest->shearY;
         sf::Vector2f cPos = nearestChest->sprite->getPosition();
-        if (cFloor > 0) cPos.y -= cFloor * 180.f;
+        if (cFloor > 0) cPos.y -= cFloor * FLOOR_HEIGHT;
         sf::FloatRect chestBtnBounds({ cPos.x - 100.f, cPos.y - 120.f }, { 200.f, 60.f });
         if (chestBtnBounds.contains(worldPos)) {
             if (!nearestChest->owner.empty() && nearestChest->owner != username) {
@@ -1767,7 +1776,7 @@ void updateAndDrawPlacementPreview(
             sf::Vector2f targetPos = snapToGrid(worldPos);
             if (maxFloorUnlocked > 0) {
                 for (int F = maxFloorUnlocked; F >= 1; --F) {
-                    float elev = F * 180.f;
+                    float elev = F * FLOOR_HEIGHT;
                     sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
                     sf::Vector2f cellBase = snapToGrid(compM);
 

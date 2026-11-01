@@ -93,6 +93,8 @@ struct PlacedStructure {
     }
 };
 
+constexpr float FLOOR_HEIGHT = 500.f;
+
 inline std::pair<sf::Vector2f, sf::Vector2f> getWallSideCells(sf::Vector2f pos, float rotation) {
     constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
     if (rotation == 90.f) {
@@ -134,8 +136,12 @@ inline std::vector<sf::Vector2f> getSupportedCellsForFloor(int targetFloor, cons
     for (const auto& s : structures) {
         if (!s.sprite.has_value() || (int)s.shearY != lowerFloor) continue;
 
-        if (s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) {
+        if (s.id == ITEM_WOOD_TILE) {
             addUnique(s.sprite->getPosition());
+        } else if (s.id == ITEM_WOOD_STAIRS) {
+            constexpr float SX = 250.f, SY = 250.f;
+            addUnique(s.sprite->getPosition());
+            addUnique(sf::Vector2f(s.sprite->getPosition().x + SX, s.sprite->getPosition().y - SY));
         } else if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
             auto sides = getWallSideCells(s.sprite->getPosition(), s.rotation);
             addUnique(sides.first);
