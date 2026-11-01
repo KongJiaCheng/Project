@@ -1259,43 +1259,13 @@ bool handleStructurePlacementClicks(
             sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
             sf::Vector2f cellBase = snapGridFunc(compM);
 
-            if (placementItemID == ITEM_WOOD_TILE) {
-                bool hasSupport = false;
-                for (const auto& s : structures) {
-                    if (s.sprite.has_value() &&
-                        std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
-                        std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
-                        if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == F - 1) {
-                            hasSupport = true;
-                            break;
-                        }
-                    }
-                }
-                if (hasSupport) {
-                    targetFloor = (float)F;
-                    targetPlacementPos = cellBase;
-                    break;
-                }
-            } else {
-                bool hasFloorOnThisLevel = false;
-                for (const auto& s : structures) {
-                    if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == F) {
-                        if (std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
-                            std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
-                            hasFloorOnThisLevel = true;
-                            break;
-                        }
-                    }
-                }
-                if (hasFloorOnThisLevel) {
-                    targetFloor = (float)F;
-                    targetPlacementPos = cellBase;
-                    break;
-                }
+            if (isCellSupportedOnFloor(cellBase, F, structures)) {
+                targetFloor = (float)F;
+                targetPlacementPos = cellBase;
+                break;
             }
         }
     }
-
     if (placeBtn.contains(uiPos)) {
         if (placementItemID == ITEM_NONE) {
             for (const auto& it : structures) {
@@ -1379,21 +1349,14 @@ bool handleStructurePlacementClicks(
                 }
             }
 
-            // ── Upper-floor tile validation: must have support beneath ─────
-            if (placementItemID == ITEM_WOOD_TILE && targetFloor >= 1.f) {
-                bool hasSupport = false;
-                for (const auto& s : structures) {
-                    if (s.sprite.has_value() &&
-                        std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
-                        std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
-                        if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == (int)targetFloor - 1) {
-                            hasSupport = true;
-                            break;
-                        }
-                    }
+            // Upper-floor placement validation: must be within supported house structure
+            if (targetFloor >= 1.f) {
+                if (!isCellSupportedOnFloor(placementPos, (int)targetFloor, structures)) {
+                    inventory.showBanner("Upper floor structures must be built within the supported house area!");
+                    return true;
                 }
-                if (!hasSupport) {
-                    inventory.showBanner("Upper floor tiles must be supported by a lower floor or stairs!");
+                if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)targetFloor, structures)) {
+                    inventory.showBanner("Cannot place floor tile over staircase opening!");
                     return true;
                 }
             }
@@ -1470,6 +1433,19 @@ bool handleStructurePlacementClicks(
             }
             applyStructureScale(*newS.sprite, placementItemID, placementRotation, false, newS.shearY);
             newS.sprite->setPosition(placementPos);
+            if (placementItemID == ITEM_WOOD_STAIRS) {
+                // Automatically reserve staircase opening on the floor above: remove any floor tile blocking it
+                for (auto it = structures.begin(); it != structures.end(); ) {
+                    if (it->id == ITEM_WOOD_TILE && it->sprite.has_value() && (int)it->shearY == (int)targetFloor + 1) {
+                        if (std::abs(it->sprite->getPosition().x - placementPos.x) < 1.f &&
+                            std::abs(it->sprite->getPosition().y - placementPos.y) < 1.f) {
+                            it = structures.erase(it);
+                            continue;
+                        }
+                    }
+                    ++it;
+                }
+            }
             syncSaveCallback();
             placementMode = false;
         }
@@ -1795,37 +1771,9 @@ void updateAndDrawPlacementPreview(
                     sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
                     sf::Vector2f cellBase = snapToGrid(compM);
 
-                    if (placementItemID == ITEM_WOOD_TILE) {
-                        bool hasSupport = false;
-                        for (const auto& s : structures) {
-                            if (s.sprite.has_value() &&
-                                std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
-                                std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
-                                if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == F - 1) {
-                                    hasSupport = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (hasSupport) {
-                            targetPos = cellBase;
-                            break;
-                        }
-                    } else {
-                        bool hasFloorOnThisLevel = false;
-                        for (const auto& s : structures) {
-                            if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == F) {
-                                if (std::abs(s.sprite->getPosition().x - cellBase.x) < 1.f &&
-                                    std::abs(s.sprite->getPosition().y - cellBase.y) < 1.f) {
-                                    hasFloorOnThisLevel = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (hasFloorOnThisLevel) {
-                            targetPos = cellBase;
-                            break;
-                        }
+                    if (isCellSupportedOnFloor(cellBase, F, structures)) {
+                        targetPos = cellBase;
+                        break;
                     }
                 }
             }

@@ -93,6 +93,67 @@ struct PlacedStructure {
     }
 };
 
+inline std::pair<sf::Vector2f, sf::Vector2f> getWallSideCells(sf::Vector2f pos, float rotation) {
+    constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
+    if (rotation == 90.f) {
+        return { pos, sf::Vector2f(pos.x - CELL, pos.y) };
+    } else if (rotation == 180.f) {
+        return { sf::Vector2f(pos.x - CELL, pos.y), sf::Vector2f(pos.x - CELL - SX, pos.y + SY) };
+    } else if (rotation == 270.f) {
+        return { sf::Vector2f(pos.x - SX, pos.y + SY), sf::Vector2f(pos.x - CELL - SX, pos.y + SY) };
+    } else { // 0.f
+        return { pos, sf::Vector2f(pos.x - SX, pos.y + SY) };
+    }
+}
+
+inline bool isStaircaseOpening(sf::Vector2f cellPos, int targetFloor, const std::vector<PlacedStructure>& structures) {
+    if (targetFloor < 1) return false;
+    for (const auto& s : structures) {
+        if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value() && (int)s.shearY == targetFloor - 1) {
+            if (std::abs(s.sprite->getPosition().x - cellPos.x) < 1.f &&
+                std::abs(s.sprite->getPosition().y - cellPos.y) < 1.f) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+inline std::vector<sf::Vector2f> getSupportedCellsForFloor(int targetFloor, const std::vector<PlacedStructure>& structures) {
+    std::vector<sf::Vector2f> supported;
+    if (targetFloor < 1) return supported;
+    int lowerFloor = targetFloor - 1;
+
+    auto addUnique = [&](sf::Vector2f p) {
+        for (const auto& c : supported) {
+            if (std::abs(c.x - p.x) < 1.f && std::abs(c.y - p.y) < 1.f) return;
+        }
+        supported.push_back(p);
+    };
+
+    for (const auto& s : structures) {
+        if (!s.sprite.has_value() || (int)s.shearY != lowerFloor) continue;
+
+        if (s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) {
+            addUnique(s.sprite->getPosition());
+        } else if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+            auto sides = getWallSideCells(s.sprite->getPosition(), s.rotation);
+            addUnique(sides.first);
+            addUnique(sides.second);
+        }
+    }
+    return supported;
+}
+
+inline bool isCellSupportedOnFloor(sf::Vector2f cellPos, int targetFloor, const std::vector<PlacedStructure>& structures) {
+    if (targetFloor < 1) return true;
+    auto cells = getSupportedCellsForFloor(targetFloor, structures);
+    for (const auto& c : cells) {
+        if (std::abs(c.x - cellPos.x) < 1.f && std::abs(c.y - cellPos.y) < 1.f) return true;
+    }
+    return false;
+}
+
 class Inventory;
 
 void syncSaveStructuresAndCampfires(

@@ -194,6 +194,7 @@ bool handleKeyAndTextInputs(
     const GameSettings& globalSettings,
     bool& isChatting,
     bool& chatActive,
+    bool& chatJustOpened,
     TextInput& chatInput,
     const std::string& username,
     AuthManager& authManager,

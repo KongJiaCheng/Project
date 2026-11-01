@@ -1,4 +1,5 @@
 #include "WorldRenderer.h"
+#include "Game.h"
 #include "ItemID.h"
 #include "Settings.h"
 #include <cmath>
@@ -96,7 +97,6 @@ void drawSecondFloorGrid(
     const std::vector<PlacedStructure>& structures,
     int playerFloorLevel
 ) {
-    // Determine maximum floor unlocked by stairs
     int maxFloorUnlocked = 0;
     for (const auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS) {
@@ -109,60 +109,37 @@ void drawSecondFloorGrid(
     if (maxFloorUnlocked < 1) return;
 
     constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
-    constexpr float FLOOR_STEP = 180.f;   // visual Y lift per floor
+    constexpr float FLOOR_STEP = 180.f;
 
-    // Per-floor color palette. Index 0 = floor 2 (targetFloor=1), 1 = floor 3, 2 = floor 4+
     struct FloorColors { sf::Color outline, hover, filled; };
     const FloorColors palette[] = {
-        // Floor 2 — green
-        { sf::Color( 40, 220,  80, 170),
-          sf::Color( 60, 255, 100, 235),
-          sf::Color( 40, 200,  80,  70) },
-        // Floor 3 — blue
-        { sf::Color( 40, 130, 255, 170),
-          sf::Color(100, 180, 255, 235),
-          sf::Color( 40, 100, 200,  70) },
-        // Floor 4+ — purple
-        { sf::Color(160,  50, 255, 170),
-          sf::Color(200, 110, 255, 235),
-          sf::Color(130,  40, 200,  70) },
+        // Floor 2 - green
+        { sf::Color( 40, 220,  80, 170), sf::Color( 60, 255, 100, 235), sf::Color( 40, 200,  80,  70) },
+        // Floor 3 - blue
+        { sf::Color( 40, 130, 255, 170), sf::Color(100, 180, 255, 235), sf::Color( 40, 100, 200,  70) },
+        // Floor 4 - purple
+        { sf::Color(160,  50, 255, 170), sf::Color(200, 110, 255, 235), sf::Color(130,  40, 200,  70) },
+        // Floor 5 - gold/amber
+        { sf::Color(255, 180,  40, 170), sf::Color(255, 210,  70, 235), sf::Color(200, 140,  30,  70) },
+        // Floor 6 - cyan
+        { sf::Color( 40, 230, 230, 170), sf::Color( 80, 255, 255, 235), sf::Color( 30, 180, 180,  70) },
+        // Floor 7+ - crimson/magenta
+        { sf::Color(255,  60, 140, 170), sf::Color(255, 100, 180, 235), sf::Color(200,  40, 110,  70) },
     };
+    constexpr int PALETTE_SIZE = sizeof(palette) / sizeof(palette[0]);
 
     for (int targetFloor = 1; targetFloor <= maxFloorUnlocked; ++targetFloor) {
-        float targetShearY  = static_cast<float>(targetFloor);
-        float elevOffset    = targetFloor * FLOOR_STEP;
+        float elevOffset = targetFloor * FLOOR_STEP;
 
-        // Collect source tiles from the floor directly below
-        std::vector<sf::Vector2f> sourceTiles;
-        for (const auto& s : structures) {
-            if (s.sprite.has_value()) {
-                float sy = s.shearY;
-                bool isSource = (targetFloor == 1)
-                    ? (sy < 1.f && (s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS))
-                    : (sy >= targetShearY - 1.f && sy < targetShearY && (s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS));
-                if (isSource) {
-                    bool alreadyAdded = false;
-                    for (const auto& pt : sourceTiles) {
-                        if (std::abs(pt.x - s.sprite->getPosition().x) < 1.f &&
-                            std::abs(pt.y - s.sprite->getPosition().y) < 1.f) {
-                            alreadyAdded = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyAdded) {
-                        sourceTiles.push_back(s.sprite->getPosition());
-                    }
-                }
-            }
-        }
-        if (sourceTiles.empty()) continue;
+        std::vector<sf::Vector2f> supportedCells = getSupportedCellsForFloor(targetFloor, structures);
+        if (supportedCells.empty()) continue;
 
-        const FloorColors& col = palette[std::min(targetFloor - 1, 2)];
+        const FloorColors& col = palette[std::min(targetFloor - 1, PALETTE_SIZE - 1)];
 
         std::vector<sf::Vector2f> placedOnTargetFloor;
         for (const auto& s : structures) {
             if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
-                if (s.shearY >= targetShearY - 0.5f && s.shearY <= targetShearY + 0.5f) {
+                if ((int)s.shearY == targetFloor) {
                     placedOnTargetFloor.push_back(s.sprite->getPosition());
                 }
             }
@@ -184,14 +161,24 @@ void drawSecondFloorGrid(
 
         sf::VertexArray lines(sf::PrimitiveType::Lines);
 
-        for (const sf::Vector2f& tilePos : sourceTiles) {
+        for (const sf::Vector2f& tilePos : supportedCells) {
             sf::Vector2f pos(tilePos.x, tilePos.y - elevOffset);
 
+            bool isStairOpen = isStaircaseOpening(tilePos, targetFloor, structures);
             bool isHover  = (std::abs(tilePos.x - hoverBase.x) < 1.f &&
                              std::abs(tilePos.y - hoverBase.y) < 1.f);
-            bool isFilled = hasFloorTileAt(tilePos);
+            bool isFilled = !isStairOpen && hasFloorTileAt(tilePos);
 
-            sf::Color lineCol = isFilled ? col.filled : (isHover ? col.hover : col.outline);
+            sf::Color lineCol;
+            if (isStairOpen) {
+                lineCol = isHover ? sf::Color(255, 230, 80, 240) : sf::Color(255, 190, 40, 200);
+            } else if (isFilled) {
+                lineCol = col.filled;
+            } else if (isHover) {
+                lineCol = col.hover;
+            } else {
+                lineCol = col.outline;
+            }
 
             sf::Vector2f BL{ pos.x,            pos.y      };
             sf::Vector2f BR{ pos.x + CELL,      pos.y      };
@@ -202,6 +189,13 @@ void drawSecondFloorGrid(
             lines.append(sf::Vertex{BR, lineCol}); lines.append(sf::Vertex{TR, lineCol});
             lines.append(sf::Vertex{TR, lineCol}); lines.append(sf::Vertex{TL, lineCol});
             lines.append(sf::Vertex{TL, lineCol}); lines.append(sf::Vertex{BL, lineCol});
+
+            if (isStairOpen) {
+                sf::Color innerCol(255, 200, 50, 130);
+                sf::Vector2f midB = (BL + BR) * 0.5f;
+                sf::Vector2f midT = (TL + TR) * 0.5f;
+                lines.append(sf::Vertex{midB, innerCol}); lines.append(sf::Vertex{midT, innerCol});
+            }
         }
 
         window.draw(lines);
@@ -446,40 +440,17 @@ void drawPlacementPreview(
     }
 
     // Determine target floor from position
+    // Determine target floor from position
     float targetFloor = 0.f;
     if (maxFloorUnlocked > 0) {
         for (int F = maxFloorUnlocked; F >= 1; --F) {
-            if (placementItemID == ITEM_WOOD_TILE) {
-                bool hasSupport = false;
-                for (const auto& s : structures) {
-                    if (s.sprite.has_value() &&
-                        std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
-                        std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
-                        if ((s.id == ITEM_WOOD_TILE || s.id == ITEM_WOOD_STAIRS) && (int)s.shearY == F - 1) {
-                            hasSupport = true;
-                            break;
-                        }
-                    }
-                }
-                if (hasSupport) {
-                    targetFloor = (float)F;
-                    break;
-                }
-            } else {
-                bool hasFloorOnThisLevel = false;
-                for (const auto& s : structures) {
-                    if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == F) {
-                        if (std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
-                            std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
-                            hasFloorOnThisLevel = true;
-                            break;
-                        }
-                    }
-                }
-                if (hasFloorOnThisLevel) {
-                    targetFloor = (float)F;
-                    break;
-                }
+            float elev = F * 180.f;
+            sf::Vector2f compM = { placementPos.x, placementPos.y + elev };
+            sf::Vector2f cellBase = snapToGrid(compM);
+
+            if (isCellSupportedOnFloor(cellBase, F, structures)) {
+                targetFloor = (float)F;
+                break;
             }
         }
     }
@@ -487,6 +458,15 @@ void drawPlacementPreview(
     float elevOffset = targetFloor * 180.f;
     sf::Vector2f elevatedPos = { placementPos.x, placementPos.y - elevOffset };
 
+    bool isValidPlacement = true;
+    if (targetFloor >= 1.f) {
+        if (!isCellSupportedOnFloor(placementPos, (int)targetFloor, structures)) {
+            isValidPlacement = false;
+        }
+        if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)targetFloor, structures)) {
+            isValidPlacement = false;
+        }
+    }
     if (placementItemID == ITEM_WOOD_STAIRS) {
         bool hasTileUnder = false;
         for (const auto& s : structures) {
@@ -499,10 +479,12 @@ void drawPlacementPreview(
             }
         }
         if (!hasTileUnder) {
-            preview.setColor(sf::Color(255, 100, 100, 180));
-        } else {
-            preview.setColor(sf::Color(255, 255, 255, 180));
+            isValidPlacement = false;
         }
+    }
+
+    if (!isValidPlacement) {
+        preview.setColor(sf::Color(255, 100, 100, 180));
     } else {
         preview.setColor(sf::Color(255, 255, 255, 180));
     }
@@ -558,7 +540,6 @@ void drawSpeechBubble(
     }
 }
 
-#include "Game.h"
 #include <algorithm>
 
 void renderWorldDepthScene(
@@ -599,69 +580,77 @@ void renderWorldDepthScene(
         return (pt.x >= pos.x + xShift - margin && pt.x <= pos.x + 500.f + xShift + margin);
     };
 
-    playerFloorLevel = 0;
     bool playerOnStairs = false;
-
-    // Check elevated floor tiles
-    for (auto& etf : elevatedTileFloors) {
-        float eElev = etf.floorLevel * 180.f;
-        sf::Vector2f elevatedPos = { etf.pos.x, etf.pos.y - eElev };
-        if (isPointInRhombus(pFeetGlobal, elevatedPos)) {
-            if (etf.floorLevel > playerFloorLevel) {
-                playerFloorLevel = etf.floorLevel;
-            }
-        }
-    }
 
     // Check stairs interaction and elevation
     for (auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
             sf::Vector2f sPos = s.sprite->getPosition();
             int sFloor = (int)s.shearY;
-            float sElev = sFloor * 180.f;
 
             const float margin = 150.f;
-            float stairZoneTop    = sPos.y - 250.f - margin - sElev;
-            float stairZoneBottom = sPos.y + margin - sElev;
+            float stairZoneTop    = sPos.y - 250.f - margin;
+            float stairZoneBottom = sPos.y + margin;
             float stairZoneLeft   = sPos.x - margin;
             float stairZoneRight  = sPos.x + 500.f + margin;
 
             if (pPos.y >= stairZoneTop && pPos.y <= stairZoneBottom &&
                 pPos.x >= stairZoneLeft && pPos.x <= stairZoneRight)
             {
-                playerOnStairs = true;
-                float progress = 0.f;
-                if (s.rotation == 90.f) {
-                    progress = (pPos.x - sPos.x) / 500.f;
-                } else if (s.rotation == 180.f) {
-                    progress = (pPos.y - (stairZoneTop + margin)) / 250.f;
-                } else if (s.rotation == 270.f) {
-                    progress = 1.0f - (pPos.x - sPos.x) / 500.f;
-                } else {
-                    progress = 1.0f - (pPos.y - (sPos.y - 250.f - sElev)) / 250.f;
-                }
-                progress = std::clamp(progress, 0.f, 1.f);
-                stairOffset = -(sFloor + progress) * 180.f;
-                if (progress > 0.5f) {
-                    playerFloorLevel = sFloor + 1;
-                } else {
-                    playerFloorLevel = sFloor;
+                if (playerFloorLevel == sFloor || playerFloorLevel == sFloor + 1) {
+                    playerOnStairs = true;
+                    float progress = 0.f;
+                    if (s.rotation == 90.f) {
+                        progress = (pPos.x - sPos.x) / 500.f;
+                    } else if (s.rotation == 180.f) {
+                        progress = (pPos.y - (stairZoneTop + margin)) / 250.f;
+                    } else if (s.rotation == 270.f) {
+                        progress = 1.0f - (pPos.x - sPos.x) / 500.f;
+                    } else {
+                        progress = 1.0f - (pPos.y - (sPos.y - 250.f)) / 250.f;
+                    }
+                    progress = std::clamp(progress, 0.f, 1.f);
+                    stairOffset = -(sFloor + progress) * 180.f;
+                    if (progress > 0.5f) {
+                        playerFloorLevel = sFloor + 1;
+                    } else {
+                        playerFloorLevel = sFloor;
+                    }
+                    break;
                 }
             }
         }
     }
 
-    if (!playerOnStairs && playerFloorLevel > 0) {
-        stairOffset = -(float)playerFloorLevel * 180.f;
+    if (!playerOnStairs) {
+        if (playerFloorLevel > 0) {
+            bool onFloor = false;
+            for (const auto& etf : elevatedTileFloors) {
+                if (etf.floorLevel == playerFloorLevel && isPointInRhombus(pFeetGlobal, etf.pos)) {
+                    onFloor = true;
+                    break;
+                }
+            }
+            if (!onFloor) {
+                int highestBelow = 0;
+                for (const auto& etf : elevatedTileFloors) {
+                    if (etf.floorLevel < playerFloorLevel && etf.floorLevel > highestBelow && isPointInRhombus(pFeetGlobal, etf.pos)) {
+                        highestBelow = etf.floorLevel;
+                    }
+                }
+                playerFloorLevel = highestBelow;
+            }
+            stairOffset = -(float)playerFloorLevel * 180.f;
+        } else {
+            stairOffset = 0.f;
+        }
     }
 
     // Check if player is under an upper floor (for transparency)
     bool isUnderElevatedFloor = false;
-    for (auto& etf : elevatedTileFloors) {
+    for (const auto& etf : elevatedTileFloors) {
         if (etf.floorLevel > playerFloorLevel) {
-            float eElev = etf.floorLevel * 180.f;
-            sf::Vector2f elevatedPos = { etf.pos.x, etf.pos.y - eElev };
-            if (isPointInRhombus(pPos, elevatedPos, 0.f)) {
+            if (isPointInRhombus(pPos, etf.pos, 0.f)) {
                 isUnderElevatedFloor = true;
                 break;
             }

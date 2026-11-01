@@ -27,30 +27,34 @@ bool isPositionBlocked(
     const float TILE_CONNECT_DIST = 260.f;
     sf::Vector2f targetFeet = targetPos + sf::Vector2f(0.f, 250.f);
 
-    bool targetElevated = false;
+    int targetFloor = 0;
+    bool onStairs = false;
     for (const auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
             sf::Vector2f sPos = s.sprite->getPosition();
             int sFloor = (int)s.shearY;
-            float sElev = sFloor * 180.f;
             const float margin = 150.f;
-            float zoneTop    = sPos.y - 250.f - margin - sElev;
-            float zoneBottom = sPos.y + margin - sElev;
+            float zoneTop    = sPos.y - 250.f - margin;
+            float zoneBottom = sPos.y + margin;
             float zoneLeft   = sPos.x - margin;
             float zoneRight  = sPos.x + 500.f + margin;
             if (targetPos.y >= zoneTop && targetPos.y <= zoneBottom &&
                 targetPos.x >= zoneLeft && targetPos.x <= zoneRight)
-            { targetElevated = true; break; }
+            {
+                onStairs = true;
+                targetFloor = sFloor;
+                break;
+            }
         }
     }
-    if (!targetElevated) {
+    if (!onStairs) {
         for (const auto& etf : elevatedTileFloors) {
-            float eElev = etf.floorLevel * 180.f;
-            if (targetFeet.y >= etf.pos.y - 250.f - 40.f - eElev && targetFeet.y <= etf.pos.y + 40.f - eElev) {
-                float xShift = (etf.pos.y - eElev) - targetFeet.y;
+            if (targetFeet.y >= etf.pos.y - 250.f - 40.f && targetFeet.y <= etf.pos.y + 40.f) {
+                float xShift = etf.pos.y - targetFeet.y;
                 if (targetFeet.x >= etf.pos.x + xShift - 40.f && targetFeet.x <= etf.pos.x + 500.f + xShift + 40.f) {
-                    targetElevated = true;
-                    break;
+                    if (etf.floorLevel > targetFloor) {
+                        targetFloor = etf.floorLevel;
+                    }
                 }
             }
         }
@@ -61,8 +65,11 @@ bool isPositionBlocked(
     for (const auto& s : structures) {
         if (!s.sprite.has_value()) continue;
         int sFloor = (int)s.shearY;
-        if (targetElevated && sFloor == 0) continue;
-        if (!targetElevated && sFloor > 0) continue;
+        if (!onStairs) {
+            if (sFloor != targetFloor) continue;
+        } else {
+            if (sFloor != targetFloor && sFloor != targetFloor + 1) continue;
+        }
 
         sf::Vector2f sPos = s.sprite->getPosition();
         if (sFloor > 0) sPos.y -= sFloor * 180.f;
@@ -113,6 +120,7 @@ bool isWorldPositionBlocked(
 
             if (structure.id == ITEM_WOOD_WALL || (structure.id == ITEM_WOOD_DOOR && !structure.isOpen)) {
                 int sFloor = (int)structure.shearY;
+                if (sFloor > 0) continue;
                 sf::Vector2f sPos = structure.sprite->getPosition();
                 if (sFloor > 0) sPos.y -= sFloor * 180.f;
 

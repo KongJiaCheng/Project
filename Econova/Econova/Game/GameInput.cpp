@@ -1508,6 +1508,7 @@ bool handleKeyAndTextInputs(
     const GameSettings& globalSettings,
     bool& isChatting,
     bool& chatActive,
+    bool& chatJustOpened,
     TextInput& chatInput,
     const std::string& username,
     AuthManager& authManager,
@@ -1647,17 +1648,19 @@ bool handleKeyAndTextInputs(
             if (!chatActive) {
                 chatActive = true;
                 isChatting = true;
-                chatInput.setFocus(true);
                 chatInput.clear();
+                chatInput.setFocus(true);
+                chatJustOpened = true;
             }
             else {
                 // If chat is open, pressing T again closes it unless user is actively typing a message
                 std::string cur = chatInput.getText();
-                if (!isChatting || cur.empty() || cur == "t" || cur == "T") {
+                if (!isChatting || cur.empty()) {
                     chatActive = false;
                     isChatting = false;
                     chatInput.setFocus(false);
                     chatInput.clear();
+                    chatJustOpened = false;
                 }
             }
             return true;
@@ -1666,7 +1669,9 @@ bool handleKeyAndTextInputs(
             if (chatActive) {
                 if (!isChatting) {
                     isChatting = true;
+                    chatInput.clear();
                     chatInput.setFocus(true);
+                    chatJustOpened = true;
                 }
                 else {
                     std::string msg = chatInput.getText();
@@ -1695,6 +1700,7 @@ bool handleKeyAndTextInputs(
                     isChatting = false;
                     chatInput.setFocus(false);
                     chatActive = false; // Close chatbox when sending message
+                    chatJustOpened = false;
                 }
             }
             return true;
@@ -1710,6 +1716,7 @@ bool handleKeyAndTextInputs(
                 isChatting = false;
                 chatInput.setFocus(false);
                 chatInput.clear();
+                chatJustOpened = false;
                 return true;
             }
         }

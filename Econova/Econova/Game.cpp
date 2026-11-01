@@ -598,6 +598,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     TextInput adminReasonInput(font, { ((float)width - 480.f) / 2.f, ((float)height - 42.f) / 2.f }, { 480.f, 42.f });
     bool isChatting = false;
     bool chatActive = false;
+    bool chatJustOpened = false;
     std::vector<std::pair<std::string, std::string>> chatMessages;
     sf::Clock chatFetchClock;
     std::string latestPlayerMsg = "";
@@ -1354,7 +1355,15 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
 
             bool clickHandled = false;
             if (isChatting) {
-                chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
+                if (chatJustOpened) {
+                    if (const auto* text = event.value().getIf<sf::Event::TextEntered>()) {
+                        chatJustOpened = false;
+                    } else {
+                        chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
+                    }
+                } else {
+                    chatInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
+                }
             }
             if (iapVerifyingOpen) {
                 iapCodeInput.processEvent(event.value(), window.mapPixelToCoords(sf::Mouse::getPosition(window), GetUIView(&window)));
@@ -1364,6 +1373,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 globalSettings,
                 isChatting,
                 chatActive,
+                chatJustOpened,
                 chatInput,
                 username,
                 authManager,
