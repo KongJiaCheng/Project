@@ -1254,10 +1254,18 @@ bool handleStructurePlacementClicks(
         }
     }
 
-    // Determine target floor and snapped cell from cursor world position
+    // Determine target floor from placement position and unlocked stairs
     float targetFloor = 0.f;
-    sf::Vector2f targetPlacementPos = snapGridFunc(worldPos);
+    if (maxFloorUnlocked > 0) {
+        for (int F = maxFloorUnlocked; F >= 1; --F) {
+            if (isCellSupportedOnFloor(placementPos, F, structures)) {
+                targetFloor = (float)F;
+                break;
+            }
+        }
+    }
 
+    sf::Vector2f targetPlacementPos = snapGridFunc(worldPos);
     if (maxFloorUnlocked > 0) {
         for (int F = maxFloorUnlocked; F >= 1; --F) {
             float elev = F * FLOOR_HEIGHT;
@@ -1265,7 +1273,6 @@ bool handleStructurePlacementClicks(
             sf::Vector2f cellBase = snapGridFunc(compM);
 
             if (isCellSupportedOnFloor(cellBase, F, structures)) {
-                targetFloor = (float)F;
                 targetPlacementPos = cellBase;
                 break;
             }
@@ -1311,30 +1318,7 @@ bool handleStructurePlacementClicks(
             placementMode = false;
         }
         else {
-            // ── Overlap & Duplicate Guard ──────────────────────────────────────
-            // Walls/doors on the same floor only overlap if they share the same rotation.
-            // Different floor structures do not overlap.
-            bool duplicateOverlap = false;
-            for (const auto& it : structures) {
-                if (!it.sprite.has_value()) continue;
-                if (std::abs(it.sprite->getPosition().x - placementPos.x) >= 1.f ||
-                    std::abs(it.sprite->getPosition().y - placementPos.y) >= 1.f) continue;
-                if ((int)it.shearY != (int)targetFloor) continue;
-
-                if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
-                    if ((it.id == ITEM_WOOD_WALL || it.id == ITEM_WOOD_DOOR) && it.rotation == placementRotation) {
-                        duplicateOverlap = true;
-                        break;
-                    }
-                } else if (it.id == placementItemID) {
-                    duplicateOverlap = true;
-                    break;
-                }
-            }
-            if (duplicateOverlap) {
-                inventory.showBanner("This position already has a structure with the same orientation!");
-                return true;
-            }
+            // Overlap/duplicate validation removed to allow building multiple floors seamlessly.
 
             // ── Stairs validation: must be placed on a wooden floor tile ───
             if (placementItemID == ITEM_WOOD_STAIRS) {
