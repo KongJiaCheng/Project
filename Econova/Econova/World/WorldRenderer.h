@@ -50,6 +50,7 @@ void drawPlacementPreview(
     int placementItemID,
     float placementRotation,
     sf::Vector2f placementPos,
+    float placementFloor,
     const sf::Texture campfireFrames[8],
     const sf::Texture& furnaceTex,
     const sf::Texture& woodTileTex,

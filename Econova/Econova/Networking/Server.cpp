@@ -316,7 +316,9 @@ void syncAndRenderOnlinePlayers(
                             } else {
                                 ns.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
                             }
-                            applyStructureScale(*ns.sprite, s.id, s.rotation, s.isOpen, ns.shearY);
+                            float dummyShear = 0.f;
+                            applyStructureScale(*ns.sprite, s.id, s.rotation, s.isOpen, dummyShear);
+                            ns.shearY = s.shearY;
                         }
                     }
                     // Update or merge otherCampfires cleanly without disrupting open menus or destroying state
@@ -593,4 +595,4 @@ void saveAllGameDataAndClose(
     window.close();
 }
 
-
+

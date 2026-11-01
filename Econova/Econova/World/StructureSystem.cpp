@@ -1085,7 +1085,7 @@ void applyStructureScale(
     bool isOpen,
     float& outShearY
 ) {
-    outShearY = 0.f;  // No shear in square-grid system
+    // Note: outShearY holds the floor index (shearY). Do NOT reset it here.
     auto sz = spr.getTexture().getSize();
     if (sz.x == 0 || sz.y == 0) return;
 
@@ -1216,6 +1216,7 @@ bool handleStructurePlacementClicks(
     int placementFromInventorySlot,
     sf::Vector2f& placementPos,
     float& placementRotation,
+    float& placementFloor,
     bool& placementFollowingCursor,
     const std::string& username,
     std::vector<PlacedCampfire>& campfires,
@@ -1254,18 +1255,8 @@ bool handleStructurePlacementClicks(
         }
     }
 
-    // Determine target floor from placement position and unlocked stairs
-    float targetFloor = 0.f;
-    if (maxFloorUnlocked > 0) {
-        for (int F = maxFloorUnlocked; F >= 1; --F) {
-            if (isCellSupportedOnFloor(placementPos, F, structures)) {
-                targetFloor = (float)F;
-                break;
-            }
-        }
-    }
-
     sf::Vector2f targetPlacementPos = snapGridFunc(worldPos);
+    float targetFloor = 0.f;
     if (maxFloorUnlocked > 0) {
         for (int F = maxFloorUnlocked; F >= 1; --F) {
             float elev = F * FLOOR_HEIGHT;
@@ -1274,11 +1265,13 @@ bool handleStructurePlacementClicks(
 
             if (isCellSupportedOnFloor(cellBase, F, structures)) {
                 targetPlacementPos = cellBase;
+                targetFloor = (float)F;
                 break;
             }
         }
     }
     if (placeBtn.contains(uiPos)) {
+        float effectiveFloor = placementFloor;
         if (placementItemID == ITEM_NONE) {
             for (const auto& it : structures) {
                 if (it.sprite.has_value() && it.sprite->getPosition() == placementPos) {
@@ -1318,13 +1311,11 @@ bool handleStructurePlacementClicks(
             placementMode = false;
         }
         else {
-            // Overlap/duplicate validation removed to allow building multiple floors seamlessly.
-
             // ── Stairs validation: must be placed on a wooden floor tile ───
             if (placementItemID == ITEM_WOOD_STAIRS) {
                 bool hasTileUnder = false;
                 for (const auto& it : structures) {
-                    if (it.id == ITEM_WOOD_TILE && it.sprite.has_value() && (int)it.shearY == (int)targetFloor) {
+                    if (it.id == ITEM_WOOD_TILE && it.sprite.has_value() && (int)it.shearY == (int)effectiveFloor) {
                         if (std::abs(it.sprite->getPosition().x - placementPos.x) < 1.f &&
                             std::abs(it.sprite->getPosition().y - placementPos.y) < 1.f) {
                             hasTileUnder = true;
@@ -1339,20 +1330,33 @@ bool handleStructurePlacementClicks(
             }
 
             // Upper-floor placement validation: must be within supported house structure
-            if (targetFloor >= 1.f) {
-                if (!isCellSupportedOnFloor(placementPos, (int)targetFloor, structures)) {
+            if (effectiveFloor >= 1.f) {
+                if (!isCellSupportedOnFloor(placementPos, (int)effectiveFloor, structures)) {
                     inventory.showBanner("Upper floor structures must be built within the supported house area!");
                     return true;
                 }
-                if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)targetFloor, structures)) {
+                if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)effectiveFloor, structures)) {
                     inventory.showBanner("Cannot place floor tile over staircase opening!");
                     return true;
                 }
             }
 
+            // Prevent placing duplicate structure on the same floor level
+            for (const auto& it : structures) {
+                if (it.sprite.has_value() &&
+                    std::abs(it.sprite->getPosition().x - placementPos.x) < 1.f &&
+                    std::abs(it.sprite->getPosition().y - placementPos.y) < 1.f &&
+                    (int)it.shearY == (int)effectiveFloor) {
+                    if (it.id == placementItemID) {
+                        inventory.showBanner("This position already has this structure on this floor!");
+                        return true;
+                    }
+                }
+            }
+
             // ── Ownership check ───────────────────────────────────────────────
             for (const auto& it : structures) {
-                if (it.sprite.has_value() && it.sprite->getPosition() == placementPos && (int)it.shearY == (int)targetFloor) {
+                if (it.sprite.has_value() && it.sprite->getPosition() == placementPos && (int)it.shearY == (int)effectiveFloor) {
                     if (!it.owner.empty() && it.owner != username) {
                         inventory.showBanner("This belongs to " + it.owner + "! You cannot build over other players' structures.");
                         return true;
@@ -1377,7 +1381,7 @@ bool handleStructurePlacementClicks(
                 if (it->sprite.has_value() &&
                     std::abs(it->sprite->getPosition().x - placementPos.x) < 1.f &&
                     std::abs(it->sprite->getPosition().y - placementPos.y) < 1.f &&
-                    (int)it->shearY == (int)targetFloor) {
+                    (int)it->shearY == (int)effectiveFloor) {
                     bool shouldRemove = false;
                     if (placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_WALL) {
                         if ((it->id == ITEM_WOOD_WALL || it->id == ITEM_WOOD_DOOR) && it->rotation == placementRotation) {
@@ -1411,7 +1415,7 @@ bool handleStructurePlacementClicks(
 
             auto& newS = structures.back();
             newS.owner = username;
-            newS.shearY = targetFloor;
+            newS.shearY = effectiveFloor;
             newS.rotation = placementRotation;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
 
@@ -1424,12 +1428,17 @@ bool handleStructurePlacementClicks(
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
             }
-            applyStructureScale(*newS.sprite, placementItemID, placementRotation, false, newS.shearY);
+            float dummyShear = 0.f;
+            applyStructureScale(*newS.sprite, placementItemID, placementRotation, false, dummyShear);
+            newS.shearY = effectiveFloor;
             newS.sprite->setPosition(placementPos);
+            if (placementItemID == ITEM_WOOD_TILE && effectiveFloor >= 1.f) {
+                newS.sprite->setColor(sf::Color(255, 255, 255, 140));
+            }
             if (placementItemID == ITEM_WOOD_STAIRS) {
                 // Automatically reserve staircase opening on the floor above: remove any floor tile blocking it
                 for (auto it = structures.begin(); it != structures.end(); ) {
-                    if (it->id == ITEM_WOOD_TILE && it->sprite.has_value() && (int)it->shearY == (int)targetFloor + 1) {
+                    if (it->id == ITEM_WOOD_TILE && it->sprite.has_value() && (int)it->shearY == (int)effectiveFloor + 1) {
                         if (std::abs(it->sprite->getPosition().x - placementPos.x) < 1.f &&
                             std::abs(it->sprite->getPosition().y - placementPos.y) < 1.f) {
                             it = structures.erase(it);
@@ -1452,17 +1461,22 @@ bool handleStructurePlacementClicks(
     }
     else if (cancelBtn.contains(uiPos)) {
         placementMode = false;
+        placementFloor = 0.f;
         return true;
     }
     else {
         placementFollowingCursor = !placementFollowingCursor;
 
-        if (placementItemID == ITEM_NONE) {
-            sf::Vector2f corner = snapGridFunc(worldPos);
-            placementPos = { corner.x + 375.f, corner.y - 125.f };
-        }
-        else {
-            placementPos = targetPlacementPos;
+        if (!placementFollowingCursor) {
+            if (placementItemID == ITEM_NONE) {
+                sf::Vector2f corner = snapGridFunc(worldPos);
+                placementPos = { corner.x + 375.f, corner.y - 125.f };
+                placementFloor = 0.f;
+            }
+            else {
+                placementPos = targetPlacementPos;
+                placementFloor = targetFloor;
+            }
         }
         return true;
     }
@@ -1725,6 +1739,7 @@ void updateAndDrawPlacementPreview(
     int placementItemID,
     float& placementRotation,
     sf::Vector2f& placementPos,
+    float& placementFloor,
     sf::Vector2f worldPos,
     const std::vector<PlacedStructure>& structures,
     std::function<sf::Vector2f(sf::Vector2f)> snapToShearedGrid,
@@ -1758,6 +1773,7 @@ void updateAndDrawPlacementPreview(
             }
 
             sf::Vector2f targetPos = snapToGrid(worldPos);
+            float targetF = 0.f;
             if (maxFloorUnlocked > 0) {
                 for (int F = maxFloorUnlocked; F >= 1; --F) {
                     float elev = F * FLOOR_HEIGHT;
@@ -1766,13 +1782,15 @@ void updateAndDrawPlacementPreview(
 
                     if (isCellSupportedOnFloor(cellBase, F, structures)) {
                         targetPos = cellBase;
+                        targetF = (float)F;
                         break;
                     }
                 }
             }
             placementPos = targetPos;
+            placementFloor = targetF;
         }
     }
 
-    drawPlacementPreview(window, placementItemID, placementRotation, placementPos, campfireFrames, furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex, chestTex, structures);
+    drawPlacementPreview(window, placementItemID, placementRotation, placementPos, placementFloor, campfireFrames, furnaceTex, woodTileTex, woodWallTex, woodDoorTex, woodRoofTex, woodStairsTex, bedTex, chestTex, structures);
 }

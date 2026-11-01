@@ -451,17 +451,30 @@ bool hydrateWorldAndPlayerData(
     for (auto& s : loaded.structures) {
         const sf::Texture* tex = assets.getItemTexture(s.id);
         if (tex) {
+            bool duplicate = false;
+            for (const auto& existing : structures) {
+                if (existing.id == s.id && (int)existing.shearY == (int)s.shearY &&
+                    std::abs(existing.sprite->getPosition().x - s.x) < 1.f &&
+                    std::abs(existing.sprite->getPosition().y - s.y) < 1.f) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
             structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, username);
             auto& newS = structures.back();
             newS.sprite->setPosition({ s.x, s.y });
             newS.health = s.health;
+            newS.shearY = s.shearY;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
             if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
             }
-            applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, newS.shearY);
+            float dummyShear = 0.f;
+            applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, dummyShear);
+            newS.shearY = s.shearY;
         }
     }
 
@@ -469,17 +482,30 @@ bool hydrateWorldAndPlayerData(
     for (auto& s : loaded.otherStructures) {
         const sf::Texture* tex = assets.getItemTexture(s.id);
         if (tex) {
+            bool duplicate = false;
+            for (const auto& existing : structures) {
+                if (existing.id == s.id && (int)existing.shearY == (int)s.shearY &&
+                    std::abs(existing.sprite->getPosition().x - s.x) < 1.f &&
+                    std::abs(existing.sprite->getPosition().y - s.y) < 1.f) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
             structures.emplace_back(s.id, *tex, s.rotation, s.isOpen, s.shearY, s.owner.empty() ? "other" : s.owner);
             auto& newS = structures.back();
             newS.sprite->setPosition({ s.x, s.y });
             newS.health = s.health;
+            newS.shearY = s.shearY;
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
             if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
             }
-            applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, newS.shearY);
+            float dummyShear = 0.f;
+            applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, dummyShear);
+            newS.shearY = s.shearY;
         }
     }
 

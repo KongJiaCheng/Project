@@ -244,6 +244,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
     bool craftMenuOpen = false;
     bool placementMode = false;
     float placementRotation = 0.f; // 0: Vertical, 90: Horizontal
+    float placementFloor = 0.f;    // Target floor for building placement (0=ground, 1=second floor, etc.)
     int playerFloorLevel = 0;
     float stairOffset = 0.f;  // set each frame by renderWorldDepthScene; used to offset collision probe
     bool placementFollowingCursor = true;
@@ -1668,6 +1669,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         placementFromInventorySlot,
                         placementPos,
                         placementRotation,
+                        placementFloor,
                         placementFollowingCursor,
                         campfires,
                         structures,
@@ -2225,6 +2227,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             placementItemID,
             placementRotation,
             placementPos,
+            placementFloor,
             worldPos,
             structures,
             snapToGrid,

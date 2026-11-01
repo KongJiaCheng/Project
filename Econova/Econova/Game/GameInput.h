@@ -418,6 +418,7 @@ void handleAllGameMouseButtonPressed(
     int& placementFromInventorySlot,
     sf::Vector2f& placementPos,
     float& placementRotation,
+    float& placementFloor,
     bool& placementFollowingCursor,
     std::vector<PlacedCampfire>& campfires,
     std::vector<PlacedStructure>& structures,

@@ -420,6 +420,7 @@ void drawPlacementPreview(
     int placementItemID,
     float placementRotation,
     sf::Vector2f placementPos,
+    float placementFloor,
     const sf::Texture campfireFrames[8],
     const sf::Texture& furnaceTex,
     const sf::Texture& woodTileTex,
@@ -452,33 +453,7 @@ void drawPlacementPreview(
     float previewShear = 0.f;
     applyStructureScale(preview, placementItemID, placementRotation, false, previewShear);
 
-    // Compute max floor unlocked by existing stairs
-    int maxFloorUnlocked = 0;
-    for (const auto& s : structures) {
-        if (s.id == ITEM_WOOD_STAIRS) {
-            int sf = (int)s.shearY;
-            if (sf + 1 > maxFloorUnlocked) {
-                maxFloorUnlocked = sf + 1;
-            }
-        }
-    }
-
-    // Determine target floor from position
-    // Determine target floor from position
-    float targetFloor = 0.f;
-    if (maxFloorUnlocked > 0) {
-        for (int F = maxFloorUnlocked; F >= 1; --F) {
-            float elev = F * FLOOR_HEIGHT;
-            sf::Vector2f compM = { placementPos.x, placementPos.y + elev };
-            sf::Vector2f cellBase = snapToGrid(compM);
-
-            if (isCellSupportedOnFloor(cellBase, F, structures)) {
-                targetFloor = (float)F;
-                break;
-            }
-        }
-    }
-
+    float targetFloor = placementFloor;
     float elevOffset = targetFloor * FLOOR_HEIGHT;
     sf::Vector2f elevatedPos = { placementPos.x, placementPos.y - elevOffset };
 
@@ -489,6 +464,18 @@ void drawPlacementPreview(
         }
         if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)targetFloor, structures)) {
             isValidPlacement = false;
+        }
+    }
+    // Prevent overlapping duplicate structures on the same floor level
+    for (const auto& s : structures) {
+        if (s.sprite.has_value() &&
+            std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
+            std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f &&
+            (int)s.shearY == (int)targetFloor) {
+            if (s.id == placementItemID) {
+                isValidPlacement = false;
+                break;
+            }
         }
     }
     if (placementItemID == ITEM_WOOD_STAIRS) {
@@ -507,24 +494,29 @@ void drawPlacementPreview(
         }
     }
 
+    uint8_t alpha = (targetFloor >= 1.f) ? 140 : 180;
     if (!isValidPlacement) {
-        preview.setColor(sf::Color(255, 100, 100, 180));
+        preview.setColor(sf::Color(255, 100, 100, alpha));
     } else {
-        preview.setColor(sf::Color(255, 255, 255, 180));
+        preview.setColor(sf::Color(255, 255, 255, alpha));
     }
 
     preview.setPosition(elevatedPos);
 
     if (placementItemID == ITEM_WOOD_TILE) {
-        drawRhombusTile(window, preview.getTexture(), elevatedPos,
-                        (targetFloor > 0.f) ? sf::Color(180, 220, 255, 180) : sf::Color(255, 255, 255, 160),
-                        targetFloor > 0.f);
+        sf::Color tileColor;
+        if (!isValidPlacement) {
+            tileColor = sf::Color(255, 110, 110, alpha);
+        } else {
+            tileColor = sf::Color(255, 255, 255, alpha);
+        }
+        drawRhombusTile(window, preview.getTexture(), elevatedPos, tileColor, targetFloor > 0.f);
     } else if (placementItemID == ITEM_WOOD_WALL) {
         drawWall(window, preview.getTexture(), elevatedPos, placementRotation,
-                 sf::Color(255, 255, 255, 180));
+                 isValidPlacement ? sf::Color(255, 255, 255, alpha) : sf::Color(255, 110, 110, alpha));
     } else if (placementItemID == ITEM_WOOD_DOOR) {
         drawDoor(window, preview.getTexture(), elevatedPos, placementRotation, false,
-                 sf::Color(255, 255, 255, 180));
+                 isValidPlacement ? sf::Color(255, 255, 255, alpha) : sf::Color(255, 110, 110, alpha));
     } else if (placementItemID == ITEM_WOOD_STAIRS) {
         if (placementRotation == 90.f || placementRotation == 270.f) {
             preview.setScale({ -500.f / pts.x, 500.f / pts.y });
