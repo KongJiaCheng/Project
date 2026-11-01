@@ -21,7 +21,8 @@ bool isPositionBlocked(
     sf::Vector2f targetPos,
     const std::vector<PlacedStructure>& structures,
     const std::vector<TileFloor>& elevatedTileFloors,
-    const ItemManager& itemManager
+    const ItemManager& itemManager,
+    int currentFloorLevel = 0
 );
 
 bool isWorldPositionBlocked(

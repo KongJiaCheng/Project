@@ -22,18 +22,19 @@ bool isPositionBlocked(
     sf::Vector2f targetPos,
     const std::vector<PlacedStructure>& structures,
     const std::vector<TileFloor>& elevatedTileFloors,
-    const ItemManager& itemManager
+    const ItemManager& itemManager,
+    int currentFloorLevel
 ) {
     const float TILE_CONNECT_DIST = 260.f;
     sf::Vector2f targetFeet = targetPos + sf::Vector2f(0.f, 20.f);
 
-    int targetFloor = 0;
+    int targetFloor = currentFloorLevel;
     bool onStairs = false;
     for (const auto& s : structures) {
         if (s.id == ITEM_WOOD_STAIRS && s.sprite.has_value()) {
             sf::Vector2f sPos = s.sprite->getPosition();
             int sFloor = (int)s.shearY;
-            const float margin = 120.f;
+            const float margin = 80.f;
             float zoneTop    = sPos.y - 250.f - margin;
             float zoneBottom = sPos.y + margin;
             float zoneLeft   = sPos.x - margin;
@@ -42,20 +43,22 @@ bool isPositionBlocked(
                 targetPos.x >= zoneLeft && targetPos.x <= zoneRight)
             {
                 onStairs = true;
-                targetFloor = sFloor;
+                if (targetPos.y < sPos.y - 120.f) {
+                    targetFloor = sFloor + 1;
+                } else {
+                    targetFloor = sFloor;
+                }
                 break;
             }
         }
     }
     if (!onStairs) {
         for (const auto& etf : elevatedTileFloors) {
-            if (targetFeet.y >= etf.pos.y - 250.f - 60.f && targetFeet.y <= etf.pos.y + 60.f) {
-                float xShift = etf.pos.y - targetFeet.y;
-                if (targetFeet.x >= etf.pos.x + xShift - 60.f && targetFeet.x <= etf.pos.x + 500.f + xShift + 60.f) {
-                    if (etf.floorLevel > targetFloor) {
-                        targetFloor = etf.floorLevel;
-                    }
-                }
+            float xShift = etf.pos.y - targetFeet.y;
+            if (targetFeet.y >= etf.pos.y - 250.f - 60.f && targetFeet.y <= etf.pos.y + 60.f &&
+                targetFeet.x >= etf.pos.x + xShift - 60.f && targetFeet.x <= etf.pos.x + 500.f + xShift + 60.f) {
+                targetFloor = etf.floorLevel;
+                break;
             }
         }
     }
@@ -65,10 +68,15 @@ bool isPositionBlocked(
     for (const auto& s : structures) {
         if (!s.sprite.has_value()) continue;
         int sFloor = (int)s.shearY;
-        if (!onStairs) {
+
+        // If player is on or reaching an upper floor (e.g. floor 1), NEVER collide with floor 0 structures (walls/furniture below)!
+        if (targetFloor > 0) {
             if (sFloor != targetFloor) continue;
         } else {
-            if (sFloor != targetFloor && sFloor != targetFloor + 1) continue;
+            // Player is on ground floor (floor 0)
+            if (sFloor != 0) continue;
+            // On ground floor stairs, ignore outer walls alongside the stairs so player can freely walk up stairs
+            if (onStairs && (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR)) continue;
         }
 
         sf::Vector2f sPos = s.sprite->getPosition();

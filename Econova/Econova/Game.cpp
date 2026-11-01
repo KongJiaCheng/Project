@@ -2129,7 +2129,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         std::vector<TileFloor> elevatedTileFloors = computeElevatedTileFloors(structures);
 
         auto isBlocked = [&](sf::Vector2f targetPos) {
-            return isPositionBlocked(targetPos, structures, elevatedTileFloors, itemManager);
+            return isPositionBlocked(targetPos, structures, elevatedTileFloors, itemManager, playerFloorLevel);
         };
 
         updateMonstersCombat(

@@ -718,8 +718,13 @@ void renderWorldDepthScene(
             }
         } else if (s.id == ITEM_WOOD_TILE && s.sprite.has_value()) {
             int sFloor = (int)s.shearY;
-            if (sFloor > playerFloorLevel && isUnderElevatedFloor) {
-                s.sprite->setColor(sf::Color(255, 255, 255, 128));
+            if (sFloor >= 1) {
+                // Second floor and higher floors: always placed as half-invisible (semi-transparent)
+                if (sFloor > playerFloorLevel || isUnderRoof || isUnderElevatedFloor) {
+                    s.sprite->setColor(sf::Color(255, 255, 255, 130)); // half-invisible when below or inside
+                } else {
+                    s.sprite->setColor(sf::Color(255, 255, 255, 170)); // half-invisible when walking on it
+                }
             } else {
                 s.sprite->setColor(sf::Color::White);
             }
