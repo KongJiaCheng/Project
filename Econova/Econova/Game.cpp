@@ -2212,7 +2212,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         window.draw(background);
 
         drawFloorGrid(window, MAP_WIDTH, MAP_HEIGHT);
-        drawSecondFloorGrid(window, structures, playerFloorLevel);
 
         if (!isDrought) {
             for (auto& p : ponds) {
@@ -2222,28 +2221,6 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         itemManager.draw(window);
 
         drawWorldCampfires(window, font, campfires, campfireFrames, wrenchTex, sprite, inventory);
-
-        updateAndDrawPlacementPreview(
-            window,
-            placementMode,
-            placementFollowingCursor,
-            placementItemID,
-            placementRotation,
-            placementPos,
-            placementFloor,
-            worldPos,
-            structures,
-            snapToGrid,
-            campfireFrames,
-            furnaceTex,
-            woodTileTex,
-            woodWallTex,
-            woodDoorTex,
-            woodRoofTex,
-            woodStairsTex,
-            bedTex,
-            chestTex
-        );
 
         // --- HOUSE TRANSPARENCY & STAIRS / MULTI-FLOOR LOGIC ---
         renderWorldDepthScene(
@@ -2286,6 +2263,31 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             vitalsUI.drinkText,
             wrenchTex,
             inventory
+        );
+
+        // Render elevated grid and ghost building preview cleanly on top of world scene
+        drawSecondFloorGrid(window, structures, playerFloorLevel);
+
+        updateAndDrawPlacementPreview(
+            window,
+            placementMode,
+            placementFollowingCursor,
+            placementItemID,
+            placementRotation,
+            placementPos,
+            placementFloor,
+            worldPos,
+            structures,
+            snapToGrid,
+            campfireFrames,
+            furnaceTex,
+            woodTileTex,
+            woodWallTex,
+            woodDoorTex,
+            woodRoofTex,
+            woodStairsTex,
+            bedTex,
+            chestTex
         );
 
         updateWorldEntitiesAndDrops(

@@ -1302,7 +1302,16 @@ bool handleStructurePlacementClicks(
             sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
             sf::Vector2f cellBase = snapGridFunc(compM);
 
-            if (isCellSupportedOnFloor(cellBase, F, structures)) {
+            bool supported = false;
+            if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+                supported = isWallSupportedOnFloor(cellBase, placementRotation, F, structures);
+            } else if (placementItemID == ITEM_WOOD_ROOF) {
+                supported = isRoofSupported(cellBase, F, structures);
+            } else {
+                supported = isCellSupportedOnFloor(cellBase, F, structures);
+            }
+
+            if (supported) {
                 targetPlacementPos = cellBase;
                 targetFloor = (float)F;
                 break;
@@ -1378,33 +1387,64 @@ bool handleStructurePlacementClicks(
 
             // Upper-floor placement validation: must be within supported house structure
             if (effectiveFloor >= 1.f) {
-                if (!isCellSupportedOnFloor(placementPos, (int)effectiveFloor, structures)) {
-                    inventory.showBanner("Upper floor structures must be built within the supported house area!");
-                    return true;
-                }
-                if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)effectiveFloor, structures)) {
-                    inventory.showBanner("Cannot place floor tile over staircase opening!");
-                    return true;
+                if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+                    if (!isWallSupportedOnFloor(placementPos, placementRotation, (int)effectiveFloor, structures)) {
+                        inventory.showBanner("Upper floor wall must be built within the supported house area!");
+                        return true;
+                    }
+                } else if (placementItemID == ITEM_WOOD_ROOF) {
+                    if (!isRoofSupported(placementPos, (int)effectiveFloor, structures)) {
+                        inventory.showBanner("Roof must be placed on top of a constructed house structure!");
+                        return true;
+                    }
+                } else {
+                    if (!isCellSupportedOnFloor(placementPos, (int)effectiveFloor, structures)) {
+                        inventory.showBanner("Upper floor structures must be built within the supported house area!");
+                        return true;
+                    }
+                    if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)effectiveFloor, structures)) {
+                        inventory.showBanner("Cannot place floor tile over staircase opening!");
+                        return true;
+                    }
                 }
             }
 
             // Prevent placing duplicate structure on the same floor level
             for (const auto& it : structures) {
-                if (it.sprite.has_value() &&
-                    std::abs(it.sprite->getPosition().x - placementPos.x) < 1.f &&
-                    std::abs(it.sprite->getPosition().y - placementPos.y) < 1.f &&
-                    (int)it.shearY == (int)effectiveFloor) {
-                    if (it.id == placementItemID) {
-                        inventory.showBanner("This position already has this structure on this floor!");
-                        return true;
+                if (!it.sprite.has_value() || (int)it.shearY != (int)effectiveFloor) continue;
+                if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+                    if ((it.id == ITEM_WOOD_WALL || it.id == ITEM_WOOD_DOOR) &&
+                        areWallSegmentsEqual(placementPos, placementRotation, it.sprite->getPosition(), it.rotation)) {
+                        if (it.id == placementItemID) {
+                            inventory.showBanner("This wall is already built here!");
+                            return true;
+                        }
+                    }
+                } else {
+                    if (std::abs(it.sprite->getPosition().x - placementPos.x) < 1.f &&
+                        std::abs(it.sprite->getPosition().y - placementPos.y) < 1.f) {
+                        if (it.id == placementItemID) {
+                            inventory.showBanner("This position already has this structure on this floor!");
+                            return true;
+                        }
                     }
                 }
             }
 
             // ── Ownership check ───────────────────────────────────────────────
             for (const auto& it : structures) {
-                if (it.sprite.has_value() && it.sprite->getPosition() == placementPos && (int)it.shearY == (int)effectiveFloor) {
-                    if (!it.owner.empty() && it.owner != username) {
+                if (it.sprite.has_value() && (int)it.shearY == (int)effectiveFloor) {
+                    bool match = false;
+                    if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+                        if ((it.id == ITEM_WOOD_WALL || it.id == ITEM_WOOD_DOOR) &&
+                            areWallSegmentsEqual(placementPos, placementRotation, it.sprite->getPosition(), it.rotation)) {
+                            match = true;
+                        }
+                    } else if (std::abs(it.sprite->getPosition().x - placementPos.x) < 1.f &&
+                               std::abs(it.sprite->getPosition().y - placementPos.y) < 1.f) {
+                        match = true;
+                    }
+                    if (match && !it.owner.empty() && it.owner != username) {
                         inventory.showBanner("This belongs to " + it.owner + "! You cannot build over other players' structures.");
                         return true;
                     }
@@ -1425,16 +1465,16 @@ bool handleStructurePlacementClicks(
 
             bool structureRemoved = false;
             for (auto it = structures.begin(); it != structures.end(); ) {
-                if (it->sprite.has_value() &&
-                    std::abs(it->sprite->getPosition().x - placementPos.x) < 1.f &&
-                    std::abs(it->sprite->getPosition().y - placementPos.y) < 1.f &&
-                    (int)it->shearY == (int)effectiveFloor) {
+                if (it->sprite.has_value() && (int)it->shearY == (int)effectiveFloor) {
                     bool shouldRemove = false;
                     if (placementItemID == ITEM_WOOD_DOOR || placementItemID == ITEM_WOOD_WALL) {
-                        if ((it->id == ITEM_WOOD_WALL || it->id == ITEM_WOOD_DOOR) && it->rotation == placementRotation) {
+                        if ((it->id == ITEM_WOOD_WALL || it->id == ITEM_WOOD_DOOR) &&
+                            areWallSegmentsEqual(placementPos, placementRotation, it->sprite->getPosition(), it->rotation)) {
                             shouldRemove = true;
                         }
-                    } else if (it->id == placementItemID) {
+                    } else if (it->id == placementItemID &&
+                               std::abs(it->sprite->getPosition().x - placementPos.x) < 1.f &&
+                               std::abs(it->sprite->getPosition().y - placementPos.y) < 1.f) {
                         shouldRemove = true;
                     }
                     if (shouldRemove) {
@@ -1839,7 +1879,16 @@ void updateAndDrawPlacementPreview(
                     sf::Vector2f compM = { worldPos.x, worldPos.y + elev };
                     sf::Vector2f cellBase = snapToGrid(compM);
 
-                    if (isCellSupportedOnFloor(cellBase, F, structures)) {
+                    bool supported = false;
+                    if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+                        supported = isWallSupportedOnFloor(cellBase, placementRotation, F, structures);
+                    } else if (placementItemID == ITEM_WOOD_ROOF) {
+                        supported = isRoofSupported(cellBase, F, structures);
+                    } else {
+                        supported = isCellSupportedOnFloor(cellBase, F, structures);
+                    }
+
+                    if (supported) {
                         targetPos = cellBase;
                         targetF = (float)F;
                         break;

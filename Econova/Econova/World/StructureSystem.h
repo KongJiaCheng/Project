@@ -108,6 +108,33 @@ inline std::pair<sf::Vector2f, sf::Vector2f> getWallSideCells(sf::Vector2f pos, 
     }
 }
 
+inline std::pair<sf::Vector2f, sf::Vector2f> getWallSegmentEndpoints(sf::Vector2f pos, float rotation) {
+    constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
+    sf::Vector2f A = pos, B = pos;
+    if (rotation == 90.f) {
+        B = { pos.x + SX, pos.y - SY };
+    } else if (rotation == 180.f) {
+        A = { pos.x - CELL, pos.y };
+    } else if (rotation == 270.f) {
+        A = { pos.x - SX, pos.y + SY };
+    } else { // 0.f
+        B = { pos.x + CELL, pos.y };
+    }
+    if (A.x > B.x || (std::abs(A.x - B.x) < 1.f && A.y > B.y)) {
+        std::swap(A, B);
+    }
+    return { A, B };
+}
+
+inline bool areWallSegmentsEqual(sf::Vector2f posA, float rotA, sf::Vector2f posB, float rotB) {
+    auto segA = getWallSegmentEndpoints(posA, rotA);
+    auto segB = getWallSegmentEndpoints(posB, rotB);
+    return (std::abs(segA.first.x - segB.first.x) < 2.f &&
+            std::abs(segA.first.y - segB.first.y) < 2.f &&
+            std::abs(segA.second.x - segB.second.x) < 2.f &&
+            std::abs(segA.second.y - segB.second.y) < 2.f);
+}
+
 inline bool isStaircaseOpening(sf::Vector2f cellPos, int targetFloor, const std::vector<PlacedStructure>& structures) {
     if (targetFloor < 1) return false;
     for (const auto& s : structures) {
@@ -156,6 +183,42 @@ inline bool isCellSupportedOnFloor(sf::Vector2f cellPos, int targetFloor, const 
     auto cells = getSupportedCellsForFloor(targetFloor, structures);
     for (const auto& c : cells) {
         if (std::abs(c.x - cellPos.x) < 1.f && std::abs(c.y - cellPos.y) < 1.f) return true;
+    }
+    return false;
+}
+
+inline bool isWallSupportedOnFloor(sf::Vector2f pos, float rot, int targetFloor, const std::vector<PlacedStructure>& structures) {
+    if (targetFloor < 1) return true;
+    auto sides = getWallSideCells(pos, rot);
+    auto seg = getWallSegmentEndpoints(pos, rot);
+
+    for (const auto& s : structures) {
+        if (!s.sprite.has_value()) continue;
+        int sf = (int)s.shearY;
+
+        // Supported by floor tile on current floor
+        if (sf == targetFloor && s.id == ITEM_WOOD_TILE) {
+            sf::Vector2f tp = s.sprite->getPosition();
+            if ((std::abs(tp.x - sides.first.x) < 2.f && std::abs(tp.y - sides.first.y) < 2.f) ||
+                (std::abs(tp.x - sides.second.x) < 2.f && std::abs(tp.y - sides.second.y) < 2.f)) {
+                return true;
+            }
+        }
+
+        // Supported by wall/door directly beneath on targetFloor - 1
+        if (sf == targetFloor - 1 && (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR)) {
+            if (areWallSegmentsEqual(pos, rot, s.sprite->getPosition(), s.rotation)) {
+                return true;
+            }
+        }
+    }
+
+    // Fallback: check if either side cell or endpoint is supported
+    if (isCellSupportedOnFloor(sides.first, targetFloor, structures) ||
+        isCellSupportedOnFloor(sides.second, targetFloor, structures) ||
+        isCellSupportedOnFloor(seg.first, targetFloor, structures) ||
+        isCellSupportedOnFloor(seg.second, targetFloor, structures)) {
+        return true;
     }
     return false;
 }

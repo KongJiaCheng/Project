@@ -2858,6 +2858,22 @@ void handleAllGameMouseButtonPressed(
             snapToGrid
         );
     }
+    else if (craftMenuOpen) {
+        clickHandled = handleCraftMenuClicks(
+            uiPos,
+            width,
+            height,
+            craftMenuOpen,
+            craftableItems,
+            inventory,
+            swordCrafting,
+            swordCraftTimer,
+            shieldCrafting,
+            shieldCraftTimer,
+            &authManager,
+            username
+        );
+    }
     else if (placementMode) {
         clickHandled = handleStructurePlacementClicks(
             uiPos,
@@ -2888,20 +2904,6 @@ void handleAllGameMouseButtonPressed(
             chestTex,
             syncSaveCallback,
             snapToGrid
-        );
-    }
-    else if (craftMenuOpen) {
-        clickHandled = handleCraftMenuClicks(
-            uiPos,
-            width,
-            height,
-            craftMenuOpen,
-            craftableItems,
-            inventory,
-            swordCrafting,
-            swordCraftTimer,
-            shieldCrafting,
-            shieldCraftTimer
         );
     }
     else if (!selectionDone)

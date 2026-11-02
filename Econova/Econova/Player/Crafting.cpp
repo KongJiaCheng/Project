@@ -1,6 +1,8 @@
 #include "Crafting.h"
 #include "ItemID.h"
+#include "../Networking/AuthManager.h"
 #include <algorithm>
+#include <thread>
 
 void drawCraftMenu(
     sf::RenderWindow& window,
@@ -45,9 +47,10 @@ void drawCraftMenu(
     int totalWood = 0, totalStone = 0, totalWool = 0;
     for (int i = 0; i < 20; i++) {
         if (inventory.hasItem(i)) {
-            if (inventory.getItemTexture(i) == &woodTex) totalWood += inventory.getItemCount(i);
-            if (inventory.getItemTexture(i) == &stoneTex) totalStone += inventory.getItemCount(i);
-            if (inventory.getItemTexture(i) == &woolTex) totalWool += inventory.getItemCount(i);
+            int id = inventory.getItemID(i);
+            if (id == ITEM_WOOD) totalWood += inventory.getItemCount(i);
+            if (id == ITEM_STONE || id == ITEM_DROP_STONE) totalStone += inventory.getItemCount(i);
+            if (id == ITEM_WOOL) totalWool += inventory.getItemCount(i);
         }
     }
 
@@ -148,8 +151,9 @@ void drawPlacementControls(
     int totalWood = 0, totalStone = 0;
     for (int i = 0; i < 20; i++) {
         if (inventory.hasItem(i)) {
-            if (inventory.getItemTexture(i) == &woodTex) totalWood += inventory.getItemCount(i);
-            if (inventory.getItemTexture(i) == &stoneTex) totalStone += inventory.getItemCount(i);
+            int id = inventory.getItemID(i);
+            if (id == ITEM_WOOD) totalWood += inventory.getItemCount(i);
+            if (id == ITEM_STONE || id == ITEM_DROP_STONE) totalStone += inventory.getItemCount(i);
         }
     }
     if (totalWood >= 10 && totalStone >= 10) placeBtn.setFillColor(sf::Color(60, 180, 75));
@@ -251,7 +255,9 @@ bool handleCraftMenuClicks(
     bool& swordCrafting,
     float& swordCraftTimer,
     bool& shieldCrafting,
-    float& shieldCraftTimer
+    float& shieldCraftTimer,
+    AuthManager* authManager,
+    const std::string& username
 ) {
     sf::FloatRect craftBox({ (width - 1300.f) / 2.f, (height - 950.f) / 2.f }, { 1300.f, 950.f });
     sf::FloatRect closeBtn({ craftBox.position.x + 1220.f, craftBox.position.y + 10.f }, { 60.f, 60.f });
@@ -264,9 +270,10 @@ bool handleCraftMenuClicks(
     int totalWood = 0, totalStone = 0, totalWool = 0;
     for (int i = 0; i < 20; i++) {
         if (inventory.hasItem(i)) {
-            if (inventory.getItemID(i) == ITEM_WOOD) totalWood += inventory.getItemCount(i);
-            if (inventory.getItemID(i) == ITEM_STONE) totalStone += inventory.getItemCount(i);
-            if (inventory.getItemID(i) == ITEM_WOOL) totalWool += inventory.getItemCount(i);
+            int id = inventory.getItemID(i);
+            if (id == ITEM_WOOD) totalWood += inventory.getItemCount(i);
+            if (id == ITEM_STONE || id == ITEM_DROP_STONE) totalStone += inventory.getItemCount(i);
+            if (id == ITEM_WOOL) totalWool += inventory.getItemCount(i);
         }
     }
 
@@ -286,13 +293,26 @@ bool handleCraftMenuClicks(
                 if (item.id == ITEM_WOODEN_SWORD && swordCrafting) return true;
                 if (item.id == ITEM_SHIELD && shieldCrafting) return true;
 
+                // Check if inventory has room for the crafted item
+                bool hasRoom = false;
+                for (int j = 0; j < 20; j++) {
+                    if (!inventory.hasItem(j) || (inventory.getItemID(j) == item.id)) {
+                        hasRoom = true;
+                        break;
+                    }
+                }
+                if (!hasRoom) {
+                    inventory.showBanner("Inventory is full!");
+                    return true;
+                }
+
                 int wToC = item.woodReq, sToC = item.stoneReq, woolToC = item.woolReq;
                 for (int j = 0; j < 20; j++) {
                     if (inventory.hasItem(j)) {
                         if (inventory.getItemID(j) == ITEM_WOOD) {
                             while (wToC > 0 && inventory.getItemCount(j) > 0) { inventory.consumeItem(j); wToC--; }
                         }
-                        if (inventory.getItemID(j) == ITEM_STONE) {
+                        if (inventory.getItemID(j) == ITEM_STONE || inventory.getItemID(j) == ITEM_DROP_STONE) {
                             while (sToC > 0 && inventory.getItemCount(j) > 0) { inventory.consumeItem(j); sToC--; }
                         }
                         if (inventory.getItemID(j) == ITEM_WOOL) {
@@ -301,10 +321,31 @@ bool handleCraftMenuClicks(
                     }
                 }
 
-                if (item.id == ITEM_WOODEN_SWORD) { swordCrafting = true; swordCraftTimer = 30.f; }
-                else if (item.id == ITEM_SHIELD) { shieldCrafting = true; shieldCraftTimer = 60.f; }
+                if (item.id == ITEM_WOODEN_SWORD) {
+                    swordCrafting = true; swordCraftTimer = 30.f;
+                    inventory.showBanner("Crafting Wooden Sword (30s)...");
+                }
+                else if (item.id == ITEM_SHIELD) {
+                    shieldCrafting = true; shieldCraftTimer = 60.f;
+                    inventory.showBanner("Crafting Sturdy Shield (60s)...");
+                }
                 else {
-                    inventory.addItem(item.id, *item.tex, 1);
+                    if (item.tex) {
+                        inventory.addItem(item.id, *item.tex, 1);
+                    }
+                    inventory.showBanner("Crafted " + item.name + "!");
+                }
+
+                if (authManager && !username.empty()) {
+                    std::vector<std::pair<int, int>> saveItems(20, { 0, 0 });
+                    for (int j = 0; j < 20; j++) {
+                        if (inventory.hasItem(j)) {
+                            saveItems[j] = { inventory.getItemID(j), inventory.getItemCount(j) };
+                        }
+                    }
+                    std::thread([authManager, user = username, saveItems]() {
+                        try { authManager->saveInventory(user.c_str(), saveItems); } catch (...) {}
+                    }).detach();
                 }
                 return true;
             }

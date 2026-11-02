@@ -459,22 +459,41 @@ void drawPlacementPreview(
 
     bool isValidPlacement = true;
     if (targetFloor >= 1.f) {
-        if (!isCellSupportedOnFloor(placementPos, (int)targetFloor, structures)) {
-            isValidPlacement = false;
-        }
-        if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)targetFloor, structures)) {
-            isValidPlacement = false;
+        if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+            if (!isWallSupportedOnFloor(placementPos, placementRotation, (int)targetFloor, structures)) {
+                isValidPlacement = false;
+            }
+        } else if (placementItemID == ITEM_WOOD_ROOF) {
+            if (!isRoofSupported(placementPos, (int)targetFloor, structures)) {
+                isValidPlacement = false;
+            }
+        } else {
+            if (!isCellSupportedOnFloor(placementPos, (int)targetFloor, structures)) {
+                isValidPlacement = false;
+            }
+            if (placementItemID == ITEM_WOOD_TILE && isStaircaseOpening(placementPos, (int)targetFloor, structures)) {
+                isValidPlacement = false;
+            }
         }
     }
     // Prevent overlapping duplicate structures on the same floor level
     for (const auto& s : structures) {
-        if (s.sprite.has_value() &&
-            std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
-            std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f &&
-            (int)s.shearY == (int)targetFloor) {
-            if (s.id == placementItemID) {
-                isValidPlacement = false;
-                break;
+        if (!s.sprite.has_value() || (int)s.shearY != (int)targetFloor) continue;
+        if (placementItemID == ITEM_WOOD_WALL || placementItemID == ITEM_WOOD_DOOR) {
+            if ((s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) &&
+                areWallSegmentsEqual(placementPos, placementRotation, s.sprite->getPosition(), s.rotation)) {
+                if (s.id == placementItemID) {
+                    isValidPlacement = false;
+                    break;
+                }
+            }
+        } else {
+            if (std::abs(s.sprite->getPosition().x - placementPos.x) < 1.f &&
+                std::abs(s.sprite->getPosition().y - placementPos.y) < 1.f) {
+                if (s.id == placementItemID) {
+                    isValidPlacement = false;
+                    break;
+                }
             }
         }
     }
@@ -499,29 +518,82 @@ void drawPlacementPreview(
         }
     }
 
-    uint8_t alpha = (targetFloor >= 1.f) ? 140 : 180;
-    if (!isValidPlacement) {
-        preview.setColor(sf::Color(255, 100, 100, alpha));
-    } else {
-        preview.setColor(sf::Color(255, 255, 255, alpha));
-    }
+    uint8_t alpha = (targetFloor >= 1.f) ? 160 : 185;
+    sf::Color fillColor = isValidPlacement ? sf::Color(80, 240, 110, alpha) : sf::Color(255, 75, 75, alpha);
+    sf::Color outlineColor = isValidPlacement ? sf::Color(40, 255, 70, 245) : sf::Color(255, 30, 30, 245);
 
+    auto drawQuadOutline = [&](sf::Vector2f p1, sf::Vector2f p2, sf::Vector2f p3, sf::Vector2f p4, sf::Color col) {
+        sf::VertexArray lines(sf::PrimitiveType::LineStrip, 5);
+        lines[0] = sf::Vertex{ p1, col };
+        lines[1] = sf::Vertex{ p2, col };
+        lines[2] = sf::Vertex{ p3, col };
+        lines[3] = sf::Vertex{ p4, col };
+        lines[4] = sf::Vertex{ p1, col };
+        window.draw(lines);
+    };
+
+    preview.setColor(fillColor);
     preview.setPosition(elevatedPos);
 
+    constexpr float CELL = 500.f, SX = 250.f, SY = 250.f, WALL_HEIGHT = 500.f;
+
     if (placementItemID == ITEM_WOOD_TILE) {
-        sf::Color tileColor;
-        if (!isValidPlacement) {
-            tileColor = sf::Color(255, 110, 110, alpha);
-        } else {
-            tileColor = sf::Color(255, 255, 255, alpha);
-        }
-        drawRhombusTile(window, preview.getTexture(), elevatedPos, tileColor, targetFloor > 0.f);
+        drawRhombusTile(window, preview.getTexture(), elevatedPos, fillColor, targetFloor > 0.f);
+        sf::Vector2f BL{ elevatedPos.x,            elevatedPos.y      };
+        sf::Vector2f BR{ elevatedPos.x + CELL,      elevatedPos.y      };
+        sf::Vector2f TR{ elevatedPos.x + CELL + SX, elevatedPos.y - SY };
+        sf::Vector2f TL{ elevatedPos.x + SX,        elevatedPos.y - SY };
+        drawQuadOutline(BL, BR, TR, TL, outlineColor);
     } else if (placementItemID == ITEM_WOOD_WALL) {
-        drawWall(window, preview.getTexture(), elevatedPos, placementRotation,
-                 isValidPlacement ? sf::Color(255, 255, 255, alpha) : sf::Color(255, 110, 110, alpha));
+        drawWall(window, preview.getTexture(), elevatedPos, placementRotation, fillColor);
+        sf::Vector2f BL, BR, TR, TL;
+        if (placementRotation == 90.f) {
+            BL = elevatedPos;
+            BR = { elevatedPos.x + SX, elevatedPos.y - SY };
+            TR = { elevatedPos.x + SX, elevatedPos.y - SY - WALL_HEIGHT };
+            TL = { elevatedPos.x,      elevatedPos.y - WALL_HEIGHT };
+        } else if (placementRotation == 180.f) {
+            BL = { elevatedPos.x - CELL, elevatedPos.y };
+            BR = elevatedPos;
+            TR = { elevatedPos.x,        elevatedPos.y - WALL_HEIGHT };
+            TL = { elevatedPos.x - CELL, elevatedPos.y - WALL_HEIGHT };
+        } else if (placementRotation == 270.f) {
+            BL = { elevatedPos.x - SX, elevatedPos.y + SY };
+            BR = elevatedPos;
+            TR = { elevatedPos.x,        elevatedPos.y - WALL_HEIGHT };
+            TL = { elevatedPos.x - SX, elevatedPos.y + SY - WALL_HEIGHT };
+        } else {
+            BL = elevatedPos;
+            BR = { elevatedPos.x + CELL, elevatedPos.y };
+            TR = { elevatedPos.x + CELL, elevatedPos.y - WALL_HEIGHT };
+            TL = { elevatedPos.x,        elevatedPos.y - WALL_HEIGHT };
+        }
+        drawQuadOutline(BL, BR, TR, TL, outlineColor);
     } else if (placementItemID == ITEM_WOOD_DOOR) {
-        drawDoor(window, preview.getTexture(), elevatedPos, placementRotation, false,
-                 isValidPlacement ? sf::Color(255, 255, 255, alpha) : sf::Color(255, 110, 110, alpha));
+        drawDoor(window, preview.getTexture(), elevatedPos, placementRotation, false, fillColor);
+        sf::Vector2f BL, BR, TR, TL;
+        if (placementRotation == 90.f) {
+            BL = elevatedPos;
+            BR = { elevatedPos.x + SX, elevatedPos.y - SY };
+            TR = { elevatedPos.x + SX, elevatedPos.y - SY - WALL_HEIGHT };
+            TL = { elevatedPos.x,      elevatedPos.y - WALL_HEIGHT };
+        } else if (placementRotation == 180.f) {
+            BL = { elevatedPos.x - CELL, elevatedPos.y };
+            BR = elevatedPos;
+            TR = { elevatedPos.x,        elevatedPos.y - WALL_HEIGHT };
+            TL = { elevatedPos.x - CELL, elevatedPos.y - WALL_HEIGHT };
+        } else if (placementRotation == 270.f) {
+            BL = { elevatedPos.x - SX, elevatedPos.y + SY };
+            BR = elevatedPos;
+            TR = { elevatedPos.x,        elevatedPos.y - WALL_HEIGHT };
+            TL = { elevatedPos.x - SX, elevatedPos.y + SY - WALL_HEIGHT };
+        } else {
+            BL = elevatedPos;
+            BR = { elevatedPos.x + CELL, elevatedPos.y };
+            TR = { elevatedPos.x + CELL, elevatedPos.y - WALL_HEIGHT };
+            TL = { elevatedPos.x,        elevatedPos.y - WALL_HEIGHT };
+        }
+        drawQuadOutline(BL, BR, TR, TL, outlineColor);
     } else if (placementItemID == ITEM_WOOD_STAIRS) {
         if (placementRotation == 90.f || placementRotation == 270.f) {
             preview.setScale({ -500.f / pts.x, 500.f / pts.y });
@@ -533,6 +605,11 @@ void drawPlacementPreview(
             preview.setRotation(sf::degrees(0.f));
         }
         window.draw(preview);
+        sf::Vector2f BL{ elevatedPos.x,            elevatedPos.y      };
+        sf::Vector2f BR{ elevatedPos.x + CELL,      elevatedPos.y      };
+        sf::Vector2f TR{ elevatedPos.x + CELL + SX, elevatedPos.y - SY };
+        sf::Vector2f TL{ elevatedPos.x + SX,        elevatedPos.y - SY };
+        drawQuadOutline(BL, BR, TR, TL, outlineColor);
     } else if (placementItemID == ITEM_WOOD_ROOF) {
         constexpr float ROOF_TEX_W = 831.f;
         constexpr float ROOF_SCALE = 520.f / ROOF_TEX_W;
@@ -541,10 +618,21 @@ void drawPlacementPreview(
         sf::Vector2f roofPos = { elevatedPos.x + 250.f, elevatedPos.y - FLOOR_HEIGHT };
         preview.setPosition(roofPos);
         preview.setRotation(sf::degrees(0.f));
-        preview.setColor(isValidPlacement ? sf::Color(255, 255, 255, alpha) : sf::Color(255, 100, 100, alpha));
         window.draw(preview);
+
+        // Highlight roof base outline
+        sf::Vector2f rBL{ elevatedPos.x,            elevatedPos.y - FLOOR_HEIGHT };
+        sf::Vector2f rBR{ elevatedPos.x + CELL,      elevatedPos.y - FLOOR_HEIGHT };
+        sf::Vector2f rTR{ elevatedPos.x + CELL + SX, elevatedPos.y - SY - FLOOR_HEIGHT };
+        sf::Vector2f rTL{ elevatedPos.x + SX,        elevatedPos.y - SY - FLOOR_HEIGHT };
+        drawQuadOutline(rBL, rBR, rTR, rTL, outlineColor);
     } else {
         window.draw(preview);
+        sf::Vector2f BL{ elevatedPos.x - 125.f, elevatedPos.y };
+        sf::Vector2f BR{ elevatedPos.x + 125.f, elevatedPos.y };
+        sf::Vector2f TR{ elevatedPos.x + 125.f + SX * 0.5f, elevatedPos.y - SY * 0.5f };
+        sf::Vector2f TL{ elevatedPos.x - 125.f + SX * 0.5f, elevatedPos.y - SY * 0.5f };
+        drawQuadOutline(BL, BR, TR, TL, outlineColor);
     }
 }
 
@@ -704,15 +792,68 @@ void renderWorldDepthScene(
         }
     }
 
-    // Set structure transparency when player is underneath
+    // Check if player is inside the house on current floor (standing on a wood floor tile or inside room)
+    bool isPlayerInsideHouse = false;
+    for (const auto& s : structures) {
+        if (s.id == ITEM_WOOD_TILE && s.sprite.has_value() && (int)s.shearY == playerFloorLevel) {
+            if (isPointInRhombus(pFeetGlobal, s.sprite->getPosition(), 45.f)) {
+                isPlayerInsideHouse = true;
+                break;
+            }
+        }
+    }
+    if (!isPlayerInsideHouse && playerFloorLevel > 0) {
+        for (const auto& etf : elevatedTileFloors) {
+            if (etf.floorLevel == playerFloorLevel && isPointInRhombus(pFeetGlobal, etf.pos, 45.f)) {
+                isPlayerInsideHouse = true;
+                break;
+            }
+        }
+    }
+
+    // Set structure transparency when player is inside house or structures obstruct view
     for (auto& s : structures) {
         if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
             if (!s.sprite.has_value()) continue;
             int sFloor = (int)s.shearY;
-            if (sFloor > playerFloorLevel && isUnderElevatedFloor) {
-                s.sprite->setColor(sf::Color(255, 255, 255, 128));
-            } else if (isUnderRoof) {
-                s.sprite->setColor(sf::Color(255, 255, 255, 128));
+            bool shouldBeTransparent = false;
+
+            // 1. Upper floor walls or roof when player is on a lower floor
+            if (sFloor > playerFloorLevel && (isUnderElevatedFloor || isUnderRoof || isPlayerInsideHouse)) {
+                shouldBeTransparent = true;
+            }
+            // 2. Roof when player is under roof or inside the house
+            else if (s.id == ITEM_WOOD_ROOF && (isUnderRoof || isPlayerInsideHouse || isUnderElevatedFloor)) {
+                shouldBeTransparent = true;
+            }
+            // 3. Front walls when player is inside the house on the same floor
+            else if (isPlayerInsideHouse && sFloor == playerFloorLevel) {
+                sf::Vector2f sp = s.sprite->getPosition();
+                auto seg = getWallSegmentEndpoints(sp, s.rotation);
+                float wallBaseY = std::max(seg.first.y, seg.second.y);
+                // South / front walls that block the interior view from camera perspective
+                if (wallBaseY >= pFeetGlobal.y - 120.f) {
+                    shouldBeTransparent = true;
+                }
+            }
+
+            // 4. Line-of-sight obstruction: when player character is behind a wall (even if outside)
+            if (!shouldBeTransparent && sFloor == playerFloorLevel) {
+                sf::Vector2f sp = s.sprite->getPosition();
+                auto seg = getWallSegmentEndpoints(sp, s.rotation);
+                float minX = std::min(seg.first.x, seg.second.x) - 40.f;
+                float maxX = std::max(seg.first.x, seg.second.x) + 40.f;
+                float minY = std::min(seg.first.y, seg.second.y) - 520.f;
+                float maxY = std::max(seg.first.y, seg.second.y) + 30.f;
+
+                if (pFeetGlobal.x >= minX && pFeetGlobal.x <= maxX &&
+                    pFeetGlobal.y >= minY && pFeetGlobal.y <= maxY) {
+                    shouldBeTransparent = true;
+                }
+            }
+
+            if (shouldBeTransparent) {
+                s.sprite->setColor(sf::Color(255, 255, 255, 110));
             } else {
                 s.sprite->setColor(sf::Color::White);
             }
@@ -720,7 +861,7 @@ void renderWorldDepthScene(
             int sFloor = (int)s.shearY;
             if (sFloor >= 1) {
                 // Second floor and higher floors: always placed as half-invisible (semi-transparent)
-                if (sFloor > playerFloorLevel || isUnderRoof || isUnderElevatedFloor) {
+                if (sFloor > playerFloorLevel || isUnderRoof || isUnderElevatedFloor || isPlayerInsideHouse) {
                     s.sprite->setColor(sf::Color(255, 255, 255, 130)); // half-invisible when below or inside
                 } else {
                     s.sprite->setColor(sf::Color(255, 255, 255, 170)); // half-invisible when walking on it

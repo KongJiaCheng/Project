@@ -4,6 +4,8 @@
 #include <vector>
 #include "Inventory.h"
 
+class AuthManager;
+
 struct CraftableItem {
     int id;
     std::string name;
@@ -55,5 +57,7 @@ bool handleCraftMenuClicks(
     bool& swordCrafting,
     float& swordCraftTimer,
     bool& shieldCrafting,
-    float& shieldCraftTimer
+    float& shieldCraftTimer,
+    AuthManager* authManager = nullptr,
+    const std::string& username = ""
 );

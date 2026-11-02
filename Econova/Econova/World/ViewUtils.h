@@ -85,6 +85,9 @@ inline std::string resolvePathInternal(const std::string& path) {
 
     // 2. Visual Studio developer environment path lookups (relative to project / output structures)
     if (std::string res = checkExist(cleanPath); !res.empty()) return res;
+    if (std::string res = checkExist("Release/" + cleanPath); !res.empty()) return res;
+    if (std::string res = checkExist("Econova/Release/" + cleanPath); !res.empty()) return res;
+    if (std::string res = checkExist("Econova/Econova/" + cleanPath); !res.empty()) return res;
     if (std::string res = checkExist("../" + cleanPath); !res.empty()) return res;
     if (std::string res = checkExist("../../" + cleanPath); !res.empty()) return res;
     if (std::string res = checkExist("../Release/" + cleanPath); !res.empty()) return res;
