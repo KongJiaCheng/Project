@@ -56,7 +56,7 @@ public:
         sprite.setOrigin({ 32.f, 32.f });
     }
 
-    virtual void update(float dt, const sf::Vector2f& playerPos, std::function<bool(sf::Vector2f)> isBlocked = nullptr)
+    virtual void update(float dt, const sf::Vector2f& playerPos, std::function<bool(sf::Vector2f, sf::Vector2f)> isBlocked = nullptr)
     {
         sf::Vector2f pos = sprite.getPosition();
         sf::Vector2f dir = playerPos - pos;
@@ -81,13 +81,22 @@ public:
             sf::Vector2f moveVec = dir * speed * dt;
             
             sf::Vector2f nextPos = pos + moveVec;
-            if (!isBlocked || !isBlocked(nextPos)) {
+            if (!isBlocked || !isBlocked(nextPos, pos)) {
                 sprite.move(moveVec);
             }
             else {
-                // Try sliding
-                if (!isBlocked({ pos.x + moveVec.x, pos.y })) sprite.move({ moveVec.x, 0.f });
-                else if (!isBlocked({ pos.x, pos.y + moveVec.y })) sprite.move({ 0.f, moveVec.y });
+                // Try sliding along X
+                sf::Vector2f slideX(pos.x + moveVec.x, pos.y);
+                if (std::abs(moveVec.x) > 0.001f && (!isBlocked || !isBlocked(slideX, pos))) {
+                    sprite.move({ moveVec.x, 0.f });
+                }
+                else {
+                    // Try sliding along Y
+                    sf::Vector2f slideY(pos.x, pos.y + moveVec.y);
+                    if (std::abs(moveVec.y) > 0.001f && (!isBlocked || !isBlocked(slideY, pos))) {
+                        sprite.move({ 0.f, moveVec.y });
+                    }
+                }
             }
 
             if (std::abs(dir.x) > std::abs(dir.y))

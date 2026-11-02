@@ -960,10 +960,10 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             spawnNightZombies(monsters, playerPos, monsterSpawnClock, MAX_MONSTERS, cameraBounds, MAP_WIDTH, MAP_HEIGHT, isNight, structures, campfires);
         }
 
-        auto isBlocked = [&](sf::Vector2f pos) {
+        auto isBlocked = [&](sf::Vector2f pos, sf::Vector2f cur = sf::Vector2f(0.f, 0.f)) {
             bool isDrought = (disasterActive && currentDisasterType == "drought");
             static const std::vector<sf::Sprite> emptyPonds;
-            return isWorldPositionBlocked(pos, structures, isDrought ? emptyPonds : ponds);
+            return isWorldPositionBlocked(pos, structures, isDrought ? emptyPonds : ponds, cur);
         };
 
         // Update nearby animals and monsters (always — monsters must attack even when menus are open)
@@ -2122,7 +2122,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 for (int i = 0; i < 2 && animals.size() < 6; i++) {
                     float angle = (i == 0) ? 0.f : 3.14159f;
                     sf::Vector2f p = sprite.getPosition() + sf::Vector2f(std::cos(angle) * 350.f, std::sin(angle) * 350.f);
-                    animals.push_back(std::make_unique<Chicken>(p));
+                    if (!isWorldPositionBlocked(p, structures, ponds) && !isPosNearStructureOrHouse(p, structures, campfires, 200.f)) {
+                        animals.push_back(std::make_unique<Chicken>(p));
+                    }
                 }
             }
         }
@@ -2131,7 +2133,7 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
         std::vector<TileFloor> elevatedTileFloors = computeElevatedTileFloors(structures);
 
         auto isBlocked = [&](sf::Vector2f targetPos) {
-            return isPositionBlocked(targetPos, structures, elevatedTileFloors, itemManager, playerFloorLevel);
+            return isPositionBlocked(targetPos, structures, elevatedTileFloors, itemManager, playerFloorLevel, sprite.getPosition());
         };
 
         updateMonstersCombat(
@@ -2150,7 +2152,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
             isPlayerHurt,
             playerHurtTimer,
             MAP_WIDTH,
-            MAP_HEIGHT
+            MAP_HEIGHT,
+            playerFloorLevel
         );
 
         handlePlayerMovementAndCombat(

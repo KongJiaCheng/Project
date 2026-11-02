@@ -1,4 +1,5 @@
 #include "SpawnEntity.h"
+#include "Game.h"
 #include "Chicken.h"
 #include "Pig.h"
 #include "Sheep.h"
@@ -127,6 +128,28 @@ void spawnNearbyAnimals(
             }
         }
 
+        // 5. Strictly prevent spawning inside any house floor tile or wall
+        bool insideHouse1 = false;
+        for (const auto& s : structures) {
+            if (!s.sprite.has_value()) continue;
+            if (s.id == ITEM_WOOD_TILE) {
+                if (isPointInRhombus(candidate, s.sprite->getPosition(), 30.f)) {
+                    insideHouse1 = true; break;
+                }
+            } else if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                sf::Vector2f sPos = s.sprite->getPosition();
+                sf::Vector2f A = sPos, B;
+                if (s.rotation == 90.f)       B = sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f);
+                else if (s.rotation == 180.f) B = sf::Vector2f(sPos.x - 500.f, sPos.y);
+                else if (s.rotation == 270.f) B = sf::Vector2f(sPos.x - 250.f, sPos.y + 250.f);
+                else                          B = sf::Vector2f(sPos.x + 500.f, sPos.y);
+                if (distanceToSegment(candidate, A, B) < 100.f) {
+                    insideHouse1 = true; break;
+                }
+            }
+        }
+        if (insideHouse1) continue;
+
         spawnPos = candidate;
         foundPos = true;
         break;
@@ -227,6 +250,28 @@ void spawnNightZombies(
             }
         }
 
+        // Strictly prevent spawning inside any house floor tile or wall
+        bool insideHouse2 = false;
+        for (const auto& s : structures) {
+            if (!s.sprite.has_value()) continue;
+            if (s.id == ITEM_WOOD_TILE) {
+                if (isPointInRhombus(candidate, s.sprite->getPosition(), 30.f)) {
+                    insideHouse2 = true; break;
+                }
+            } else if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+                sf::Vector2f sPos = s.sprite->getPosition();
+                sf::Vector2f A = sPos, B;
+                if (s.rotation == 90.f)       B = sf::Vector2f(sPos.x + 250.f, sPos.y - 250.f);
+                else if (s.rotation == 180.f) B = sf::Vector2f(sPos.x - 500.f, sPos.y);
+                else if (s.rotation == 270.f) B = sf::Vector2f(sPos.x - 250.f, sPos.y + 250.f);
+                else                          B = sf::Vector2f(sPos.x + 500.f, sPos.y);
+                if (distanceToSegment(candidate, A, B) < 100.f) {
+                    insideHouse2 = true; break;
+                }
+            }
+        }
+        if (insideHouse2) continue;
+
         spawnPos = candidate;
         foundPos = true;
         break;
@@ -244,7 +289,7 @@ void updateNearbyEntities(
     std::vector<std::unique_ptr<Monster>>& monsters,
     sf::Vector2f playerPos,
     float dt,
-    std::function<bool(sf::Vector2f)> isBlocked,
+    std::function<bool(sf::Vector2f, sf::Vector2f)> isBlocked,
     const sf::FloatRect& cameraBounds
 ) {
     for (auto& animal : animals) {

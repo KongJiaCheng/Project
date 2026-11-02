@@ -53,7 +53,7 @@ void updateNearbyEntities(
     std::vector<std::unique_ptr<Monster>>& monsters,
     sf::Vector2f playerPos,
     float dt,
-    std::function<bool(sf::Vector2f)> isBlocked,
+    std::function<bool(sf::Vector2f, sf::Vector2f)> isBlocked,
     const sf::FloatRect& cameraBounds
 );
 

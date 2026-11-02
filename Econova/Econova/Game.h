@@ -1,6 +1,8 @@
 #pragma once
 #include <SFML/Graphics.hpp>
 #include <string>
+#include <cmath>
+#include <algorithm>
 
 #include "Networking/AuthManager.h"
 void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height, const std::string& username, bool isFirstTime, BanInfo* outBanKick = nullptr);
@@ -30,12 +32,33 @@ inline sf::Vector2f snapToGridDoor(sf::Vector2f pos) {
 }
 
 inline float distanceToSegment(sf::Vector2f P, sf::Vector2f A, sf::Vector2f B) {
-    float l2 = std::pow(A.x - B.x, 2) + std::pow(A.y - B.y, 2);
-    if (l2 == 0.f) return std::sqrt(std::pow(P.x - A.x, 2) + std::pow(P.y - A.y, 2));
-    float t = ((P.x - A.x) * (B.x - A.x) + (P.y - A.y) * (B.y - A.y)) / l2;
-    t = std::max(0.f, std::min(1.f, t));
-    sf::Vector2f projection = A + t * (B - A);
-    return std::sqrt(std::pow(P.x - projection.x, 2) + std::pow(P.y - projection.y, 2));
+    float dx = B.x - A.x;
+    float dy = B.y - A.y;
+    float l2 = dx * dx + dy * dy;
+    if (l2 == 0.f) {
+        float px = P.x - A.x;
+        float py = P.y - A.y;
+        return std::sqrt(px * px + py * py);
+    }
+    float t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / l2;
+    t = std::clamp(t, 0.f, 1.f);
+    sf::Vector2f projection = A + t * sf::Vector2f(dx, dy);
+    float rx = P.x - projection.x;
+    float ry = P.y - projection.y;
+    return std::sqrt(rx * rx + ry * ry);
+}
+
+inline bool segmentsIntersect(sf::Vector2f p1, sf::Vector2f p2, sf::Vector2f q1, sf::Vector2f q2) {
+    auto ccw = [](sf::Vector2f a, sf::Vector2f b, sf::Vector2f c) {
+        return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x);
+    };
+    return (ccw(p1, q1, q2) != ccw(p2, q1, q2)) && (ccw(p1, p2, q1) != ccw(p1, p2, q2));
+}
+
+inline bool isPointInRhombus(sf::Vector2f pt, sf::Vector2f pos, float margin = 60.f) {
+    if (pt.y < pos.y - 250.f - margin || pt.y > pos.y + margin) return false;
+    float xShift = pos.y - pt.y;
+    return (pt.x >= pos.x + xShift - margin && pt.x <= pos.x + 500.f + xShift + margin);
 }
 
 inline int getFloorLevelFromY(float y) {

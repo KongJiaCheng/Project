@@ -22,13 +22,15 @@ bool isPositionBlocked(
     const std::vector<PlacedStructure>& structures,
     const std::vector<TileFloor>& elevatedTileFloors,
     const ItemManager& itemManager,
-    int currentFloorLevel = 0
+    int currentFloorLevel = 0,
+    sf::Vector2f curPos = sf::Vector2f(0.f, 0.f)
 );
 
 bool isWorldPositionBlocked(
     sf::Vector2f pos,
     const std::vector<PlacedStructure>& structures,
-    const std::vector<sf::Sprite>& ponds
+    const std::vector<sf::Sprite>& ponds,
+    sf::Vector2f prevPos = sf::Vector2f(0.f, 0.f)
 );
 
 
@@ -48,7 +50,8 @@ void updateMonstersCombat(
     bool& isPlayerHurt,
     float& playerHurtTimer,
     unsigned int mapWidth,
-    unsigned int mapHeight
+    unsigned int mapHeight,
+    int playerFloorLevel = 0
 );
 
 void updateSaplings(
