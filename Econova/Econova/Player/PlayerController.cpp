@@ -469,8 +469,18 @@ bool hydrateWorldAndPlayerData(
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
             if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
+            } else if (s.id == ITEM_WOOD_ROOF) {
+                newS.sprite->setOrigin({ 514.f, 897.f });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+            }
+            if (s.id == ITEM_FURNACE) {
+                newS.fuel = s.fuel;
+                newS.inputItem = s.inputItem;
+                newS.inputCount = s.inputCount;
+                newS.outputItem = s.outputItem;
+                newS.outputCount = s.outputCount;
+                newS.timeRemaining = s.timeRemaining;
             }
             float dummyShear = 0.f;
             applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, dummyShear);
@@ -500,8 +510,18 @@ bool hydrateWorldAndPlayerData(
             sf::Vector2u ts = newS.sprite->getTexture().getSize();
             if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                 newS.sprite->setOrigin({ 0.f, (float)ts.y });
+            } else if (s.id == ITEM_WOOD_ROOF) {
+                newS.sprite->setOrigin({ 514.f, 897.f });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+            }
+            if (s.id == ITEM_FURNACE) {
+                newS.fuel = s.fuel;
+                newS.inputItem = s.inputItem;
+                newS.inputCount = s.inputCount;
+                newS.outputItem = s.outputItem;
+                newS.outputCount = s.outputCount;
+                newS.timeRemaining = s.timeRemaining;
             }
             float dummyShear = 0.f;
             applyStructureScale(*newS.sprite, s.id, s.rotation, s.isOpen, dummyShear);

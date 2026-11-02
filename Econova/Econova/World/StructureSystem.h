@@ -159,6 +159,28 @@ inline bool isCellSupportedOnFloor(sf::Vector2f cellPos, int targetFloor, const 
     }
     return false;
 }
+inline bool isRoofSupported(sf::Vector2f cellPos, int targetFloor, const std::vector<PlacedStructure>& structures) {
+    constexpr float CELL = 500.f, SX = 250.f, SY = 250.f;
+    for (const auto& s : structures) {
+        if (!s.sprite.has_value()) continue;
+        int sf = (int)s.shearY;
+        if (sf != targetFloor) continue;
+        sf::Vector2f sp = s.sprite->getPosition();
+
+        if (s.id == ITEM_WOOD_TILE) {
+            if (std::abs(sp.x - cellPos.x) < 1.f && std::abs(sp.y - cellPos.y) < 1.f) return true;
+        } else if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR) {
+            if (std::abs(sp.x - cellPos.x) < 1.f && std::abs(sp.y - cellPos.y) < 1.f) return true;
+            if (std::abs(sp.x - (cellPos.x + CELL)) < 1.f && std::abs(sp.y - cellPos.y) < 1.f) return true;
+            if (std::abs(sp.x - (cellPos.x + SX)) < 1.f && std::abs(sp.y - (cellPos.y - SY)) < 1.f) return true;
+            if (std::abs(sp.x - (cellPos.x + CELL + SX)) < 1.f && std::abs(sp.y - (cellPos.y - SY)) < 1.f) return true;
+        }
+    }
+    if (targetFloor >= 1 && isCellSupportedOnFloor(cellPos, targetFloor, structures)) {
+        return true;
+    }
+    return false;
+}
 
 class Inventory;
 

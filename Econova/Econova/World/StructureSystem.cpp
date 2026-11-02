@@ -32,7 +32,13 @@ void syncSaveStructuresAndCampfires(
                 s.rotation,
                 s.isOpen,
                 s.shearY,
-                s.owner
+                s.owner,
+                s.fuel,
+                s.inputItem,
+                s.inputCount,
+                s.outputItem,
+                s.outputCount,
+                s.timeRemaining
                 });
         }
     }
@@ -81,12 +87,37 @@ void syncSaveStructuresAndCampfires(
         }
     }
 
-    std::thread([&authManager, username, structData = std::move(structData), campData = std::move(campData), allCampfires = std::move(allCampfires), invData = std::move(invData)]() {
+    std::vector<StoredStructure> allFurnaces;
+    for (const auto& s : structures) {
+        if (s.id == ITEM_FURNACE && s.sprite.has_value()) {
+            allFurnaces.push_back({
+                s.id,
+                s.sprite->getPosition().x,
+                s.sprite->getPosition().y,
+                s.health,
+                s.rotation,
+                s.isOpen,
+                s.shearY,
+                s.owner,
+                s.fuel,
+                s.inputItem,
+                s.inputCount,
+                s.outputItem,
+                s.outputCount,
+                s.timeRemaining
+            });
+        }
+    }
+
+    std::thread([&authManager, username, structData = std::move(structData), campData = std::move(campData), allCampfires = std::move(allCampfires), allFurnaces = std::move(allFurnaces), invData = std::move(invData)]() {
         try {
             authManager.saveStructures(username.c_str(), structData);
             authManager.saveCampfires(username.c_str(), campData);
             for (const auto& c : allCampfires) {
                 authManager.updateCampfireCookingState(c.x, c.y, c.fuel, c.inputItem, c.inputCount, c.outputItem, c.outputCount, c.timeRemaining);
+            }
+            for (const auto& f : allFurnaces) {
+                authManager.updateFurnaceCookingState(f.x, f.y, f.fuel, f.inputItem, f.inputCount, f.outputItem, f.outputCount, f.timeRemaining);
             }
             if (!invData.empty()) {
                 authManager.saveInventory(username.c_str(), invData);
@@ -323,9 +354,12 @@ void drawCampfireMenu(
             barFill.setPosition({ BAR_X, BAR_Y });
             barFill.setFillColor(sf::Color(255, 140, 30));
             window.draw(barFill);
-            sf::Text pct(uiFont, std::to_string((int)(progress * 100)) + "%", 12);
+            int remSec = (int)std::ceil(fire.timeRemaining);
+            if (remSec < 0) remSec = 0;
+            std::string progStr = std::to_string((int)(progress * 100)) + "% (" + std::to_string(remSec) + "s)";
+            sf::Text pct(uiFont, progStr, 12);
             pct.setFillColor(sf::Color::White);
-            pct.setPosition({ BAR_X + BAR_W / 2.f - 12.f, BAR_Y + 2.f });
+            pct.setPosition({ BAR_X + BAR_W / 2.f - 24.f, BAR_Y + 2.f });
             window.draw(pct);
         } else if (fire.outputCount > 0) {
             sf::RectangleShape barFull({ BAR_W, BAR_H });
@@ -548,9 +582,12 @@ void drawFurnaceMenu(
             barFill.setPosition({ BAR_X, BAR_Y });
             barFill.setFillColor(isOre2 ? sf::Color(200, 110, 30) : sf::Color(255, 140, 30));
             window.draw(barFill);
-            sf::Text pct(uiFont, std::to_string((int)(progress * 100)) + "%", 12);
+            int remSec = (int)std::ceil(furnace.timeRemaining);
+            if (remSec < 0) remSec = 0;
+            std::string progStr = std::to_string((int)(progress * 100)) + "% (" + std::to_string(remSec) + "s)";
+            sf::Text pct(uiFont, progStr, 12);
             pct.setFillColor(sf::Color::White);
-            pct.setPosition({ BAR_X + BAR_W / 2.f - 12.f, BAR_Y + 2.f });
+            pct.setPosition({ BAR_X + BAR_W / 2.f - 24.f, BAR_Y + 2.f });
             window.draw(pct);
         } else if (furnace.outputCount > 0) {
             sf::RectangleShape barFull({ BAR_W, BAR_H });
@@ -1126,8 +1163,10 @@ void applyStructureScale(
         }
     }
     else if (id == ITEM_WOOD_ROOF) {
-        // 500×500
-        spr.setScale({ 500.f / tw, 500.f / th });
+        constexpr float ROOF_TEX_W = 831.f;
+        constexpr float ROOF_SCALE = 520.f / ROOF_TEX_W;
+        spr.setScale({ ROOF_SCALE, ROOF_SCALE });
+        spr.setOrigin({ 514.f, 897.f });
     }
     else if (id == ITEM_NONE) {
         // Campfire: 500×500
@@ -1311,6 +1350,14 @@ bool handleStructurePlacementClicks(
             placementMode = false;
         }
         else {
+            // ── Roof validation: must be placed on top of supported house structure ───
+            if (placementItemID == ITEM_WOOD_ROOF) {
+                if (!isRoofSupported(placementPos, (int)effectiveFloor, structures)) {
+                    inventory.showBanner("Roof must be placed on top of a constructed house structure!");
+                    return true;
+                }
+            }
+
             // ── Stairs validation: must be placed on a wooden floor tile ───
             if (placementItemID == ITEM_WOOD_STAIRS) {
                 bool hasTileUnder = false;
@@ -1425,6 +1472,8 @@ bool handleStructurePlacementClicks(
                 } else {
                     newS.sprite->setOrigin({ 0.f, (float)ts.y });
                 }
+            } else if (placementItemID == ITEM_WOOD_ROOF) {
+                newS.sprite->setOrigin({ 514.f, 897.f });
             } else {
                 newS.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
             }
@@ -1689,6 +1738,11 @@ void updateCampfiresAndCooking(
                         if (pc.inputCount <= 0) {
                             pc.inputItem = 0;
                         }
+                        if (pc.inputCount > 0 && pc.fuel > 0) {
+                            pc.timeRemaining = 2.0f;
+                        } else {
+                            pc.timeRemaining = 0.f;
+                        }
                         syncSaveCallback();
                     }
                 }
@@ -1721,6 +1775,11 @@ void updateCampfiresAndCooking(
                         s.outputCount++;
                         if (s.inputCount <= 0) {
                             s.inputItem = 0;
+                        }
+                        if (s.inputCount > 0 && s.fuel > 0) {
+                            s.timeRemaining = 2.0f;
+                        } else {
+                            s.timeRemaining = 0.f;
                         }
                         syncSaveCallback();
                     }

@@ -1284,13 +1284,24 @@ bool handleChatCommandsAndInput(
         bubbleTimer = 10.f;
     }
     else {
+        std::string finalMsg = msg;
+        MuteInfo mi = authManager.getMuteStatus(username);
+        if (mi.isMuted) {
+            static const char GIB_POOL[] = "mfmfmfmfmmfmmmf";
+            finalMsg = "";
+            for (size_t i = 0; i < msg.length(); ++i) {
+                finalMsg += GIB_POOL[i % (sizeof(GIB_POOL) - 1)];
+            }
+            if (finalMsg.empty()) finalMsg = "mfmfmf";
+        }
+
         // Optimistically display speech bubble above player immediately
-        latestPlayerMsg = msg;
+        latestPlayerMsg = finalMsg;
         bubbleTimer = 5.0f;
 
         // Send to database asynchronously so main render loop never freezes or triggers "Not Responding"
         std::string sendUser = username;
-        std::string sendMsg = msg;
+        std::string sendMsg = finalMsg;
         std::thread([sendUser, sendMsg]() {
             try {
                 std::string chatErr;

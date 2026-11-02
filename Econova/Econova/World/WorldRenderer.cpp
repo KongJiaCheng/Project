@@ -493,6 +493,11 @@ void drawPlacementPreview(
             isValidPlacement = false;
         }
     }
+    if (placementItemID == ITEM_WOOD_ROOF) {
+        if (!isRoofSupported(placementPos, (int)targetFloor, structures)) {
+            isValidPlacement = false;
+        }
+    }
 
     uint8_t alpha = (targetFloor >= 1.f) ? 140 : 180;
     if (!isValidPlacement) {
@@ -529,9 +534,14 @@ void drawPlacementPreview(
         }
         window.draw(preview);
     } else if (placementItemID == ITEM_WOOD_ROOF) {
-        sf::Vector2f roofPos = { elevatedPos.x, elevatedPos.y - 120.f };
+        constexpr float ROOF_TEX_W = 831.f;
+        constexpr float ROOF_SCALE = 520.f / ROOF_TEX_W;
+        preview.setScale({ ROOF_SCALE, ROOF_SCALE });
+        preview.setOrigin({ 514.f, 897.f });
+        sf::Vector2f roofPos = { elevatedPos.x + 250.f, elevatedPos.y - FLOOR_HEIGHT };
         preview.setPosition(roofPos);
-        preview.setRotation(sf::degrees(placementRotation));
+        preview.setRotation(sf::degrees(0.f));
+        preview.setColor(isValidPlacement ? sf::Color(255, 255, 255, alpha) : sf::Color(255, 100, 100, alpha));
         window.draw(preview);
     } else {
         window.draw(preview);
@@ -681,17 +691,15 @@ void renderWorldDepthScene(
 
     // Check roof bounds
     for (auto& s : structures) {
-        if (s.id == ITEM_WOOD_ROOF || s.id == ITEM_WOOD_WALL) {
+        if (s.id == ITEM_WOOD_ROOF) {
             if (!s.sprite.has_value()) continue;
-            float dx = s.sprite->getPosition().x - pPos.x;
-            float dy = s.sprite->getPosition().y - pPos.y;
-            if (dx * dx + dy * dy > 800.f * 800.f) continue;
-
-            sf::FloatRect rb = s.sprite->getGlobalBounds();
-            rb.position.x -= 60.f; rb.size.x += 120.f;
-            rb.position.y -= 60.f; rb.size.y += 120.f;
-            if (rb.contains(pPos)) {
-                isUnderRoof = true;
+            int sFloor = (int)s.shearY;
+            if (playerFloorLevel <= sFloor) {
+                sf::Vector2f rPos = s.sprite->getPosition();
+                if (isPointInRhombus(pPos, rPos, 60.f)) {
+                    isUnderRoof = true;
+                    break;
+                }
             }
         }
     }
@@ -800,12 +808,17 @@ void renderWorldDepthScene(
             } });
         }
         else if (s.id == ITEM_WOOD_ROOF) {
-            sf::Vector2f roofPos = { elevatedPos.x, elevatedPos.y - 120.f };
-            depthDrawables.push_back({ sFloor, roofPos.y, 2, [structPtr = &s, roofPos, &window]() {
+            float roofElev = (sFloor + 1) * FLOOR_HEIGHT;
+            sf::Vector2f roofPos = { s.sprite->getPosition().x + 250.f, s.sprite->getPosition().y - roofElev };
+            depthDrawables.push_back({ sFloor + 1, roofPos.y + 100.f, 2, [structPtr = &s, roofPos, &window]() {
                 if (structPtr->sprite.has_value()) {
                     sf::Sprite copy = *structPtr->sprite;
+                    constexpr float ROOF_TEX_W = 831.f;
+                    constexpr float ROOF_SCALE = 520.f / ROOF_TEX_W;
+                    copy.setScale({ ROOF_SCALE, ROOF_SCALE });
+                    copy.setOrigin({ 514.f, 897.f });
                     copy.setPosition(roofPos);
-                    copy.setRotation(sf::degrees(structPtr->rotation));
+                    copy.setRotation(sf::degrees(0.f));
                     window.draw(copy);
                 }
             } });

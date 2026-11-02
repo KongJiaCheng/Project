@@ -1179,12 +1179,38 @@ std::vector<StoredStructure> AuthManager::loadStructures(const sql::SQLString& u
     std::vector<StoredStructure> structures;
     if (!con) return structures;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt;
+        bool hasCookCols = true;
+        try {
+            pstmt.reset(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY, Fuel, InputItem, InputCount, OutputItem, OutputCount, TimeRemaining FROM structures WHERE Username = ?"));
+        } catch (...) {
+            hasCookCols = false;
+            pstmt.reset(con->prepareStatement("SELECT ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username = ?"));
+        }
         if (!pstmt) return structures;
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY"), std::string(username.c_str()) });
+            StoredStructure s;
+            s.id = res->getInt("ItemID");
+            s.x = (float)res->getDouble("PosX");
+            s.y = (float)res->getDouble("PosY");
+            s.health = (float)res->getDouble("Health");
+            s.rotation = (float)res->getDouble("Rotation");
+            s.isOpen = res->getBoolean("IsOpen");
+            s.shearY = (float)res->getDouble("ShearY");
+            s.owner = std::string(username.c_str());
+            if (hasCookCols) {
+                try {
+                    s.fuel = res->getInt("Fuel");
+                    s.inputItem = res->getInt("InputItem");
+                    s.inputCount = res->getInt("InputCount");
+                    s.outputItem = res->getInt("OutputItem");
+                    s.outputCount = res->getInt("OutputCount");
+                    s.timeRemaining = (float)res->getDouble("TimeRemaining");
+                } catch (...) {}
+            }
+            structures.push_back(s);
         }
     }
     catch (sql::SQLException& e) {
@@ -1201,18 +1227,94 @@ std::vector<StoredStructure> AuthManager::loadOtherStructures(const sql::SQLStri
     std::vector<StoredStructure> structures;
     if (!con) return structures;
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT Username, ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username != ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt;
+        bool hasCookCols = true;
+        try {
+            pstmt.reset(con->prepareStatement("SELECT Username, ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY, Fuel, InputItem, InputCount, OutputItem, OutputCount, TimeRemaining FROM structures WHERE Username != ?"));
+        } catch (...) {
+            hasCookCols = false;
+            pstmt.reset(con->prepareStatement("SELECT Username, ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY FROM structures WHERE Username != ?"));
+        }
         if (!pstmt) return structures;
         pstmt->setString(1, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
         while (res && res->next()) {
-            structures.push_back({ res->getInt("ItemID"), (float)res->getDouble("PosX"), (float)res->getDouble("PosY"), (float)res->getDouble("Health"), (float)res->getDouble("Rotation"), res->getBoolean("IsOpen"), (float)res->getDouble("ShearY"), std::string(res->getString("Username")) });
+            StoredStructure s;
+            s.id = res->getInt("ItemID");
+            s.x = (float)res->getDouble("PosX");
+            s.y = (float)res->getDouble("PosY");
+            s.health = (float)res->getDouble("Health");
+            s.rotation = (float)res->getDouble("Rotation");
+            s.isOpen = res->getBoolean("IsOpen");
+            s.shearY = (float)res->getDouble("ShearY");
+            s.owner = std::string(res->getString("Username"));
+            if (hasCookCols) {
+                try {
+                    s.fuel = res->getInt("Fuel");
+                    s.inputItem = res->getInt("InputItem");
+                    s.inputCount = res->getInt("InputCount");
+                    s.outputItem = res->getInt("OutputItem");
+                    s.outputCount = res->getInt("OutputCount");
+                    s.timeRemaining = (float)res->getDouble("TimeRemaining");
+                } catch (...) {}
+            }
+            structures.push_back(s);
         }
     }
     catch (sql::SQLException& e) {
         std::cerr << "loadOtherStructures error: " << e.what() << "\n";
     }
     return structures;
+}
+
+void AuthManager::ensureFurnaceColumns() {
+    if (!con) return;
+    try {
+        std::unique_ptr<sql::Statement> stmt(con->createStatement());
+        if (stmt) {
+            try { stmt->execute("ALTER TABLE structures ADD COLUMN Fuel INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE structures ADD COLUMN InputItem INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE structures ADD COLUMN InputCount INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE structures ADD COLUMN OutputItem INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE structures ADD COLUMN OutputCount INT DEFAULT 0"); } catch (...) {}
+            try { stmt->execute("ALTER TABLE structures ADD COLUMN TimeRemaining FLOAT DEFAULT 0"); } catch (...) {}
+        }
+    } catch (...) {}
+}
+
+bool AuthManager::updateFurnaceCookingState(float x, float y, int fuel, int inputItem, int inputCount, int outputItem, int outputCount, float timeRemaining) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().updateFurnaceCookingState(x, y, fuel, inputItem, inputCount, outputItem, outputCount, timeRemaining);
+    }
+    if (!con) return false;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        try {
+            std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
+                "UPDATE structures SET Fuel = ?, InputItem = ?, InputCount = ?, OutputItem = ?, OutputCount = ?, TimeRemaining = ? "
+                "WHERE ItemID = 7 AND ABS(PosX - ?) < 5.0 AND ABS(PosY - ?) < 5.0"
+            ));
+            if (!pstmt) return false;
+            pstmt->setInt(1, fuel);
+            pstmt->setInt(2, inputItem);
+            pstmt->setInt(3, inputCount);
+            pstmt->setInt(4, outputItem);
+            pstmt->setInt(5, outputCount);
+            pstmt->setDouble(6, (double)timeRemaining);
+            pstmt->setDouble(7, (double)x);
+            pstmt->setDouble(8, (double)y);
+            int rows = pstmt->executeUpdate();
+            return rows > 0;
+        }
+        catch (sql::SQLException& e) {
+            if (attempt == 0) {
+                ensureFurnaceColumns();
+                continue;
+            }
+            std::cerr << "updateFurnaceCookingState error: " << e.what() << "\n";
+        }
+    }
+    return false;
 }
 
 void AuthManager::ensureCampfireColumns() {
@@ -1523,18 +1625,23 @@ bool AuthManager::sendChatMessage(const sql::SQLString& username, const sql::SQL
             if (resMute && resMute->next()) {
                 bool isMuted = resMute->getBoolean("is_muted");
                 if (isMuted) {
-                    long long remSec = resMute->getInt64("rem_sec");
-                    std::string muteDate = std::string(resMute->getString("mute_date"));
-                    std::string remStr;
-                    if (remSec >= 3600) {
-                        remStr = std::to_string(remSec / 3600) + "h " + std::to_string((remSec % 3600) / 60) + "m";
-                    } else if (remSec >= 60) {
-                        remStr = std::to_string(remSec / 60) + "m " + std::to_string(remSec % 60) + "s";
-                    } else {
-                        remStr = std::to_string(remSec) + "s";
+                    // Muted player's chat becomes muffled murmur ("mfmfmfmfmmf") across the network
+                    static const char GIB_POOL[] = "mfmfmfmfmmfmmmf";
+                    std::string gibMsg = "";
+                    for (size_t i = 0; i < message.length(); ++i) {
+                        gibMsg += GIB_POOL[i % (sizeof(GIB_POOL) - 1)];
                     }
-                    outError = "You are muted! (Remaining: " + remStr + " - until " + muteDate + ")";
-                    return false;
+                    if (gibMsg.empty()) gibMsg = "mfmfmf";
+                    std::unique_ptr<sql::PreparedStatement> pstmt(
+                        con->prepareStatement("INSERT INTO ChatMessages (Username, Message) VALUES (?, ?)")
+                    );
+                    if (pstmt) {
+                        pstmt->setString(1, username);
+                        pstmt->setString(2, gibMsg);
+                        pstmt->executeUpdate();
+                        return true;
+                    }
+                    return true;
                 }
             }
         }

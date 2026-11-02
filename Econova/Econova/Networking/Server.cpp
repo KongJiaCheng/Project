@@ -248,6 +248,10 @@ void syncAndRenderOnlinePlayers(
             }
 
             result.serverEpoch = authManager.getServerEpochSeconds();
+            result.selfBanInfo = authManager.getBanInfo(uname);
+            result.selfMuteInfo = authManager.getMuteStatus(uname);
+            result.disasterInfo = authManager.getActiveDisaster();
+            result.disasterSyncUpdated = true;
 
             static int structSyncTick = 0;
             ++structSyncTick;
@@ -275,10 +279,10 @@ void syncAndRenderOnlinePlayers(
                 SyncResult res = syncFuture.get();
                 otherPlayers = res.players;
 
-                if (selfBanInfo && res.selfBanInfo.isBanned) {
+                if (selfBanInfo) {
                     *selfBanInfo = res.selfBanInfo;
                 }
-                if (selfMuteInfo && (res.selfMuteInfo.isMuted || selfMuteInfo->isMuted)) {
+                if (selfMuteInfo) {
                     *selfMuteInfo = res.selfMuteInfo;
                 }
                 if (serverDisasterInfo && res.disasterSyncUpdated) {
@@ -313,8 +317,18 @@ void syncAndRenderOnlinePlayers(
                             sf::Vector2u ts = ns.sprite->getTexture().getSize();
                             if (s.id == ITEM_WOOD_WALL || s.id == ITEM_WOOD_DOOR || s.id == ITEM_WOOD_STAIRS) {
                                 ns.sprite->setOrigin({ 0.f, (float)ts.y });
+                            } else if (s.id == ITEM_WOOD_ROOF) {
+                                ns.sprite->setOrigin({ 514.f, 897.f });
                             } else {
                                 ns.sprite->setOrigin({ ts.x / 2.f, (float)ts.y });
+                            }
+                            if (s.id == ITEM_FURNACE) {
+                                ns.fuel = s.fuel;
+                                ns.inputItem = s.inputItem;
+                                ns.inputCount = s.inputCount;
+                                ns.outputItem = s.outputItem;
+                                ns.outputCount = s.outputCount;
+                                ns.timeRemaining = s.timeRemaining;
                             }
                             float dummyShear = 0.f;
                             applyStructureScale(*ns.sprite, s.id, s.rotation, s.isOpen, dummyShear);
@@ -344,16 +358,14 @@ void syncAndRenderOnlinePlayers(
                             return std::hypot(existing.position.x - c.x, existing.position.y - c.y) < 10.f;
                         });
                         if (it != campfires.end()) {
-                            if (!it->menuOpen) {
-                                it->timeRemaining = c.timeRemaining;
-                                it->fuel          = c.fuel;
-                                it->inputItem     = c.inputItem;
-                                it->inputCount    = c.inputCount;
-                                it->outputItem    = c.outputItem;
-                                it->outputCount   = c.outputCount;
-                                it->owner         = c.owner;
-                                it->isCrafted     = c.isCrafted;
-                            }
+                            it->timeRemaining = c.timeRemaining;
+                            it->fuel          = c.fuel;
+                            it->inputItem     = c.inputItem;
+                            it->inputCount    = c.inputCount;
+                            it->outputItem    = c.outputItem;
+                            it->outputCount   = c.outputCount;
+                            it->owner         = c.owner;
+                            it->isCrafted     = c.isCrafted;
                         } else {
                             PlacedCampfire pc;
                             pc.position      = { c.x, c.y };

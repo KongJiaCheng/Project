@@ -100,6 +100,14 @@ bool SQLiteManager::isOpen() const {
 }
 
 void SQLiteManager::createTables() {
+    if (db) {
+        sqlite3_exec(db, "ALTER TABLE Structures ADD COLUMN Fuel INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "ALTER TABLE Structures ADD COLUMN InputItem INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "ALTER TABLE Structures ADD COLUMN InputCount INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "ALTER TABLE Structures ADD COLUMN OutputItem INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "ALTER TABLE Structures ADD COLUMN OutputCount INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "ALTER TABLE Structures ADD COLUMN TimeRemaining REAL DEFAULT 0.0;", nullptr, nullptr, nullptr);
+    }
     if (!db) return;
 
     const char* schema =
@@ -144,7 +152,13 @@ void SQLiteManager::createTables() {
         "posY REAL, "
         "rotation REAL DEFAULT 0.0, "
         "isOpen INTEGER DEFAULT 0, "
-        "shearY REAL DEFAULT 0.0"
+        "shearY REAL DEFAULT 0.0, "
+        "Fuel INTEGER DEFAULT 0, "
+        "InputItem INTEGER DEFAULT 0, "
+        "InputCount INTEGER DEFAULT 0, "
+        "OutputItem INTEGER DEFAULT 0, "
+        "OutputCount INTEGER DEFAULT 0, "
+        "TimeRemaining REAL DEFAULT 0.0"
         ");"
 
         "CREATE TABLE IF NOT EXISTS chest_contents ("
@@ -509,7 +523,7 @@ void SQLiteManager::saveStructures(const std::string& username, const std::vecto
     }
 
     sqlite3_stmt* rawIns = nullptr;
-    const char* sql = "INSERT INTO Structures (Username, structureId, posX, posY, rotation, isOpen, shearY) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    const char* sql = "INSERT INTO Structures (Username, structureId, posX, posY, rotation, isOpen, shearY, Fuel, InputItem, InputCount, OutputItem, OutputCount, TimeRemaining) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     if (sqlite3_prepare_v2(db, sql, -1, &rawIns, nullptr) == SQLITE_OK) {
         StmtGuard ins(rawIns);
         for (const auto& s : structures) {
@@ -521,6 +535,12 @@ void SQLiteManager::saveStructures(const std::string& username, const std::vecto
             sqlite3_bind_double(ins.get(), 5, (double)s.rotation);
             sqlite3_bind_int(ins.get(), 6, s.isOpen ? 1 : 0);
             sqlite3_bind_double(ins.get(), 7, (double)s.shearY);
+            sqlite3_bind_int(ins.get(), 8, s.fuel);
+            sqlite3_bind_int(ins.get(), 9, s.inputItem);
+            sqlite3_bind_int(ins.get(), 10, s.inputCount);
+            sqlite3_bind_int(ins.get(), 11, s.outputItem);
+            sqlite3_bind_int(ins.get(), 12, s.outputCount);
+            sqlite3_bind_double(ins.get(), 13, (double)s.timeRemaining);
             sqlite3_step(ins.get());
         }
     }
@@ -534,7 +554,7 @@ std::vector<StoredStructure> SQLiteManager::loadStructures(const std::string& us
     if (!db) return res;
 
     sqlite3_stmt* rawStmt = nullptr;
-    const char* sql = "SELECT Username, structureId, posX, posY, rotation, isOpen, shearY FROM Structures WHERE Username = ?";
+    const char* sql = "SELECT Username, structureId, posX, posY, rotation, isOpen, shearY, Fuel, InputItem, InputCount, OutputItem, OutputCount, TimeRemaining FROM Structures WHERE Username = ?";
     if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return res;
     StmtGuard stmt(rawStmt);
 
@@ -550,6 +570,14 @@ std::vector<StoredStructure> SQLiteManager::loadStructures(const std::string& us
         s.rotation = (float)sqlite3_column_double(stmt.get(), 4);
         s.isOpen = sqlite3_column_int(stmt.get(), 5) != 0;
         s.shearY = (float)sqlite3_column_double(stmt.get(), 6);
+        if (sqlite3_column_count(stmt.get()) >= 13) {
+            s.fuel = sqlite3_column_int(stmt.get(), 7);
+            s.inputItem = sqlite3_column_int(stmt.get(), 8);
+            s.inputCount = sqlite3_column_int(stmt.get(), 9);
+            s.outputItem = sqlite3_column_int(stmt.get(), 10);
+            s.outputCount = sqlite3_column_int(stmt.get(), 11);
+            s.timeRemaining = (float)sqlite3_column_double(stmt.get(), 12);
+        }
         res.push_back(s);
     }
     return res;
@@ -561,7 +589,7 @@ std::vector<StoredStructure> SQLiteManager::loadOtherStructures(const std::strin
     if (!db) return res;
 
     sqlite3_stmt* rawStmt = nullptr;
-    const char* sql = "SELECT Username, structureId, posX, posY, rotation, isOpen, shearY FROM Structures WHERE Username != ?";
+    const char* sql = "SELECT Username, structureId, posX, posY, rotation, isOpen, shearY, Fuel, InputItem, InputCount, OutputItem, OutputCount, TimeRemaining FROM Structures WHERE Username != ?";
     if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return res;
     StmtGuard stmt(rawStmt);
 
@@ -577,6 +605,14 @@ std::vector<StoredStructure> SQLiteManager::loadOtherStructures(const std::strin
         s.rotation = (float)sqlite3_column_double(stmt.get(), 4);
         s.isOpen = sqlite3_column_int(stmt.get(), 5) != 0;
         s.shearY = (float)sqlite3_column_double(stmt.get(), 6);
+        if (sqlite3_column_count(stmt.get()) >= 13) {
+            s.fuel = sqlite3_column_int(stmt.get(), 7);
+            s.inputItem = sqlite3_column_int(stmt.get(), 8);
+            s.inputCount = sqlite3_column_int(stmt.get(), 9);
+            s.outputItem = sqlite3_column_int(stmt.get(), 10);
+            s.outputCount = sqlite3_column_int(stmt.get(), 11);
+            s.timeRemaining = (float)sqlite3_column_double(stmt.get(), 12);
+        }
         res.push_back(s);
     }
     return res;
@@ -1480,4 +1516,24 @@ bool SQLiteManager::unmuteUser(const std::string& target, std::string& outMsg) {
 
     outMsg = "Successfully unmuted " + target + ".";
     return true;
+}
+
+bool SQLiteManager::updateFurnaceCookingState(float x, float y, int fuel, int inputItem, int inputCount, int outputItem, int outputCount, float timeRemaining) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) return false;
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql = "UPDATE Structures SET Fuel = ?, InputItem = ?, InputCount = ?, OutputItem = ?, OutputCount = ?, TimeRemaining = ? "
+                      "WHERE structureId = 7 AND ABS(posX - ?) < 5.0 AND ABS(posY - ?) < 5.0";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return false;
+    StmtGuard stmt(rawStmt);
+    sqlite3_bind_int(stmt.get(), 1, fuel);
+    sqlite3_bind_int(stmt.get(), 2, inputItem);
+    sqlite3_bind_int(stmt.get(), 3, inputCount);
+    sqlite3_bind_int(stmt.get(), 4, outputItem);
+    sqlite3_bind_int(stmt.get(), 5, outputCount);
+    sqlite3_bind_double(stmt.get(), 6, (double)timeRemaining);
+    sqlite3_bind_double(stmt.get(), 7, (double)x);
+    sqlite3_bind_double(stmt.get(), 8, (double)y);
+    int rc = sqlite3_step(stmt.get());
+    return rc == SQLITE_DONE;
 }
