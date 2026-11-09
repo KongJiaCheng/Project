@@ -386,7 +386,7 @@ int main(int argc, char** argv) {
     }
 
     sf::Texture bgTexture;
-    if (!bgTexture.loadFromFile(resolvePath("MainMenu/Background.png"))) {
+    if (!loadTextureSafe(bgTexture, "MainMenu/Background.png")) {
         std::cout << "Failed to load background!\n";
     }
     sf::Sprite bgSprite(bgTexture);
@@ -396,7 +396,7 @@ int main(int argc, char** argv) {
         });
 
     sf::Texture logoTexture;
-    if (!logoTexture.loadFromFile(resolvePath("MainMenu/Logo.jpg"))) {
+    if (!loadTextureSafe(logoTexture, "MainMenu/Logo.jpg")) {
         std::cout << "Failed to load logo!\n";
     }
     sf::Sprite logoSprite(logoTexture);

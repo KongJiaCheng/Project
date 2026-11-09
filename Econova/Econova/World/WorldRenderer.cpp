@@ -981,17 +981,19 @@ void renderWorldDepthScene(
             sf::Vector2f worldM = window.mapPixelToCoords(pixelPos);
             saplingPlacementPos = snapGridFunc(worldM);
         }
+        float saplingScale = (saplingTex.getSize().x > 0) ? (240.f / saplingTex.getSize().x) : 0.2f;
         sf::Sprite ghost(saplingTex);
-        ghost.setScale({ 0.2f, 0.2f });
+        ghost.setScale({ saplingScale, saplingScale });
         ghost.setColor(sf::Color(255, 255, 255, 128));
         ghost.setPosition(saplingPlacementPos);
         window.draw(ghost);
     }
 
+    float saplingDrawScale = (saplingTex.getSize().x > 0) ? (240.f / saplingTex.getSize().x) : 0.2f;
     for (auto& s : plantedSaplings) {
         if (!s.grown) {
             sf::Sprite spr(saplingTex);
-            spr.setScale({ 0.2f, 0.2f });
+            spr.setScale({ saplingDrawScale, saplingDrawScale });
             spr.setPosition(s.position);
             window.draw(spr);
 

@@ -124,4 +124,70 @@ inline std::string resolvePath(const std::string& path) {
     return resolved;
 }
 
+// Safely loads a texture, validating dimensions against the OpenGL GL_MAX_TEXTURE_SIZE (sf::Texture::getMaximumSize()).
+// If the image exceeds the maximum texture size supported by the current driver (common in VirtualBox without 3D acceleration),
+// it automatically downscales the image in memory before texture creation, completely preventing OpenGL texture failure.
+inline bool loadTextureSafe(sf::Texture& tex, const std::string& path, bool sRgb = false) {
+    std::string resolved = resolvePath(path);
+    if (!fileExists(resolved)) {
+        return false;
+    }
+
+    unsigned int maxTexDim = sf::Texture::getMaximumSize();
+    if (maxTexDim == 0) {
+        maxTexDim = 1024;
+    }
+
+    sf::Image img;
+    if (!img.loadFromFile(resolved)) {
+        return false;
+    }
+
+    sf::Vector2u sz = img.getSize();
+    if (sz.x == 0 || sz.y == 0) {
+        return false;
+    }
+
+    // Direct load if within GPU limits
+    if (sz.x <= maxTexDim && sz.y <= maxTexDim) {
+        return tex.loadFromImage(img, sRgb);
+    }
+
+    // Downscale proportionally to fit within maxTexDim
+    float scaleX = (sz.x > maxTexDim) ? static_cast<float>(maxTexDim) / static_cast<float>(sz.x) : 1.f;
+    float scaleY = (sz.y > maxTexDim) ? static_cast<float>(maxTexDim) / static_cast<float>(sz.y) : 1.f;
+    float scale = (std::min)(scaleX, scaleY);
+
+    unsigned int targetW = (std::max)(1u, static_cast<unsigned int>(sz.x * scale));
+    unsigned int targetH = (std::max)(1u, static_cast<unsigned int>(sz.y * scale));
+
+    std::vector<std::uint8_t> newPixels(static_cast<size_t>(targetW) * targetH * 4);
+    const std::uint8_t* srcPixels = img.getPixelsPtr();
+
+    for (unsigned int y = 0; y < targetH; ++y) {
+        float srcY = static_cast<float>(y) / scale;
+        unsigned int y0 = (std::min)(static_cast<unsigned int>(srcY), sz.y - 1);
+        for (unsigned int x = 0; x < targetW; ++x) {
+            float srcX = static_cast<float>(x) / scale;
+            unsigned int x0 = (std::min)(static_cast<unsigned int>(srcX), sz.x - 1);
+
+            size_t srcIdx = (static_cast<size_t>(y0) * sz.x + x0) * 4;
+            size_t dstIdx = (static_cast<size_t>(y) * targetW + x) * 4;
+
+            newPixels[dstIdx + 0] = srcPixels[srcIdx + 0];
+            newPixels[dstIdx + 1] = srcPixels[srcIdx + 1];
+            newPixels[dstIdx + 2] = srcPixels[srcIdx + 2];
+            newPixels[dstIdx + 3] = srcPixels[srcIdx + 3];
+        }
+    }
+
+    sf::Image resizedImg;
+    resizedImg.resize(sf::Vector2u(targetW, targetH), newPixels.data());
+    std::cout << "[loadTextureSafe] Auto-downscaled \"" << path << "\" from "
+              << sz.x << "x" << sz.y << " to " << targetW << "x" << targetH
+              << " (system max: " << maxTexDim << "x" << maxTexDim << ")" << std::endl;
+
+    return tex.loadFromImage(resizedImg, sRgb);
+}
+
 

@@ -73,7 +73,7 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
     font.openFromFile("C:/Windows/Fonts/arial.ttf");
 
     sf::Texture bgTexture;
-    bgTexture.loadFromFile(resolvePath("MainMenu/Background.png"));
+    loadTextureSafe(bgTexture, "MainMenu/Background.png");
     sf::Sprite bgSprite(bgTexture);
     if (bgSprite.getLocalBounds().size.x > 0 && bgSprite.getLocalBounds().size.y > 0) {
         bgSprite.setScale({

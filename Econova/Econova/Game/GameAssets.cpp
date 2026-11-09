@@ -53,7 +53,7 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
     if (!fontLoaded) fontLoaded = assets.font.openFromFile("C:/Windows/Fonts/segoeui.ttf");
     if (!fontLoaded) fontLoaded = assets.font.openFromFile("C:/Windows/Fonts/tahoma.ttf");
 
-    (void)assets.selBgTexture.loadFromFile(resolvePath("MainMenu/Background.png"));
+    loadTextureSafe(assets.selBgTexture, "MainMenu/Background.png");
     assets.selBgSprite.emplace(assets.selBgTexture);
     if (assets.selBgTexture.getSize().x > 0 && assets.selBgTexture.getSize().y > 0) {
         assets.selBgSprite->setScale({
@@ -62,7 +62,7 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
         });
     }
 
-    (void)assets.bgTexture.loadFromFile(resolvePath("Items/Background.jpg"));
+    loadTextureSafe(assets.bgTexture, "Items/Background.jpg");
     assets.background.emplace(assets.bgTexture);
     if (assets.bgTexture.getSize().x > 0 && assets.bgTexture.getSize().y > 0) {
         float scaleX = float(mapWidth) / assets.bgTexture.getSize().x;
@@ -71,16 +71,16 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
     }
     assets.background->setPosition({ 0.f, 0.f });
 
-    (void)assets.texMaleOnline.loadFromFile(resolvePath("Sprites/Male/Walk/South/frame_000.png"));
-    (void)assets.texFemaleOnline.loadFromFile(resolvePath("Sprites/Female/Walk/South/frame_000.png"));
+    loadTextureSafe(assets.texMaleOnline, "Sprites/Male/Walk/South/frame_000.png");
+    loadTextureSafe(assets.texFemaleOnline, "Sprites/Female/Walk/South/frame_000.png");
 
-    (void)assets.hpIconTex.loadFromFile(resolvePath("Sprites/UI/hp.png"));
-    (void)assets.hungerIconTex.loadFromFile(resolvePath("Sprites/UI/hunger.png"));
-    (void)assets.thirstIconTex.loadFromFile(resolvePath("Sprites/UI/thirst.png"));
-    (void)assets.wrenchTex.loadFromFile(resolvePath("Sprites/UI/wrench.png"));
+    loadTextureSafe(assets.hpIconTex, "Sprites/UI/hp.png");
+    loadTextureSafe(assets.hungerIconTex, "Sprites/UI/hunger.png");
+    loadTextureSafe(assets.thirstIconTex, "Sprites/UI/thirst.png");
+    loadTextureSafe(assets.wrenchTex, "Sprites/UI/wrench.png");
 
     for (int i = 0; i < 8; i++) {
-        assets.campfireFrames[i].loadFromFile(resolvePath("Items/campfire/frame_" + std::to_string(i) + "_campfire.png"));
+        loadTextureSafe(assets.campfireFrames[i], "Items/campfire/frame_" + std::to_string(i) + "_campfire.png");
     }
 
     ChickenMeat::loadTexture();
@@ -88,50 +88,50 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
     ZombieFlesh::loadTexture();
     SheepMeat::loadTexture();
     CookedSheepMeat::loadTexture();
-    (void)Chicken::texture.loadFromFile(resolvePath("Sprites/Animals/Chicken/South.png"));
-    (void)Pig::texture.loadFromFile(resolvePath("Sprites/Animals/Pig/South.png"));
-    (void)Sheep::texture.loadFromFile(resolvePath("Sprites/Animals/Sheep/Walk/South/frame_000.png"));
-    (void)Zombie::texture.loadFromFile(resolvePath("Sprites/Monsters/Zombie/South.png"));
+    loadTextureSafe(Chicken::texture, "Sprites/Animals/Chicken/South.png");
+    loadTextureSafe(Pig::texture, "Sprites/Animals/Pig/South.png");
+    loadTextureSafe(Sheep::texture, "Sprites/Animals/Sheep/Walk/South/frame_000.png");
+    loadTextureSafe(Zombie::texture, "Sprites/Monsters/Zombie/South.png");
 
-    (void)assets.woodTex.loadFromFile(resolvePath("Items/wood.png"));
-    (void)assets.treeTex.loadFromFile(resolvePath("Items/Tree.png"));
-    (void)assets.stoneTex.loadFromFile(resolvePath("Items/Stone.png"));
-    (void)assets.pondTex.loadFromFile(resolvePath("Items/pond.png"));
-    (void)assets.saplingTex.loadFromFile(resolvePath("Items/sapling.png"));
-    (void)assets.goldTex.loadFromFile(resolvePath("Items/gold.png"));
-    (void)assets.woodenSwordTex.loadFromFile(resolvePath("Items/wooden sword.png"));
-    (void)assets.shieldTex.loadFromFile(resolvePath("Items/shield.png"));
-    (void)assets.furnaceTex.loadFromFile(resolvePath("Items/furnance.png"));
-    (void)assets.woodTileTex.loadFromFile(resolvePath("Items/wood tile.png"));
-    (void)assets.woodWallTex.loadFromFile(resolvePath("Items/wood wall.png"));
-    (void)assets.woodDoorTex.loadFromFile(resolvePath("Items/wooden door.png"));
-    (void)assets.woodRoofTex.loadFromFile(resolvePath("Items/wooden roof.png"));
-    (void)assets.woodStairsTex.loadFromFile(resolvePath("Items/wooden stairs.png"));
-    (void)assets.bedTex.loadFromFile(resolvePath("Items/bed.png"));
-    (void)assets.chestTex.loadFromFile(resolvePath("Items/chest.png"));
-    (void)assets.cookedChickenTex.loadFromFile(resolvePath("Items/cooked chicken meat.png"));
-    (void)assets.cookedPigTex.loadFromFile(resolvePath("Items/cooked pig meat.png"));
-    (void)assets.cookedSheepTex.loadFromFile(resolvePath("Items/cooked sheep meat.png"));
-    (void)assets.woolTex.loadFromFile(resolvePath("Items/wool.png"));
-    (void)assets.wrenchItemTex.loadFromFile(resolvePath("Sprites/UI/wrench.png"));
+    loadTextureSafe(assets.woodTex, "Items/wood.png");
+    loadTextureSafe(assets.treeTex, "Items/Tree.png");
+    loadTextureSafe(assets.stoneTex, "Items/Stone.png");
+    loadTextureSafe(assets.pondTex, "Items/pond.png");
+    loadTextureSafe(assets.saplingTex, "Items/sapling.png");
+    loadTextureSafe(assets.goldTex, "Items/gold.png");
+    loadTextureSafe(assets.woodenSwordTex, "Items/wooden sword.png");
+    loadTextureSafe(assets.shieldTex, "Items/shield.png");
+    loadTextureSafe(assets.furnaceTex, "Items/furnance.png");
+    loadTextureSafe(assets.woodTileTex, "Items/wood tile.png");
+    loadTextureSafe(assets.woodWallTex, "Items/wood wall.png");
+    loadTextureSafe(assets.woodDoorTex, "Items/wooden door.png");
+    loadTextureSafe(assets.woodRoofTex, "Items/wooden roof.png");
+    loadTextureSafe(assets.woodStairsTex, "Items/wooden stairs.png");
+    loadTextureSafe(assets.bedTex, "Items/bed.png");
+    loadTextureSafe(assets.chestTex, "Items/chest.png");
+    loadTextureSafe(assets.cookedChickenTex, "Items/cooked chicken meat.png");
+    loadTextureSafe(assets.cookedPigTex, "Items/cooked pig meat.png");
+    loadTextureSafe(assets.cookedSheepTex, "Items/cooked sheep meat.png");
+    loadTextureSafe(assets.woolTex, "Items/wool.png");
+    loadTextureSafe(assets.wrenchItemTex, "Sprites/UI/wrench.png");
 
-    (void)assets.swordIconTex.loadFromFile(resolvePath("Items/wooden_sword_shield_icons.png"));
-    (void)assets.shieldIconTex.loadFromFile(resolvePath("Items/wooden_sword_shield_icons.png"));
-    (void)assets.tileIconTex.loadFromFile(resolvePath("Items/building_parts_icons.png"));
-    (void)assets.wallIconTex.loadFromFile(resolvePath("Items/building_parts_icons.png"));
-    (void)assets.doorIconTex.loadFromFile(resolvePath("Items/building_parts_icons.png"));
-    (void)assets.roofIconTex.loadFromFile(resolvePath("Items/building_parts_icons.png"));
-    (void)assets.stairsIconTex.loadFromFile(resolvePath("Items/building_parts_icons.png"));
-    (void)assets.bedIconTex.loadFromFile(resolvePath("Items/bed.png"));
+    loadTextureSafe(assets.swordIconTex, "Items/wooden_sword_shield_icons.png");
+    loadTextureSafe(assets.shieldIconTex, "Items/wooden_sword_shield_icons.png");
+    loadTextureSafe(assets.tileIconTex, "Items/building_parts_icons.png");
+    loadTextureSafe(assets.wallIconTex, "Items/building_parts_icons.png");
+    loadTextureSafe(assets.doorIconTex, "Items/building_parts_icons.png");
+    loadTextureSafe(assets.roofIconTex, "Items/building_parts_icons.png");
+    loadTextureSafe(assets.stairsIconTex, "Items/building_parts_icons.png");
+    loadTextureSafe(assets.bedIconTex, "Items/bed.png");
 
-    (void)assets.coalTex.loadFromFile(resolvePath("Items/coal.png"));
-    (void)assets.copperOreTex.loadFromFile(resolvePath("Items/copper ore.png"));
-    (void)assets.copperBarTex.loadFromFile(resolvePath("Items/copper bar.png"));
-    (void)assets.ironOreTex.loadFromFile(resolvePath("Items/iron ore.png"));
-    (void)assets.ironBarTex.loadFromFile(resolvePath("Items/iron bar.png"));
-    (void)assets.goldOreTex.loadFromFile(resolvePath("Items/gold ore.png"));
-    (void)assets.goldBarTex.loadFromFile(resolvePath("Items/gold bar.png"));
-    (void)assets.diamondTex.loadFromFile(resolvePath("Items/diamond.png"));
+    loadTextureSafe(assets.coalTex, "Items/coal.png");
+    loadTextureSafe(assets.copperOreTex, "Items/copper ore.png");
+    loadTextureSafe(assets.copperBarTex, "Items/copper bar.png");
+    loadTextureSafe(assets.ironOreTex, "Items/iron ore.png");
+    loadTextureSafe(assets.ironBarTex, "Items/iron bar.png");
+    loadTextureSafe(assets.goldOreTex, "Items/gold ore.png");
+    loadTextureSafe(assets.goldBarTex, "Items/gold bar.png");
+    loadTextureSafe(assets.diamondTex, "Items/diamond.png");
 
     assets.goldTexLoaded = (assets.goldTex.getSize().x > 0);
     assets.goldSprite.emplace(assets.goldTex);
