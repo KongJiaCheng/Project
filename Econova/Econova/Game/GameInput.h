@@ -263,7 +263,9 @@ bool handleMouseDragAndScroll(
     bool tradeMenuOpen = false,
     bool p2pTradeOpen = false,
     bool tradeConfirmOpen = false,
-    bool wrenchMenuOpen = false
+    bool wrenchMenuOpen = false,
+    const sf::Sprite* playerSprite = nullptr,
+    int playerFloorLevel = 0
 );
 
 bool handleTopBarAndWrenchClicks(

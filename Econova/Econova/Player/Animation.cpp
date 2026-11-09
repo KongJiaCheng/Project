@@ -14,7 +14,7 @@ bool Animation::loadFromFolder(const std::string& folder, int frameCount, float 
         std::string path = resolvePath(ss.str());
 
         sf::Texture tex;
-        if (!tex.loadFromFile(path))
+        if (!loadTextureSafe(tex, ss.str()))
         {
             std::cerr << "Animation: failed to load " << path << '\n';
             return false;

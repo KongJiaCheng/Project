@@ -1799,7 +1799,9 @@ bool handleMouseDragAndScroll(
     bool tradeMenuOpen,
     bool p2pTradeOpen,
     bool tradeConfirmOpen,
-    bool wrenchMenuOpen
+    bool wrenchMenuOpen,
+    const sf::Sprite* playerSprite,
+    int playerFloorLevel
 ) {
     if (auto* wheel = event.getIf<sf::Event::MouseWheelScrolled>()) {
         if (wheel->wheel == sf::Mouse::Wheel::Vertical) {
@@ -1897,21 +1899,40 @@ bool handleMouseDragAndScroll(
                     }
                 }
 
-                // Bed — wrench icon or body (bed has no dedicated menu, just triggers sleep)
+                // Bed — click Sleep button or bed body to sleep
                 if (!hitWorldStructure) {
                     for (auto& s : structures)
                     {
                         if (hitWorldStructure) break;
                         if (s.id == ITEM_BED && s.sprite.has_value()) {
+                            int bFloor = (int)s.shearY;
                             sf::Vector2f bPos = s.sprite->getPosition();
-                            sf::FloatRect wrenchBtnBounds({ bPos.x - 35.f, bPos.y - 115.f }, { 70.f, 70.f });
-                            sf::FloatRect bedBounds({ bPos.x - 100.f, bPos.y - 120.f }, { 200.f, 120.f });
-                            if (wrenchBtnBounds.contains(curWorldPos) || bedBounds.contains(curWorldPos)) {
-                                if (!s.owner.empty() && s.owner != username) {
-                                    inventory.showBanner("This belongs to " + s.owner + "! You cannot wrench other players' items.");
-                                    hitWorldStructure = true;
-                                    break;
+                            if (bFloor > 0) bPos.y -= bFloor * FLOOR_HEIGHT;
+
+                            // The bed sprite is 500 wide by 500 tall: [bPos.x - 250, bPos.x + 250], [bPos.y - 500, bPos.y]
+                            // The Sleep button is drawn at [bPos.x - 100, bPos.y - 280], size 200x60
+                            sf::FloatRect sleepBtnBounds({ bPos.x - 100.f, bPos.y - 280.f }, { 200.f, 60.f });
+                            sf::FloatRect bedBounds({ bPos.x - 250.f, bPos.y - 500.f }, { 500.f, 500.f });
+
+                            if (sleepBtnBounds.contains(curWorldPos) || bedBounds.contains(curWorldPos)) {
+                                if (playerSprite != nullptr) {
+                                    if (bFloor != playerFloorLevel) {
+                                        inventory.showBanner("The bed is on a different floor!");
+                                        hitWorldStructure = true;
+                                        break;
+                                    }
+                                    sf::Vector2f pPos = playerSprite->getPosition();
+                                    sf::Vector2f bedCenter(bPos.x, bPos.y - 250.f);
+                                    float dx = (std::max)(0.f, std::abs(pPos.x - bedCenter.x) - 250.f);
+                                    float dy = (std::max)(0.f, std::abs(pPos.y - bedCenter.y) - 250.f);
+                                    float distToBed = std::sqrt(dx * dx + dy * dy);
+                                    if (distToBed > 240.f) {
+                                        inventory.showBanner("You are too far from the bed to sleep!");
+                                        hitWorldStructure = true;
+                                        break;
+                                    }
                                 }
+
                                 if (!isSleeping) {
                                     for (auto& f : campfires) f.menuOpen = false;
                                     for (auto& st : structures) st.menuOpen = false;
@@ -1921,6 +1942,7 @@ bool handleMouseDragAndScroll(
                                     sleepFadeTimer = 0.f;
                                     sleepTimeSkipped = false;
                                     hitWorldStructure = true;
+                                    break;
                                 }
                             }
                         }

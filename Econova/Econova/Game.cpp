@@ -859,6 +859,8 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                         // Make absolutely sure no monsters remain
                         monsters.clear();
 
+                        inventory.showBanner("You wake up feeling refreshed! Health restored.");
+
                         // Daytime music
                         nightMusic.stop();
                         nightMusicPlaying = false;
@@ -1454,7 +1456,9 @@ void gameLoop(sf::RenderWindow& window, unsigned int width, unsigned int height,
                 tradeMenuOpen,
                 p2pTradeOpen,
                 tradeConfirmOpen,
-                wrenchMenuOpen
+                wrenchMenuOpen,
+                &sprite,
+                playerFloorLevel
             )) {
                 continue;
             }

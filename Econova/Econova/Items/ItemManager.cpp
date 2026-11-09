@@ -24,7 +24,7 @@ static sf::Vector2f snapStone(sf::Vector2f pos) { return snapToGrid(pos); }
 // --------------------------------------------------
 ItemManager::ItemManager()
 {
-    if (!woodTexture.loadFromFile(resolvePath("Items/wood.png")))
+    if (!loadTextureSafe(woodTexture, "Items/wood.png"))
     {
         std::cerr << "failed to load wood texture!\n";
     }

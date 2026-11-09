@@ -145,7 +145,7 @@ bool loadGameAssets(GameAssets& assets, unsigned int mapWidth, unsigned int mapH
 
         if (fileExists(path)) {
             sf::Texture tex;
-            if (tex.loadFromFile(path)) {
+            if (loadTextureSafe(tex, ss.str())) {
                 assets.introFrames.push_back(tex);
             }
             else {

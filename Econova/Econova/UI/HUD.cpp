@@ -556,6 +556,7 @@ void drawSpawnOverlay(
 
 void drawSleepOverlay(
     sf::RenderWindow& window,
+    const sf::Font& font,
     unsigned int width,
     unsigned int height,
     float sleepFadeTimer,
@@ -565,10 +566,18 @@ void drawSleepOverlay(
     window.setView(GetUIView(&window));
     float alpha = (sleepFadeTimer / sleepFadeDuration) * 255.f;
     alpha = std::clamp(alpha, 0.f, 255.f);
-    sf::RectangleShape fadeRect(sf::Vector2f((float)width, (float)height));
+    sf::RectangleShape fadeRect(sf::Vector2f(1920.f, 1080.f));
     fadeRect.setFillColor(sf::Color(0, 0, 0, static_cast<std::uint8_t>(alpha)));
     fadeRect.setPosition({0.f, 0.f});
     window.draw(fadeRect);
+
+    if (alpha > 40.f) {
+        sf::Text sleepText(font, "Sleeping... zzz", 52);
+        sleepText.setFillColor(sf::Color(255, 255, 255, static_cast<std::uint8_t>(alpha)));
+        sf::FloatRect bounds = sleepText.getLocalBounds();
+        sleepText.setPosition({ (1920.f - bounds.size.x) / 2.f, (1080.f - bounds.size.y) / 2.f });
+        window.draw(sleepText);
+    }
     window.setView(currentView);
 }
 
@@ -1020,7 +1029,7 @@ void renderAllGameUIs(
     }
 
     if (isSleeping) {
-        drawSleepOverlay(window, width, height, sleepFadeTimer, sleepFadeDuration);
+        drawSleepOverlay(window, uiFont, width, height, sleepFadeTimer, sleepFadeDuration);
     }
 
     drawDisasterNotification(window, uiFont, width, disasterActive, disasterRemaining, disasterBannerTimer, disasterBannerMessage, currentDisasterType);

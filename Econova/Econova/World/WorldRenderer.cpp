@@ -1239,7 +1239,7 @@ void drawWorldInteractions(
     }
 
     PlacedStructure* nearestBed = nullptr;
-    float minBedDist = 180.f;
+    float minBedDist = 999999.f;
     for (auto& s : structures) {
         if (s.id == ITEM_BED && s.sprite.has_value()) {
             int bedFloor = (int)s.shearY;
@@ -1247,11 +1247,13 @@ void drawWorldInteractions(
                 sf::Vector2f bPos = s.sprite->getPosition();
                 if (bedFloor > 0) bPos.y -= bedFloor * FLOOR_HEIGHT;
                 sf::Vector2f pPos = sprite.getPosition();
-                float dy = bPos.y - pPos.y;
-                float dx = bPos.x - pPos.x;
-                float d = std::sqrt(dx * dx + dy * dy);
-                if (d < minBedDist) {
-                    minBedDist = d;
+                // Distance to bed bounding box: bed occupies [bPos.x - 250, bPos.x + 250], [bPos.y - 500, bPos.y]
+                sf::Vector2f bedCenter(bPos.x, bPos.y - 250.f);
+                float dx = (std::max)(0.f, std::abs(pPos.x - bedCenter.x) - 250.f);
+                float dy = (std::max)(0.f, std::abs(pPos.y - bedCenter.y) - 250.f);
+                float distToBed = std::sqrt(dx * dx + dy * dy);
+                if (distToBed < 220.f && distToBed < minBedDist) {
+                    minBedDist = distToBed;
                     nearestBed = &s;
                 }
             }
@@ -1263,7 +1265,7 @@ void drawWorldInteractions(
         int bFloor = (int)nearestBed->shearY;
         sf::Vector2f bPos = nearestBed->sprite->getPosition();
         if (bFloor > 0) bPos.y -= bFloor * FLOOR_HEIGHT;
-        sleepBtn.setPosition({ bPos.x - 100.f, bPos.y - 120.f });
+        sleepBtn.setPosition({ bPos.x - 100.f, bPos.y - 280.f });
 
         sf::Vector2f mpos = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         bool isHovered = sleepBtn.getGlobalBounds().contains(mpos);

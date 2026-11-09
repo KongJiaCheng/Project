@@ -155,6 +155,7 @@ void drawSpawnOverlay(
 
 void drawSleepOverlay(
     sf::RenderWindow& window,
+    const sf::Font& font,
     unsigned int width,
     unsigned int height,
     float sleepFadeTimer,

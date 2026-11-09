@@ -2,6 +2,7 @@
 #include "Game.h"
 #include "ItemID.h"
 #include "SpawnEntity.h"
+#include "ViewUtils.h"
 #include <cmath>
 #include <queue>
 #include <map>
@@ -681,7 +682,7 @@ bool hydrateWorldAndPlayerData(
         inventory.setItem(0, ITEM_WRENCH, assets.wrenchTex, 1);
     }
 
-    if (npcFemale.texture.loadFromFile(resolvePath("Sprites/NPCFemale/Walk/South/frame_000.png"))) {
+    if (loadTextureSafe(npcFemale.texture, "Sprites/NPCFemale/Walk/South/frame_000.png")) {
         npcFemale.sprite->setTexture(npcFemale.texture);
         sf::Vector2u ts_npcF = npcFemale.texture.getSize();
         if (ts_npcF.x > 0 && ts_npcF.y > 0) {
@@ -691,7 +692,7 @@ bool hydrateWorldAndPlayerData(
         npcFemale.sprite->setPosition({ mapWidth / 2.f + 150.f, mapHeight / 2.f - 50.f });
     }
 
-    if (npcMale.texture.loadFromFile(resolvePath("Sprites/NPCMale/Walk/South/frame_000.png"))) {
+    if (loadTextureSafe(npcMale.texture, "Sprites/NPCMale/Walk/South/frame_000.png")) {
         npcMale.sprite->setTexture(npcMale.texture);
         sf::Vector2u ts_npcM = npcMale.texture.getSize();
         if (ts_npcM.x > 0 && ts_npcM.y > 0) {
