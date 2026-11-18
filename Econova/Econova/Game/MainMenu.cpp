@@ -422,108 +422,108 @@ int main(int argc, char** argv) {
     std::mutex        otpMutex;
 
     // Common Text settings
-    sf::Text errorText(font, "", 60);
+    sf::Text errorText(font, "", 45);
     errorText.setFillColor(sf::Color::Red);
     errorText.setPosition({ width / 2.f - 400.f, height - 300.f });
 
     // State: MainMenu
     sf::RectangleShape btnPlay = createButton((width - 600.f) / 2.f, height / 2.f - 200.f, 600.f, 150.f, sf::Color::Green);
-    sf::Text txtPlay(font, "Play Game", 100);
+    sf::Text txtPlay(font, "Play Game", 50);
     txtPlay.setPosition(btnPlay.getPosition());
 
     sf::RectangleShape btnSettings = createButton((width - 600.f) / 2.f, height / 2.f + 50.f, 600.f, 150.f, sf::Color::Green);
-    sf::Text txtSettings(font, "Settings", 100);
+    sf::Text txtSettings(font, "Settings", 50);
     txtSettings.setPosition(btnSettings.getPosition());
 
     sf::RectangleShape btnExit = createButton((width - 600.f) / 2.f, height / 2.f + 300.f, 600.f, 150.f, sf::Color::Green);
-    sf::Text txtExit(font, "Exit", 100);
+    sf::Text txtExit(font, "Exit", 50);
     txtExit.setPosition(btnExit.getPosition());
 
     // State: AuthChoice
-    sf::Text titleAuthChoice(font, "You must login to play", 120);
+    sf::Text titleAuthChoice(font, "You must login to play", 64);
     titleAuthChoice.setPosition({ width / 2.f - 600.f, 200.f });
     titleAuthChoice.setFillColor(sf::Color::White);
 
     sf::RectangleShape btnLoginChoice = createButton((width - 600.f) / 2.f, height / 2.f - 200.f, 600.f, 150.f, sf::Color::Blue);
-    sf::Text txtLoginChoice(font, "Login", 100);
+    sf::Text txtLoginChoice(font, "Login", 45);
     txtLoginChoice.setPosition(btnLoginChoice.getPosition());
 
     sf::RectangleShape btnRegisterChoice = createButton((width - 600.f) / 2.f, height / 2.f + 50.f, 600.f, 150.f, sf::Color::Blue);
-    sf::Text txtRegisterChoice(font, "Register", 100);
+    sf::Text txtRegisterChoice(font, "Register", 45);
     txtRegisterChoice.setPosition(btnRegisterChoice.getPosition());
 
     sf::Text txtModeStatus(font, "", 36);
 
     sf::RectangleShape btnToggleMode = createButton((width - 550.f) / 2.f, height / 2.f + 200.f, 550.f, 90.f, sf::Color(22, 160, 133));
-    sf::Text txtToggleMode(font, "Switch to Offline Mode", 36);
+    sf::Text txtToggleMode(font, "Switch to Offline Mode", 34);
     txtToggleMode.setPosition(btnToggleMode.getPosition());
 
     sf::RectangleShape btnBack = createButton(100.f, 100.f, 300.f, 100.f, sf::Color::Red);
-    sf::Text txtBack(font, "Back", 70);
+    sf::Text txtBack(font, "Back", 40);
     txtBack.setPosition(btnBack.getPosition());
 
     // State: Register
-    sf::Text titleRegister(font, "Register", 120);
+    sf::Text titleRegister(font, "Register", 64);
     titleRegister.setPosition({ width / 2.f - 300.f, 150.f });
     titleRegister.setFillColor(sf::Color::White);
 
     TextInput regUser(font, { width / 2.f - 200.f, 260.f }, { 500.f, 70.f });
-    sf::Text lblRegUser(font, "Username:", 70); lblRegUser.setPosition({ width / 2.f - 800.f, 400.f });
+    sf::Text lblRegUser(font, "Username:", 45); lblRegUser.setPosition({ width / 2.f - 800.f, 400.f });
 
     TextInput regPass(font, { width / 2.f - 200.f, 380.f }, { 500.f, 70.f }, true);
-    sf::Text lblRegPass(font, "Password:", 70); lblRegPass.setPosition({ width / 2.f - 800.f, 600.f });
+    sf::Text lblRegPass(font, "Password:", 45); lblRegPass.setPosition({ width / 2.f - 800.f, 600.f });
 
     TextInput regConf(font, { width / 2.f - 200.f, 500.f }, { 500.f, 70.f }, true);
-    sf::Text lblRegConf(font, "Confirm:", 70); lblRegConf.setPosition({ width / 2.f - 800.f, 800.f });
+    sf::Text lblRegConf(font, "Confirm:", 45); lblRegConf.setPosition({ width / 2.f - 800.f, 800.f });
 
     TextInput regEmail(font, { width / 2.f - 200.f, 620.f }, { 500.f, 70.f });
-    sf::Text lblRegEmail(font, "Email:", 70); lblRegEmail.setPosition({ width / 2.f - 800.f, 1000.f });
+    sf::Text lblRegEmail(font, "Email:", 45); lblRegEmail.setPosition({ width / 2.f - 800.f, 1000.f });
 
     sf::RectangleShape btnSubmitReg = createButton((width - 400.f) / 2.f, 1200.f, 400.f, 120.f, sf::Color::Green);
-    sf::Text txtSubmitReg(font, "Submit", 80); txtSubmitReg.setPosition(btnSubmitReg.getPosition());
+    sf::Text txtSubmitReg(font, "Submit", 45); txtSubmitReg.setPosition(btnSubmitReg.getPosition());
 
     // State: Login
-    sf::Text titleLogin(font, "Login", 120);
+    sf::Text titleLogin(font, "Login", 64);
     titleLogin.setPosition({ width / 2.f - 200.f, 200.f });
     titleLogin.setFillColor(sf::Color::White);
 
     TextInput logUser(font, { width / 2.f - 200.f, 340.f }, { 500.f, 70.f });
-    sf::Text lblLogUser(font, "Username:", 70); lblLogUser.setPosition({ width / 2.f - 800.f, 500.f });
+    sf::Text lblLogUser(font, "Username:", 45); lblLogUser.setPosition({ width / 2.f - 800.f, 500.f });
 
     TextInput logPass(font, { width / 2.f - 200.f, 480.f }, { 500.f, 70.f }, true);
-    sf::Text lblLogPass(font, "Password:", 70); lblLogPass.setPosition({ width / 2.f - 800.f, 700.f });
+    sf::Text lblLogPass(font, "Password:", 45); lblLogPass.setPosition({ width / 2.f - 800.f, 700.f });
 
     sf::RectangleShape btnSubmitLog = createButton((width - 400.f) / 2.f, 900.f, 400.f, 120.f, sf::Color::Green);
-    sf::Text txtSubmitLog(font, "Login", 80); txtSubmitLog.setPosition(btnSubmitLog.getPosition());
+    sf::Text txtSubmitLog(font, "Login", 45); txtSubmitLog.setPosition(btnSubmitLog.getPosition());
 
     sf::RectangleShape btnForgot = createButton((width - 600.f) / 2.f, 1100.f, 600.f, 100.f, sf::Color::Yellow);
-    sf::Text txtForgot(font, "Forgot Password?", 70); txtForgot.setPosition(btnForgot.getPosition());
+    sf::Text txtForgot(font, "Forgot Password?", 35); txtForgot.setPosition(btnForgot.getPosition());
     txtForgot.setFillColor(sf::Color::Black);
 
     // State: Forgot Password Step 1
-    sf::Text titleForgot1(font, "Reset Password", 120);
+    sf::Text titleForgot1(font, "Reset Password", 64);
     titleForgot1.setPosition({ width / 2.f - 400.f, 200.f });
     titleForgot1.setFillColor(sf::Color::White);
 
     TextInput fgEmail(font, { width / 2.f - 250.f, 400.f }, { 500.f, 70.f });
-    sf::Text lblFgEmail(font, "Email:", 70); lblFgEmail.setPosition({ width / 2.f - 700.f, 600.f });
+    sf::Text lblFgEmail(font, "Email:", 45); lblFgEmail.setPosition({ width / 2.f - 700.f, 600.f });
 
     sf::RectangleShape btnSendOTP = createButton((width - 500.f) / 2.f, 800.f, 500.f, 120.f, sf::Color::Green);
-    sf::Text txtSendOTP(font, "Send OTP", 80); txtSendOTP.setPosition(btnSendOTP.getPosition());
+    sf::Text txtSendOTP(font, "Send OTP", 45); txtSendOTP.setPosition(btnSendOTP.getPosition());
 
     // State: Forgot Password Step 2
-    sf::Text titleForgot2(font, "Enter OTP & New Password", 100);
+    sf::Text titleForgot2(font, "Enter OTP & New Password", 60);
     titleForgot2.setPosition({ width / 2.f - 600.f, 200.f });
     titleForgot2.setFillColor(sf::Color::White);
 
     TextInput fgOTP(font, { width / 2.f - 250.f, 320.f }, { 500.f, 70.f });
-    sf::Text lblFgOTP(font, "OTP:", 70); lblFgOTP.setPosition({ width / 2.f - 700.f, 500.f });
+    sf::Text lblFgOTP(font, "OTP:", 45); lblFgOTP.setPosition({ width / 2.f - 700.f, 500.f });
 
     TextInput fgNewPass(font, { width / 2.f - 250.f, 460.f }, { 500.f, 70.f }, true);
-    sf::Text lblFgNewPass(font, "New Pass:", 70); lblFgNewPass.setPosition({ width / 2.f - 750.f, 700.f });
+    sf::Text lblFgNewPass(font, "New Pass:", 45); lblFgNewPass.setPosition({ width / 2.f - 750.f, 700.f });
 
     sf::RectangleShape btnSubmitReset = createButton((width - 500.f) / 2.f, 900.f, 500.f, 120.f, sf::Color::Green);
-    sf::Text txtSubmitReset(font, "Reset", 80); txtSubmitReset.setPosition(btnSubmitReset.getPosition());
+    sf::Text txtSubmitReset(font, "Reset", 45); txtSubmitReset.setPosition(btnSubmitReset.getPosition());
 
     auto centerTextInButton = [](sf::Text& text, const sf::RectangleShape& btn) {
         sf::FloatRect textBounds = text.getLocalBounds();
@@ -556,7 +556,7 @@ int main(int argc, char** argv) {
 
         // State: AuthChoice
         titleAuthChoice.setPosition({ w / 2.f - 400.f, 200.f });
-        titleAuthChoice.setCharacterSize(70);
+        titleAuthChoice.setCharacterSize(64);
 
         txtModeStatus.setCharacterSize(36);
 
@@ -582,7 +582,7 @@ int main(int argc, char** argv) {
 
         // State: Register
         titleRegister.setPosition({ w / 2.f - 200.f, 100.f });
-        titleRegister.setCharacterSize(80);
+        titleRegister.setCharacterSize(64);
 
         regUser.setPosition({ w / 2.f - 200.f, 260.f });
         lblRegUser.setPosition({ w / 2.f - 550.f, 260.f });
@@ -607,7 +607,7 @@ int main(int argc, char** argv) {
 
         // State: Login
         titleLogin.setPosition({ w / 2.f - 120.f, 150.f });
-        titleLogin.setCharacterSize(80);
+        titleLogin.setCharacterSize(64);
 
         logUser.setPosition({ w / 2.f - 200.f, 340.f });
         lblLogUser.setPosition({ w / 2.f - 550.f, 340.f });
@@ -629,7 +629,7 @@ int main(int argc, char** argv) {
 
         // State: Forgot Password Step 1
         titleForgot1.setPosition({ w / 2.f - 300.f, 200.f });
-        titleForgot1.setCharacterSize(80);
+        titleForgot1.setCharacterSize(64);
 
         fgEmail.setPosition({ w / 2.f - 200.f, 400.f });
         lblFgEmail.setPosition({ w / 2.f - 550.f, 400.f });
@@ -642,7 +642,7 @@ int main(int argc, char** argv) {
 
         // State: Forgot Password Step 2
         titleForgot2.setPosition({ w / 2.f - 400.f, 150.f });
-        titleForgot2.setCharacterSize(80);
+        titleForgot2.setCharacterSize(60);
 
         fgOTP.setPosition({ w / 2.f - 200.f, 320.f });
         lblFgOTP.setPosition({ w / 2.f - 550.f, 320.f });

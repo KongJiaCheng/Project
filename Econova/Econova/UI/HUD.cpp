@@ -372,7 +372,7 @@ void drawDeathScreen(
     overlay.setFillColor(sf::Color(0, 0, 0, 200));
     window.draw(overlay);
 
-    sf::Text deathText(font, "YOU DIED", 120);
+    sf::Text deathText(font, "YOU DIED", 64);
     deathText.setFillColor(sf::Color::Red);
     deathText.setPosition({
         (width - deathText.getGlobalBounds().size.x) / 2.f,

@@ -116,7 +116,7 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
     float centerY = logicalH / 6.f;
     float sectionGap = 140.f;
 
-    sf::Text title(font, "Settings", 120);
+    sf::Text title(font, "Settings", 64);
     title.setFillColor(sf::Color::Yellow);
     title.setPosition({
 	    centerX - title.getGlobalBounds().size.x / 2.f, 20.f
@@ -140,13 +140,13 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
     };
 
     // Top section: Volume, Brightness, Resolution
-	sf::Text volumeLabel(font, "Volume: ", 60);
+	sf::Text volumeLabel(font, "Volume: ", 36);
     volumeLabel.setPosition({ leftColX, centerY });
 
     sf::RectangleShape volumeBar = makeBar(leftColX + 350.f, centerY + 25.f);
 	sf::RectangleShape volumeKnob = makeKnob(leftColX + 350.f, centerY + 25.f, volume);
 
-	sf::Text brightnessLabel(font, "Brightness: ", 60);
+	sf::Text brightnessLabel(font, "Brightness: ", 36);
     brightnessLabel.setPosition({ leftColX, centerY + sectionGap });
     
 	sf::RectangleShape brightnessBar = makeBar(leftColX + 350.f, centerY + sectionGap + 25.f);
@@ -155,14 +155,14 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
 	sf::RectangleShape brightnessOverlay(sf::Vector2f(logicalW, logicalH));
 	brightnessOverlay.setFillColor(sf::Color(0, 0, 0, 255 - (brightness * 2.55f)));
 
-	sf::Text resolutionLabel(font, "Resolution: ", 60);
+	sf::Text resolutionLabel(font, "Resolution: ", 36);
     resolutionLabel.setPosition({ leftColX, centerY + sectionGap * 2.f });
 
-	sf::Text resolutionValue(font, std::to_string(resolutions[resolutionIndex].x) + " x " + std::to_string(resolutions[resolutionIndex].y), 60);
+	sf::Text resolutionValue(font, std::to_string(resolutions[resolutionIndex].x) + " x " + std::to_string(resolutions[resolutionIndex].y), 36);
 	resolutionValue.setPosition({ leftColX + 350.f, centerY + sectionGap * 2.f });
 	resolutionValue.setFillColor(sf::Color::White);
 
-    sf::Text back(font, "Press ESC to return", 60);
+    sf::Text back(font, "Press ESC to return", 36);
     back.setFillColor(sf::Color::White);
     back.setOutlineColor(sf::Color::Black);
     back.setOutlineThickness(2.f);
@@ -183,7 +183,7 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
     auto addBind = [&](const std::string& name, sf::Keyboard::Scancode* keyPtr, float x, float y) {
         KeyBindUI b(font);
         b.label.setString(name);
-        b.label.setCharacterSize(50);
+        b.label.setCharacterSize(32);
         b.label.setPosition({ x, y });
 
         b.box.setSize({ 260.f, 60.f });
@@ -191,7 +191,7 @@ void openSettingsWindow(sf::RenderWindow& window, unsigned int& width, unsigned 
         b.box.setPosition({ x + 250.f, y });
 
         b.valueText.setString(sf::Keyboard::getDescription(*keyPtr).toAnsiString());
-        b.valueText.setCharacterSize(50);
+        b.valueText.setCharacterSize(32);
         b.valueText.setPosition({ x + 260.f, y + 2.f });
         
         b.boundKey = keyPtr;
