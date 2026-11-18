@@ -532,12 +532,37 @@ bool hydrateWorldAndPlayerData(
     if (loadedItems.size() < 20) {
         loadedItems.resize(20, { 0, 0 });
     }
-    bool hasWrenchInSlot0 = (!loadedItems.empty() && loadedItems[0].first == ITEM_WRENCH && loadedItems[0].second > 0);
-    if (!hasWrenchInSlot0) {
-        for (int i = 19; i > 0; i--) {
-            loadedItems[i] = loadedItems[i - 1];
+    // Ensure only one wrench exists across the entire inventory, permanently at slot 0
+    for (int i = 1; i < 20; ++i) {
+        if (loadedItems[i].first == ITEM_WRENCH) {
+            loadedItems[i] = { 0, 0 };
         }
+    }
+
+    if (loadedItems[0].first != ITEM_WRENCH) {
+        std::pair<int, int> displaced = loadedItems[0];
         loadedItems[0] = { ITEM_WRENCH, 1 };
+        if (displaced.first != 0 && displaced.second > 0) {
+            bool placed = false;
+            for (int i = 1; i < 20; ++i) {
+                if (loadedItems[i].first == 0 || loadedItems[i].second <= 0) {
+                    loadedItems[i] = displaced;
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                for (int i = 1; i < 20; ++i) {
+                    if (loadedItems[i].first == displaced.first) {
+                        loadedItems[i].second += displaced.second;
+                        placed = true;
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        loadedItems[0].second = 1;
     }
 
     hunger = stats.hunger;
@@ -671,6 +696,7 @@ bool hydrateWorldAndPlayerData(
         int itemId = loadedItems[i].first;
         int count = loadedItems[i].second;
         if (count > 0) {
+            if (i != 0 && itemId == ITEM_WRENCH) continue; // Suppress duplicate wrench
             const sf::Texture* tex = assets.getItemTexture(itemId);
             if (tex) {
                 inventory.setItem(i, itemId, *tex, count);
@@ -678,9 +704,12 @@ bool hydrateWorldAndPlayerData(
         }
     }
 
-    if (!inventory.hasItem(0) || inventory.getItemID(0) != ITEM_WRENCH) {
-        inventory.setItem(0, ITEM_WRENCH, assets.wrenchTex, 1);
+    for (int i = 1; i < 20; ++i) {
+        if (inventory.hasItem(i) && inventory.getItemID(i) == ITEM_WRENCH) {
+            inventory.clearSlot(i);
+        }
     }
+    inventory.setItem(0, ITEM_WRENCH, assets.wrenchTex, 1);
 
     if (loadTextureSafe(npcFemale.texture, "Sprites/NPCFemale/Walk/South/frame_000.png")) {
         npcFemale.sprite->setTexture(npcFemale.texture);

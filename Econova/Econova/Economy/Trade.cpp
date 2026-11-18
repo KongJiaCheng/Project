@@ -898,6 +898,10 @@ bool handleP2PTradeClick(
             } else {
                 int sel = inventory.getSelectedSlot();
                 if (sel != -1 && inventory.hasItem(sel)) {
+                    if (sel == 0 || inventory.getItemID(sel) == ITEM_WRENCH) {
+                        inventory.showBanner("The Wrench is a permanent tool and cannot be traded!");
+                        return true;
+                    }
                     bool free = true;
                     for (int j = 0; j < 4; j++) if (myP2PSlots[j].originalSlot == sel) { free = false; break; }
                     if (free) {
@@ -1087,6 +1091,10 @@ bool handleNPCTradeClick(
             } else {
                 int selSlot = inventory.getSelectedSlot();
                 if (selSlot != -1 && inventory.hasItem(selSlot)) {
+                    if (selSlot == 0 || inventory.getItemID(selSlot) == ITEM_WRENCH) {
+                        inventory.showBanner("The Wrench is a permanent tool and cannot be traded!");
+                        return true;
+                    }
                     bool slotFree = true;
                     for (int j = 0; j < 4; j++) {
                         if (playerTradeSlots[j].originalSlot == selSlot) { slotFree = false; break; }
@@ -1766,6 +1774,7 @@ void pollAndSyncP2PTrade(
             }
 
             for (auto& d : partnerItems) {
+                if (d.id == ITEM_WRENCH) continue; // Wrench cannot be traded via P2P
                 const sf::Texture* tex = getItemTexture(d.id);
                 if (tex) inventory.addItem(d.id, *tex, d.count);
                 if (adjustMarketItem) {

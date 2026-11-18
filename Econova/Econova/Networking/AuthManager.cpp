@@ -1064,9 +1064,17 @@ bool AuthManager::saveInventory(const sql::SQLString& username, const std::vecto
 
         struct ValidItem { int slot; int itemId; std::string name; int count; };
         std::vector<ValidItem> toInsert;
+        bool hasWrench0 = false;
         for (int slot = 0; slot < (int)inventoryData.size(); ++slot) {
             int item_id = inventoryData[slot].first;
             int count = inventoryData[slot].second;
+            if (slot != 0 && item_id == 14) {
+                continue; // Suppress duplicate wrench
+            }
+            if (slot == 0 && item_id == 14) {
+                count = 1;
+                hasWrench0 = true;
+            }
             if (item_id != 0 && count > 0) {
                 std::string itemName =
                     (item_id == 1) ? "Tree" :
@@ -1101,6 +1109,9 @@ bool AuthManager::saveInventory(const sql::SQLString& username, const std::vecto
                     (item_id == 208) ? "Diamond" : "Unknown";
                 toInsert.push_back({ slot, item_id, itemName, count });
             }
+        }
+        if (!hasWrench0) {
+            toInsert.push_back({ 0, 14, "Wrench", 1 });
         }
 
         if (!toInsert.empty()) {
@@ -2033,6 +2044,9 @@ std::vector<std::pair<int, int>> AuthManager::loadInventory(const sql::SQLString
             }
 
             if (itemId != 0 && count > 0) {
+                if (itemId == 14 && slotIdx != 0) {
+                    continue; // Suppress duplicate wrench
+                }
                 if (slotIdx >= 0 && slotIdx < 20 && inventoryData[slotIdx].first == 0) {
                     inventoryData[slotIdx] = { itemId, count };
                 } else if (nextSlot < 20) {
@@ -2049,6 +2063,13 @@ std::vector<std::pair<int, int>> AuthManager::loadInventory(const sql::SQLString
     }
     catch (sql::SQLException& e) {
         std::cerr << "MySQL Error during loadInventory: " << e.what() << std::endl;
+    }
+    // Guarantee slot 0 has the single unique Wrench
+    inventoryData[0] = { 14, 1 };
+    for (int i = 1; i < 20; ++i) {
+        if (inventoryData[i].first == 14) {
+            inventoryData[i] = { 0, 0 };
+        }
     }
     return inventoryData;
 }

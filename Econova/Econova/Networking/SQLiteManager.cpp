@@ -483,15 +483,33 @@ bool SQLiteManager::saveInventory(const std::string& username, const std::vector
     sqlite3_stmt* rawIns = nullptr;
     if (sqlite3_prepare_v2(db, "INSERT INTO Inventory (Username, slot, itemId, count) VALUES (?, ?, ?, ?)", -1, &rawIns, nullptr) == SQLITE_OK) {
         StmtGuard ins(rawIns);
+        bool hasWrench0 = false;
         for (size_t i = 0; i < inventoryData.size(); ++i) {
-            if (inventoryData[i].first != 0 && inventoryData[i].second > 0) {
+            int item_id = inventoryData[i].first;
+            int count = inventoryData[i].second;
+            if (i != 0 && item_id == 14) {
+                continue; // Suppress duplicate wrench
+            }
+            if (i == 0 && item_id == 14) {
+                count = 1;
+                hasWrench0 = true;
+            }
+            if (item_id != 0 && count > 0) {
                 sqlite3_reset(ins.get());
                 sqlite3_bind_text(ins.get(), 1, username.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(ins.get(), 2, (int)i);
-                sqlite3_bind_int(ins.get(), 3, inventoryData[i].first);
-                sqlite3_bind_int(ins.get(), 4, inventoryData[i].second);
+                sqlite3_bind_int(ins.get(), 3, item_id);
+                sqlite3_bind_int(ins.get(), 4, count);
                 sqlite3_step(ins.get());
             }
+        }
+        if (!hasWrench0) {
+            sqlite3_reset(ins.get());
+            sqlite3_bind_text(ins.get(), 1, username.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(ins.get(), 2, 0);
+            sqlite3_bind_int(ins.get(), 3, 14);
+            sqlite3_bind_int(ins.get(), 4, 1);
+            sqlite3_step(ins.get());
         }
     }
 
@@ -514,9 +532,16 @@ std::vector<std::pair<int, int>> SQLiteManager::loadInventory(const std::string&
         int slot = sqlite3_column_int(stmt.get(), 0);
         int item = sqlite3_column_int(stmt.get(), 1);
         int cnt  = sqlite3_column_int(stmt.get(), 2);
+        if (item == 14 && slot != 0) {
+            continue; // Suppress duplicate wrench
+        }
         if (slot >= 0 && slot < (int)inv.size()) {
             inv[slot] = { item, cnt };
         }
+    }
+    inv[0] = { 14, 1 };
+    for (size_t i = 1; i < inv.size(); ++i) {
+        if (inv[i].first == 14) inv[i] = { 0, 0 };
     }
     return inv;
 }

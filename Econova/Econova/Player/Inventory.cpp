@@ -49,6 +49,8 @@ Inventory::Inventory()
 void Inventory::setItem(int index, int id, const sf::Texture& texture, int count)
 {
     if (index < 0 || index >= SLOT_COUNT) return;
+    if (index != 0 && id == ITEM_WRENCH) return; // Only slot 0 can ever hold a wrench
+    if (index == 0 && id == ITEM_WRENCH) count = 1; // Exactly 1 wrench
 
     slots[index].id = id;
     slots[index].icon = std::make_unique<sf::Sprite>(texture);
@@ -382,8 +384,18 @@ std::string Inventory::getItemName(int id)
 
 void Inventory::addItem(int id, const sf::Texture& texture, int amount)
 {
-    // 1) Try stacking in a slot with the same ID
-    for (int i = 0; i < SLOT_COUNT; i++)
+    // Wrench is a unique permanent tool locked to slot 0
+    if (id == ITEM_WRENCH)
+    {
+        if (!slots[0].occupied || slots[0].id != ITEM_WRENCH)
+        {
+            setItem(0, ITEM_WRENCH, texture, 1);
+        }
+        return;
+    }
+
+    // 1) Try stacking in a slot with the same ID (skip slot 0 reserved for Wrench)
+    for (int i = 1; i < SLOT_COUNT; i++)
     {
         if (slots[i].occupied && slots[i].id == id)
         {
@@ -392,8 +404,8 @@ void Inventory::addItem(int id, const sf::Texture& texture, int amount)
         }
     }
 
-    // 2) Place in first empty slot
-    for (int i = 0; i < SLOT_COUNT; i++)
+    // 2) Place in first empty slot (skip slot 0 reserved for Wrench)
+    for (int i = 1; i < SLOT_COUNT; i++)
     {
         if (!slots[i].occupied)
         {
@@ -461,6 +473,9 @@ void Inventory::clear()
 void Inventory::clearSlot(int slot)
 {
     if (slot >= 0 && slot < SLOT_COUNT) {
+        if (slot == 0 && slots[0].occupied && slots[0].id == ITEM_WRENCH) {
+            return; // Slot 0 wrench is permanent and cannot be cleared
+        }
         slots[slot].count = 0;
         slots[slot].occupied = false;
         slots[slot].icon.reset();

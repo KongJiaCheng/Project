@@ -235,6 +235,11 @@ bool handleQuantityPromptEvent(
                 quantityPromptSourceSlot >= 0 && quantityPromptSourceSlot < 20 &&
                 inventory.hasItem(quantityPromptSourceSlot))
             {
+                if (quantityPromptSourceSlot == 0 || inventory.getItemID(quantityPromptSourceSlot) == ITEM_WRENCH) {
+                    quantityPromptOpen = false;
+                    inventory.showBanner("The Wrench is a permanent tool and cannot be traded!");
+                    return true;
+                }
                 int available = inventory.getItemCount(quantityPromptSourceSlot);
                 amt = std::clamp(amt, 1, available);
                 myP2PSlots[quantityPromptTargetSlot].id = inventory.getItemID(quantityPromptSourceSlot);
@@ -261,6 +266,11 @@ bool handleQuantityPromptEvent(
                     }
                 } else if (quantityPromptSourceSlot >= 0 && quantityPromptSourceSlot < 20) {
                     // STORE: move items from inventory slot to chest slot (supports stacking)
+                    if (quantityPromptSourceSlot == 0 || inventory.getItemID(quantityPromptSourceSlot) == ITEM_WRENCH) {
+                        quantityPromptOpen = false;
+                        inventory.showBanner("The Wrench cannot be stored in chests!");
+                        return true;
+                    }
                     int actualAmt = std::min(amt, inventory.getItemCount(quantityPromptSourceSlot));
                     if (actualAmt > 0) {
                         int itemID = inventory.getItemID(quantityPromptSourceSlot);
@@ -311,6 +321,11 @@ bool handleQuantityPromptEvent(
                 quantityPromptSourceSlot >= 0 && quantityPromptSourceSlot < 20 &&
                 inventory.hasItem(quantityPromptSourceSlot))
             {
+                if (quantityPromptSourceSlot == 0 || inventory.getItemID(quantityPromptSourceSlot) == ITEM_WRENCH) {
+                    quantityPromptOpen = false;
+                    inventory.showBanner("The Wrench is a permanent tool and cannot be traded!");
+                    return true;
+                }
                 int available = inventory.getItemCount(quantityPromptSourceSlot);
                 amt = std::clamp(amt, 1, available);
                 int itemID = inventory.getItemID(quantityPromptSourceSlot);
@@ -2580,6 +2595,12 @@ void handleAllGameMouseButtonPressed(
                 sf::FloatRect slotRect({ sx, sy }, { SLOT_S, SLOT_S });
                 if (slotRect.contains(uiPos)) {
                     if (inventory.hasItem(i)) {
+                        if (i == 0 || inventory.getItemID(i) == ITEM_WRENCH) {
+                            inventory.showBanner("The Wrench cannot be stored in chests!");
+                            handledSlot  = true;
+                            clickHandled = true;
+                            continue;
+                        }
                         chestSelectedInvSlot = i;
                         inventory.setSelectedSlot(i);
                         int totalQty = inventory.getItemCount(i);
@@ -2630,6 +2651,12 @@ void handleAllGameMouseButtonPressed(
                         // Clicking an EMPTY chest slot stores the selected inventory item into this slot
                         int srcSlot = (chestSelectedInvSlot >= 0) ? chestSelectedInvSlot : inventory.getSelectedSlot();
                         if (srcSlot >= 0 && inventory.hasItem(srcSlot)) {
+                            if (srcSlot == 0 || inventory.getItemID(srcSlot) == ITEM_WRENCH) {
+                                inventory.showBanner("The Wrench cannot be stored in chests!");
+                                handledSlot  = true;
+                                clickHandled = true;
+                                continue;
+                            }
                             quantityPromptOpen       = true;
                             quantityPromptIsChest    = true;
                             quantityPromptIsP2P      = false;

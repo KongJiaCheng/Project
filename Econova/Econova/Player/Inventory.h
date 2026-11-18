@@ -42,6 +42,10 @@ public:
     void clearSlot(int slot);
     void consumeItem(int slot)
     {
+        if (slot == 0 && slots[0].occupied && slots[0].id == 14) // ITEM_WRENCH
+        {
+            return;
+        }
         if (slots[slot].count > 0)
         {
             slots[slot].count--;
