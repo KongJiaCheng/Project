@@ -704,8 +704,8 @@ void executeDirectNPCTrade(
 
                     adjustMarketItem(item_id, percentChange);
 
-                    int actualUnitPrice = (totalQty > 0 && netGold > 0) ? (int)std::round(static_cast<float>(netGold) / totalQty) : uPrice;
-                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty);
+                    int actualUnitPrice = (totalRefVal > 0.f && netGold > 0) ? (std::max)(1, (int)std::round(uPrice * ratio)) : uPrice;
+                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty, 0, item_id);
                     playerTradeSlots[i] = {};
                 }
             }
@@ -733,6 +733,13 @@ void executeDirectNPCTrade(
             hasBargained = false;
             bargainStatus = "";
             authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
+            std::vector<std::pair<int, int>> saveItems(20, { 0, 0 });
+            for (int slotIdx = 0; slotIdx < 20; ++slotIdx) {
+                if (inventory.hasItem(slotIdx)) {
+                    saveItems[slotIdx] = { inventory.getItemID(slotIdx), inventory.getItemCount(slotIdx) };
+                }
+            }
+            authManager.saveInventory(username.c_str(), saveItems);
         }
     } else {
         float priceMul = bargainAccepted ? 1.08f : 1.20f;
@@ -800,8 +807,8 @@ void executeDirectNPCTrade(
 
                     adjustMarketItem(item_id, percentChange);
 
-                    int actualUnitPrice = (totalQty > 0) ? (int)std::round(static_cast<float>(finalCost) / totalQty) : uPrice;
-                    authManager.addTradeRecord(username.c_str(), "BUY", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty);
+                    int actualUnitPrice = (totalRefVal > 0.f && finalCost > 0) ? (std::max)(1, (int)std::round(uPrice * (static_cast<float>(finalCost) / totalRefVal))) : uPrice;
+                    authManager.addTradeRecord(username.c_str(), "BUY", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty, 0, item_id);
                     npcTradeSlots[i] = {};
                 }
             }
@@ -825,6 +832,13 @@ void executeDirectNPCTrade(
             hasBargained = false;
             bargainStatus = "";
             authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
+            std::vector<std::pair<int, int>> saveItems(20, { 0, 0 });
+            for (int slotIdx = 0; slotIdx < 20; ++slotIdx) {
+                if (inventory.hasItem(slotIdx)) {
+                    saveItems[slotIdx] = { inventory.getItemID(slotIdx), inventory.getItemCount(slotIdx) };
+                }
+            }
+            authManager.saveInventory(username.c_str(), saveItems);
         }
     }
 }
@@ -1338,7 +1352,7 @@ bool executeNPCTradeConfirm(
                         break;
                     }
                 }
-                authManager.addTradeRecord(username.c_str(), "SELL", name, playerTradeSlots[i].count, price, playerTradeSlots[i].count * price);
+                authManager.addTradeRecord(username.c_str(), "SELL", name, playerTradeSlots[i].count, price, playerTradeSlots[i].count * price, 0, playerTradeSlots[i].id);
             }
         }
 
@@ -1370,7 +1384,7 @@ bool executeNPCTradeConfirm(
                         break;
                     }
                 }
-                authManager.addTradeRecord(username.c_str(), "BUY", name, npcTradeSlots[i].count, price, npcTradeSlots[i].count * price);
+                authManager.addTradeRecord(username.c_str(), "BUY", name, npcTradeSlots[i].count, price, npcTradeSlots[i].count * price, 0, npcTradeSlots[i].id);
             }
         }
 
@@ -1761,8 +1775,8 @@ void pollAndSyncP2PTrade(
 
                 std::string name = getItemName ? getItemName(d.id) : "";
                 int uPrice = getItemPrice ? getItemPrice(d.id) : 0;
-                int actualUnitPrice = (partnerItemsQty > 0 && totalMyOffer > 0.f) ? (int)std::round(totalMyOffer / partnerItemsQty) : uPrice;
-                authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, actualUnitPrice, actualUnitPrice * d.count);
+                int actualUnitPrice = (partnerItemsVal > 0.f && totalMyOffer > 0.f) ? (std::max)(1, (int)std::round(uPrice * (totalMyOffer / partnerItemsVal))) : uPrice;
+                authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, actualUnitPrice, actualUnitPrice * d.count, p2pTradeID, d.id);
             }
             currency += partnerGold;
 
@@ -1776,8 +1790,8 @@ void pollAndSyncP2PTrade(
                         float delta = isUnreasonable ? myItemsDelta : (-0.004f * item_qty);
                         adjustMarketItem(item_id, delta);
                     }
-                    int actualUnitPrice = (myItemsQty > 0 && totalPartnerOffer > 0.f) ? (int)std::round(totalPartnerOffer / myItemsQty) : uPrice;
-                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty);
+                    int actualUnitPrice = (myItemsVal > 0.f && totalPartnerOffer > 0.f) ? (std::max)(1, (int)std::round(uPrice * (totalPartnerOffer / myItemsVal))) : uPrice;
+                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty, p2pTradeID, item_id);
                 }
             }
 
@@ -1791,6 +1805,13 @@ void pollAndSyncP2PTrade(
             }
             bubbleTimer = 4.5f;
             authManager.savePlayerStats(username.c_str(), hunger, thirst, currency, level, exp, elapsedGameTime, hungerMultiplier, thirstMultiplier);
+            std::vector<std::pair<int, int>> saveItems(20, { 0, 0 });
+            for (int slotIdx = 0; slotIdx < 20; ++slotIdx) {
+                if (inventory.hasItem(slotIdx)) {
+                    saveItems[slotIdx] = { inventory.getItemID(slotIdx), inventory.getItemCount(slotIdx) };
+                }
+            }
+            authManager.saveInventory(username.c_str(), saveItems);
             p2pTradeOpen = false; p2pTradeID = -1; p2pPartner = "";
             p2pMyReady = false; p2pPartnerReady = false; p2pStatusMsg = "";
             partnerItems.clear(); partnerGold = 0;

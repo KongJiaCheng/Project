@@ -234,6 +234,20 @@ void SQLiteManager::createTables() {
         "CREATE TABLE IF NOT EXISTS WorldSeed ("
         "id INTEGER PRIMARY KEY CHECK (id = 1), "
         "seed INTEGER NOT NULL"
+        ");"
+
+        "CREATE TABLE IF NOT EXISTS TradeHistory ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "AccountID INTEGER, "
+        "TradeID INTEGER, "
+        "ItemID INTEGER NOT NULL DEFAULT 0, "
+        "Username TEXT COLLATE NOCASE, "
+        "actionType TEXT NOT NULL, "
+        "itemName TEXT NOT NULL, "
+        "quantity INTEGER NOT NULL, "
+        "pricePerUnit INTEGER NOT NULL, "
+        "totalGold INTEGER NOT NULL, "
+        "tradeTime DATETIME DEFAULT CURRENT_TIMESTAMP"
         ");";
 
     char* errMsg = nullptr;
@@ -943,6 +957,60 @@ std::map<int, float> SQLiteManager::loadAllMarketPrices() {
         res[id] = p;
     }
     return res;
+}
+
+void SQLiteManager::addTradeRecord(const std::string& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold, int tradeID, int itemID) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!db) return;
+
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql = "INSERT INTO TradeHistory (AccountID, TradeID, ItemID, Username, actionType, itemName, quantity, pricePerUnit, totalGold) "
+                      "VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return;
+    StmtGuard stmt(rawStmt);
+
+    if (tradeID > 0) sqlite3_bind_int(stmt.get(), 1, tradeID);
+    else sqlite3_bind_null(stmt.get(), 1);
+
+    sqlite3_bind_int(stmt.get(), 2, itemID);
+    sqlite3_bind_text(stmt.get(), 3, username.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 4, actionType.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 5, itemName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 6, quantity);
+    sqlite3_bind_int(stmt.get(), 7, pricePerUnit);
+    sqlite3_bind_int(stmt.get(), 8, totalGold);
+
+    sqlite3_step(stmt.get());
+}
+
+std::vector<TradeRecord> SQLiteManager::getRecentTrades(int limit) {
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    std::vector<TradeRecord> records;
+    if (!db) return records;
+
+    sqlite3_stmt* rawStmt = nullptr;
+    const char* sql = "SELECT Username, actionType, itemName, quantity, pricePerUnit, totalGold, tradeTime "
+                      "FROM TradeHistory ORDER BY id DESC LIMIT ?";
+    if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return records;
+    StmtGuard stmt(rawStmt);
+
+    sqlite3_bind_int(stmt.get(), 1, limit);
+    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        TradeRecord r;
+        const char* u = (const char*)sqlite3_column_text(stmt.get(), 0);
+        const char* a = (const char*)sqlite3_column_text(stmt.get(), 1);
+        const char* n = (const char*)sqlite3_column_text(stmt.get(), 2);
+        const char* t = (const char*)sqlite3_column_text(stmt.get(), 6);
+        r.username = u ? u : "";
+        r.actionType = a ? a : "";
+        r.itemName = n ? n : "";
+        r.quantity = sqlite3_column_int(stmt.get(), 3);
+        r.pricePerUnit = sqlite3_column_int(stmt.get(), 4);
+        r.totalGold = sqlite3_column_int(stmt.get(), 5);
+        r.tradeTime = t ? t : "";
+        records.push_back(r);
+    }
+    return records;
 }
 
 int SQLiteManager::getOrCreateWorldSeed() {

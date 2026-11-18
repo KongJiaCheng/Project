@@ -97,7 +97,7 @@ bool AuthManager::isConnected() const {
     if (isOfflineMode()) {
         return SQLiteManager::getInstance().isOpen();
     }
-    return con != nullptr;
+    return con != nullptr && !con->isClosed();
 }
 
 bool AuthManager::isOfflineMode() const {
@@ -110,6 +110,107 @@ void AuthManager::setOfflineMode(bool offline) {
 
 std::string AuthManager::getDBHost() const {
     return currentConnectedHost;
+}
+
+bool AuthManager::ensureConnection() {
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().isOpen();
+    }
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (con) {
+        try {
+            if (!con->isClosed() && con->isValid()) {
+                return true;
+            }
+        } catch (...) {}
+    }
+    return reconnectDB();
+}
+
+bool AuthManager::reconnectDB() {
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().init("econova_offline.db");
+    }
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    std::cout << "[DB] Connection lost or closed. Attempting auto-reconnection...\n";
+
+    DBConfigData cfg = loadDBConfig();
+    std::string hostStr = cfg.cloud_host;
+    std::string userStr = cfg.cloud_user;
+    std::string passStr = cfg.cloud_pass;
+    std::string schemaStr = cfg.cloud_schema;
+    bool useSSL = cfg.cloud_ssl;
+
+    for (int attempt = 1; attempt <= 3; ++attempt) {
+        try {
+            if (con) {
+                try { delete con; } catch (...) {}
+                con = nullptr;
+            }
+            if (!driver) {
+                driver = sql::mysql::get_mysql_driver_instance();
+            }
+            sql::ConnectOptionsMap props;
+            props["hostName"] = hostStr;
+            props["userName"] = userStr;
+            props["password"] = passStr;
+            if (useSSL) {
+                props["sslCa"] = resolvePath(cfg.cloud_ca.c_str());
+                props["OPT_SSL_MODE"] = sql::SSL_MODE_REQUIRED;
+            } else {
+                props["OPT_SSL_MODE"] = sql::SSL_MODE_DISABLED;
+            }
+            props["OPT_CONNECT_TIMEOUT"] = (int)15;
+            props["OPT_READ_TIMEOUT"] = (int)30;
+            props["OPT_WRITE_TIMEOUT"] = (int)30;
+            props["OPT_RECONNECT"] = true;
+
+            con = driver->connect(props);
+            if (con) {
+                con->setSchema(schemaStr);
+                std::cout << "[DB] Auto-reconnection successful on attempt " << attempt << "!\n";
+                return true;
+            }
+        } catch (const sql::SQLException& e) {
+            std::cerr << "[DB WARN] Reconnect attempt " << attempt << "/3 failed: " << e.what() << "\n";
+        } catch (...) {
+            std::cerr << "[DB WARN] Reconnect attempt " << attempt << "/3 failed with unknown exception.\n";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500 * attempt));
+    }
+    std::cerr << "[DB ERROR] Failed to reconnect to database after 3 attempts.\n";
+    return false;
+}
+
+int AuthManager::getAccountID(const std::string& username) {
+    if (username.empty() || isOfflineMode()) return 0;
+    {
+        std::lock_guard<std::mutex> lock(accountIDMutex);
+        auto it = accountIDCache.find(username);
+        if (it != accountIDCache.end()) {
+            return it->second;
+        }
+    }
+    if (!ensureConnection()) return 0;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    try {
+        std::unique_ptr<sql::PreparedStatement> pstmt(
+            con->prepareStatement("SELECT AccountID FROM Accounts WHERE Username = ? LIMIT 1")
+        );
+        if (pstmt) {
+            pstmt->setString(1, username);
+            std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+            if (res && res->next()) {
+                int id = res->getInt("AccountID");
+                std::lock_guard<std::mutex> cacheLock(accountIDMutex);
+                accountIDCache[username] = id;
+                return id;
+            }
+        }
+    } catch (const sql::SQLException& e) {
+        std::cerr << "[DB ERROR] getAccountID failed for " << username << ": " << e.what() << "\n";
+    }
+    return 0;
 }
 
 bool AuthManager::initDB(bool forceLocal) {
@@ -155,9 +256,10 @@ bool AuthManager::initDB(bool forceLocal) {
             connection_properties["OPT_SSL_MODE"] = sql::SSL_MODE_DISABLED;
         }
 
-        connection_properties["OPT_CONNECT_TIMEOUT"] = useLocal ? (int)4 : (int)10;
-        connection_properties["OPT_READ_TIMEOUT"] = (int)10;
-        connection_properties["OPT_WRITE_TIMEOUT"] = (int)10;
+        connection_properties["OPT_CONNECT_TIMEOUT"] = useLocal ? (int)4 : (int)15;
+        connection_properties["OPT_READ_TIMEOUT"] = (int)30;
+        connection_properties["OPT_WRITE_TIMEOUT"] = (int)30;
+        connection_properties["OPT_RECONNECT"] = true;
 
         std::cout << "[DB] Connecting to " << (useLocal ? "LOCAL" : "CLOUD") << " database (" << hostStr << ")...\n";
         con = driver->connect(connection_properties);
@@ -932,18 +1034,35 @@ bool AuthManager::resetPassword(const sql::SQLString& email, const sql::SQLStrin
 }
 
 bool AuthManager::saveInventory(const sql::SQLString& username, const std::vector<std::pair<int, int>>& inventoryData) {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         return SQLiteManager::getInstance().saveInventory(std::string(username.c_str()), inventoryData);
     }
+    if (!ensureConnection()) return false;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return false;
+
+    int accountID = getAccountID(username.c_str());
+    if (accountID <= 0) {
+        std::cerr << "[saveInventory ERROR] Could not find AccountID for user: " << username.c_str() << "\n";
+        return false;
+    }
+
+    bool prevAutoCommit = true;
     try {
-        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM Inventory WHERE Username = ?"));
-        if (!delStmt) return false;
-        delStmt->setString(1, username);
+        prevAutoCommit = con->getAutoCommit();
+        con->setAutoCommit(false);
+
+        // Delete existing items for this account
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM Inventory WHERE AccountID = ? OR Username = ?"));
+        if (!delStmt) {
+            con->setAutoCommit(prevAutoCommit);
+            return false;
+        }
+        delStmt->setInt(1, accountID);
+        delStmt->setString(2, username);
         delStmt->executeUpdate();
 
-        struct ValidItem { std::string name; int count; };
+        struct ValidItem { int slot; int itemId; std::string name; int count; };
         std::vector<ValidItem> toInsert;
         for (int slot = 0; slot < (int)inventoryData.size(); ++slot) {
             int item_id = inventoryData[slot].first;
@@ -980,39 +1099,40 @@ bool AuthManager::saveInventory(const sql::SQLString& username, const std::vecto
                     (item_id == 206) ? "GoldOre" :
                     (item_id == 207) ? "GoldBar" :
                     (item_id == 208) ? "Diamond" : "Unknown";
-                toInsert.push_back({ itemName, count });
+                toInsert.push_back({ slot, item_id, itemName, count });
             }
         }
 
         if (!toInsert.empty()) {
-            // MySQL prepared statements cap at 65535 placeholders total.
-            // Inventory has 3 columns per row => max safe chunk = 65535/3 = 21845.
-            // Use 500 rows per chunk to be consistent and future-proof.
-            const int CHUNK_SIZE = 500;
-            const int total = (int)toInsert.size();
-            for (int base = 0; base < total; base += CHUNK_SIZE) {
-                int count = (std::min)(CHUNK_SIZE, total - base);
-                std::string sql = "INSERT INTO Inventory (Username, ItemName, Quantity) VALUES ";
-                for (int i = 0; i < count; ++i) {
-                    if (i > 0) sql += ", ";
-                    sql += "(?, ?, ?)";
+            std::unique_ptr<sql::PreparedStatement> insStmt(
+                con->prepareStatement("INSERT INTO Inventory (AccountID, Username, SlotIndex, ItemID, ItemName, Quantity) VALUES (?, ?, ?, ?, ?, ?)")
+            );
+            if (insStmt) {
+                for (const auto& item : toInsert) {
+                    insStmt->setInt(1, accountID);
+                    insStmt->setString(2, username);
+                    insStmt->setInt(3, item.slot);
+                    insStmt->setInt(4, item.itemId);
+                    insStmt->setString(5, item.name);
+                    insStmt->setInt(6, item.count);
+                    insStmt->executeUpdate();
                 }
-                std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement(sql));
-                if (!insStmt) continue;
-                int paramIdx = 1;
-                for (int i = 0; i < count; ++i) {
-                    const auto& item = toInsert[base + i];
-                    insStmt->setString(paramIdx++, username);
-                    insStmt->setString(paramIdx++, item.name);
-                    insStmt->setInt(paramIdx++, item.count);
-                }
-                insStmt->executeUpdate();
             }
         }
+        con->commit();
+        con->setAutoCommit(prevAutoCommit);
         return true;
     }
     catch (sql::SQLException& e) {
-        std::cout << "MySQL Error during saveInventory: " << e.what() << std::endl;
+        std::cerr << "MySQL Error during saveInventory: " << e.what() << std::endl;
+        try { con->rollback(); } catch (...) {}
+        try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
+        return false;
+    }
+    catch (...) {
+        std::cerr << "Unknown error during saveInventory\n";
+        try { con->rollback(); } catch (...) {}
+        try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
         return false;
     }
 }
@@ -1123,51 +1243,65 @@ void AuthManager::saveGender(const sql::SQLString& username, int gender) {
 }
 
 void AuthManager::saveStructures(const sql::SQLString& username, const std::vector<StoredStructure>& structures) {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         SQLiteManager::getInstance().saveStructures(std::string(username.c_str()), structures);
         return;
     }
+    if (!ensureConnection()) return;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return;
+
+    int accountID = getAccountID(username.c_str());
+    if (accountID <= 0) {
+        std::cerr << "[saveStructures ERROR] Could not find AccountID for user: " << username.c_str() << "\n";
+        return;
+    }
+
+    bool prevAutoCommit = true;
     try {
-        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM structures WHERE Username = ?"));
-        if (!delStmt) return;
-        delStmt->setString(1, username);
+        prevAutoCommit = con->getAutoCommit();
+        con->setAutoCommit(false);
+
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM structures WHERE AccountID = ? OR Username = ?"));
+        if (!delStmt) {
+            con->setAutoCommit(prevAutoCommit);
+            return;
+        }
+        delStmt->setInt(1, accountID);
+        delStmt->setString(2, username);
         delStmt->executeUpdate();
 
         if (!structures.empty()) {
-            // MySQL prepared statements cap at 65535 placeholders total.
-            // structures has 8 columns per row => max safe chunk = 65535/8 = 8191.
-            // Use 500 rows per chunk (4000 placeholders) for a comfortable safety margin.
-            const int CHUNK_SIZE = 500;
-            const int total = (int)structures.size();
-            for (int base = 0; base < total; base += CHUNK_SIZE) {
-                int count = (std::min)(CHUNK_SIZE, total - base);
-                std::string sql = "INSERT INTO structures (Username, ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY) VALUES ";
-                for (int i = 0; i < count; ++i) {
-                    if (i > 0) sql += ", ";
-                    sql += "(?, ?, ?, ?, ?, ?, ?, ?)";
+            std::unique_ptr<sql::PreparedStatement> insStmt(
+                con->prepareStatement("INSERT INTO structures (AccountID, Username, ItemID, PosX, PosY, Health, Rotation, IsOpen, ShearY) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            );
+            if (insStmt) {
+                for (const auto& s : structures) {
+                    insStmt->setInt(1, accountID);
+                    insStmt->setString(2, username);
+                    insStmt->setInt(3, s.id);
+                    insStmt->setDouble(4, (double)s.x);
+                    insStmt->setDouble(5, (double)s.y);
+                    insStmt->setDouble(6, (double)s.health);
+                    insStmt->setDouble(7, (double)s.rotation);
+                    insStmt->setBoolean(8, s.isOpen);
+                    insStmt->setDouble(9, (double)s.shearY);
+                    insStmt->executeUpdate();
                 }
-                std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement(sql));
-                if (!insStmt) continue;
-                int paramIdx = 1;
-                for (int i = 0; i < count; ++i) {
-                    const auto& s = structures[base + i];
-                    insStmt->setString(paramIdx++, username);
-                    insStmt->setInt(paramIdx++, s.id);
-                    insStmt->setDouble(paramIdx++, (double)s.x);
-                    insStmt->setDouble(paramIdx++, (double)s.y);
-                    insStmt->setDouble(paramIdx++, (double)s.health);
-                    insStmt->setDouble(paramIdx++, (double)s.rotation);
-                    insStmt->setBoolean(paramIdx++, s.isOpen);
-                    insStmt->setDouble(paramIdx++, (double)s.shearY);
-                }
-                insStmt->executeUpdate();
             }
         }
+        con->commit();
+        con->setAutoCommit(prevAutoCommit);
     }
     catch (sql::SQLException& e) {
         std::cerr << "saveStructures error: " << e.what() << "\n";
+        try { con->rollback(); } catch (...) {}
+        try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
+    }
+    catch (...) {
+        std::cerr << "saveStructures unknown error\n";
+        try { con->rollback(); } catch (...) {}
+        try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
     }
 }
 
@@ -1346,59 +1480,73 @@ void AuthManager::ensureCampfireColumns() {
 }
 
 void AuthManager::saveCampfires(const sql::SQLString& username, const std::vector<StoredCampfire>& campfires) {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         SQLiteManager::getInstance().saveCampfires(std::string(username.c_str()), campfires);
         return;
     }
+    if (!ensureConnection()) return;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return;
+
+    int accountID = getAccountID(username.c_str());
+    if (accountID <= 0) {
+        std::cerr << "[saveCampfires ERROR] Could not find AccountID for user: " << username.c_str() << "\n";
+        return;
+    }
+
+    bool prevAutoCommit = true;
     for (int attempt = 0; attempt < 2; attempt++) {
         try {
-            std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM campfires WHERE Username = ?"));
-            if (!delStmt) return;
-            delStmt->setString(1, username);
+            prevAutoCommit = con->getAutoCommit();
+            con->setAutoCommit(false);
+
+            std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM campfires WHERE AccountID = ? OR Username = ?"));
+            if (!delStmt) {
+                con->setAutoCommit(prevAutoCommit);
+                return;
+            }
+            delStmt->setInt(1, accountID);
+            delStmt->setString(2, username);
             delStmt->executeUpdate();
 
             if (!campfires.empty()) {
-                // MySQL prepared statements cap at 65535 placeholders total.
-                // campfires has 10 columns per row => max safe chunk = 65535/10 = 6553.
-                // Use 500 rows per chunk (5000 placeholders) for a comfortable safety margin.
-                const int CHUNK_SIZE = 500;
-                const int total = (int)campfires.size();
-                for (int base = 0; base < total; base += CHUNK_SIZE) {
-                    int count = (std::min)(CHUNK_SIZE, total - base);
-                    std::string sql = "INSERT INTO campfires (Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount) VALUES ";
-                    for (int i = 0; i < count; ++i) {
-                        if (i > 0) sql += ", ";
-                        sql += "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                std::unique_ptr<sql::PreparedStatement> insStmt(
+                    con->prepareStatement("INSERT INTO campfires (AccountID, Username, PosX, PosY, TimeRemaining, IsCrafted, Fuel, InputItem, InputCount, OutputItem, OutputCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                );
+                if (insStmt) {
+                    for (const auto& c : campfires) {
+                        insStmt->setInt(1, accountID);
+                        insStmt->setString(2, username);
+                        insStmt->setDouble(3, (double)c.x);
+                        insStmt->setDouble(4, (double)c.y);
+                        insStmt->setDouble(5, (double)c.timeRemaining);
+                        insStmt->setBoolean(6, c.isCrafted);
+                        insStmt->setInt(7, c.fuel);
+                        insStmt->setInt(8, c.inputItem);
+                        insStmt->setInt(9, c.inputCount);
+                        insStmt->setInt(10, c.outputItem);
+                        insStmt->setInt(11, c.outputCount);
+                        insStmt->executeUpdate();
                     }
-                    std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement(sql));
-                    if (!insStmt) continue;
-                    int paramIdx = 1;
-                    for (int i = 0; i < count; ++i) {
-                        const auto& c = campfires[base + i];
-                        insStmt->setString(paramIdx++, username);
-                        insStmt->setDouble(paramIdx++, c.x);
-                        insStmt->setDouble(paramIdx++, c.y);
-                        insStmt->setDouble(paramIdx++, c.timeRemaining);
-                        insStmt->setBoolean(paramIdx++, c.isCrafted);
-                        insStmt->setInt(paramIdx++, c.fuel);
-                        insStmt->setInt(paramIdx++, c.inputItem);
-                        insStmt->setInt(paramIdx++, c.inputCount);
-                        insStmt->setInt(paramIdx++, c.outputItem);
-                        insStmt->setInt(paramIdx++, c.outputCount);
-                    }
-                    insStmt->executeUpdate();
                 }
             }
+            con->commit();
+            con->setAutoCommit(prevAutoCommit);
             return;
         }
         catch (sql::SQLException& e) {
+            try { con->rollback(); } catch (...) {}
+            try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
             if (attempt == 0) {
                 ensureCampfireColumns();
                 continue;
             }
             std::cerr << "saveCampfires error: " << e.what() << "\n";
+        }
+        catch (...) {
+            try { con->rollback(); } catch (...) {}
+            try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
+            std::cerr << "saveCampfires unknown error\n";
         }
     }
 }
@@ -1824,64 +1972,83 @@ void AuthManager::clearAllChatMessages()
 }
 
 std::vector<std::pair<int, int>> AuthManager::loadInventory(const sql::SQLString& username) {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         return SQLiteManager::getInstance().loadInventory(std::string(username.c_str()));
     }
     std::vector<std::pair<int, int>> inventoryData(20, { 0, 0 }); // Default 20 empty slots
+    if (!ensureConnection()) return inventoryData;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return inventoryData;
 
+    int accountID = getAccountID(username.c_str());
+
     try {
-        std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement("SELECT ItemName, Quantity FROM Inventory WHERE Username = ?"));
+        std::unique_ptr<sql::PreparedStatement> pstmt(
+            con->prepareStatement("SELECT SlotIndex, ItemID, ItemName, Quantity FROM Inventory WHERE AccountID = ? OR Username = ? ORDER BY SlotIndex ASC")
+        );
         if (!pstmt) return inventoryData;
-        pstmt->setString(1, username);
+        pstmt->setInt(1, accountID);
+        pstmt->setString(2, username);
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
 
-        int slot = 0;
-        while (res && res->next() && slot < 20) {
+        int nextSlot = 0;
+        while (res && res->next()) {
+            int slotIdx = res->getInt("SlotIndex");
+            int itemId = res->getInt("ItemID");
             std::string itemName = std::string(res->getString("ItemName"));
             int count = res->getInt("Quantity");
 
-            int item_id =
-                (itemName == "Tree") ? 1 :
-                (itemName == "Stone") ? 2 :
-                (itemName == "Wood") ? 3 :
-                (itemName == "WoodenSword") ? 4 :
-                (itemName == "Sapling") ? 5 :
-                (itemName == "Shield") ? 6 :
-                (itemName == "Furnace") ? 7 :
-                (itemName == "WoodTile") ? 8 :
-                (itemName == "WoodWall") ? 9 :
-                (itemName == "WoodDoor") ? 10 :
-                (itemName == "WoodRoof") ? 11 :
-                (itemName == "WoodStairs") ? 12 :
-                (itemName == "Bed") ? 13 :
-                (itemName == "Wrench") ? 14 :
-                (itemName == "ChickenMeat") ? 100 :
-                (itemName == "PigMeat") ? 101 :
-                (itemName == "ZombieFlesh") ? 102 :
-                (itemName == "CookedChicken") ? 103 :
-                (itemName == "CookedPig") ? 104 :
-                (itemName == "SheepMeat") ? 105 :
-                (itemName == "CookedSheep") ? 106 :
-                (itemName == "Wool") ? 107 :
-                (itemName == "Coal") ? 201 :
-                (itemName == "CopperOre") ? 202 :
-                (itemName == "CopperBar") ? 203 :
-                (itemName == "IronOre") ? 204 :
-                (itemName == "IronBar") ? 205 :
-                (itemName == "GoldOre") ? 206 :
-                (itemName == "GoldBar") ? 207 :
-                (itemName == "Diamond") ? 208 : 0;
+            if (itemId == 0) {
+                itemId =
+                    (itemName == "Tree") ? 1 :
+                    (itemName == "Stone") ? 2 :
+                    (itemName == "Wood") ? 3 :
+                    (itemName == "WoodenSword") ? 4 :
+                    (itemName == "Sapling") ? 5 :
+                    (itemName == "Shield") ? 6 :
+                    (itemName == "Furnace") ? 7 :
+                    (itemName == "WoodTile") ? 8 :
+                    (itemName == "WoodWall") ? 9 :
+                    (itemName == "WoodDoor") ? 10 :
+                    (itemName == "WoodRoof") ? 11 :
+                    (itemName == "WoodStairs") ? 12 :
+                    (itemName == "Bed") ? 13 :
+                    (itemName == "Wrench") ? 14 :
+                    (itemName == "ChickenMeat") ? 100 :
+                    (itemName == "PigMeat") ? 101 :
+                    (itemName == "ZombieFlesh") ? 102 :
+                    (itemName == "CookedChicken") ? 103 :
+                    (itemName == "CookedPig") ? 104 :
+                    (itemName == "SheepMeat") ? 105 :
+                    (itemName == "CookedSheep") ? 106 :
+                    (itemName == "Wool") ? 107 :
+                    (itemName == "Coal") ? 201 :
+                    (itemName == "CopperOre") ? 202 :
+                    (itemName == "CopperBar") ? 203 :
+                    (itemName == "IronOre") ? 204 :
+                    (itemName == "IronBar") ? 205 :
+                    (itemName == "GoldOre") ? 206 :
+                    (itemName == "GoldBar") ? 207 :
+                    (itemName == "Diamond") ? 208 : 0;
+            }
 
-            if (item_id != 0) {
-                inventoryData[slot] = { item_id, count };
-                slot++;
+            if (itemId != 0 && count > 0) {
+                if (slotIdx >= 0 && slotIdx < 20 && inventoryData[slotIdx].first == 0) {
+                    inventoryData[slotIdx] = { itemId, count };
+                } else if (nextSlot < 20) {
+                    while (nextSlot < 20 && inventoryData[nextSlot].first != 0) {
+                        nextSlot++;
+                    }
+                    if (nextSlot < 20) {
+                        inventoryData[nextSlot] = { itemId, count };
+                        nextSlot++;
+                    }
+                }
             }
         }
     }
     catch (sql::SQLException& e) {
-        std::cout << "MySQL Error during loadInventory: " << e.what() << std::endl;
+        std::cerr << "MySQL Error during loadInventory: " << e.what() << std::endl;
     }
     return inventoryData;
 }
@@ -2079,21 +2246,35 @@ void AuthManager::clearPull(const sql::SQLString& username) {
     }
 }
 
-void AuthManager::addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold) {
-    if (isOfflineMode()) return;
+void AuthManager::addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold, int tradeID, int itemID) {
+    if (isOfflineMode()) {
+        SQLiteManager::getInstance().addTradeRecord(std::string(username.c_str()), actionType, itemName, quantity, pricePerUnit, totalGold, tradeID, itemID);
+        return;
+    }
+    if (!ensureConnection()) return;
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return;
+
+    int accountID = getAccountID(username.c_str());
+
     try {
         std::unique_ptr<sql::PreparedStatement> pstmt(
-            con->prepareStatement("INSERT INTO TradeHistory (Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold) VALUES (?, ?, ?, ?, ?, ?)")
+            con->prepareStatement("INSERT INTO TradeHistory (AccountID, TradeID, ItemID, Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         );
         if (!pstmt) return;
-        pstmt->setString(1, username);
-        pstmt->setString(2, actionType);
-        pstmt->setString(3, itemName);
-        pstmt->setInt(4, quantity);
-        pstmt->setInt(5, pricePerUnit);
-        pstmt->setInt(6, totalGold);
+        if (accountID > 0) pstmt->setInt(1, accountID);
+        else pstmt->setNull(1, sql::DataType::INTEGER);
+
+        if (tradeID > 0) pstmt->setInt(2, tradeID);
+        else pstmt->setNull(2, sql::DataType::INTEGER);
+
+        pstmt->setInt(3, itemID);
+        pstmt->setString(4, username);
+        pstmt->setString(5, actionType);
+        pstmt->setString(6, itemName);
+        pstmt->setInt(7, quantity);
+        pstmt->setInt(8, pricePerUnit);
+        pstmt->setInt(9, totalGold);
         pstmt->executeUpdate();
     }
     catch (sql::SQLException& e) {
@@ -2103,7 +2284,10 @@ void AuthManager::addTradeRecord(const sql::SQLString& username, const std::stri
 
 
 std::vector<TradeRecord> AuthManager::getRecentTrades(int limit) {
-    if (isOfflineMode()) return {};
+    if (isOfflineMode()) {
+        return SQLiteManager::getInstance().getRecentTrades(limit);
+    }
+    if (!ensureConnection()) return {};
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
     std::vector<TradeRecord> records;
     if (!con) return records;
@@ -2771,11 +2955,12 @@ float AuthManager::loadMarketPrice(int itemID)
 
 void AuthManager::saveMarketPrice(int itemID, float price)
 {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         SQLiteManager::getInstance().saveMarketPrice(itemID, price);
         return;
     }
+    if (!ensureConnection()) return;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con)
         return;
 
@@ -2783,7 +2968,7 @@ void AuthManager::saveMarketPrice(int itemID, float price)
     {
         std::unique_ptr<sql::PreparedStatement> pstmt(
             con->prepareStatement(
-                "REPLACE INTO MarketPrices (ItemID, Price) VALUES (?, ?)"
+                "INSERT INTO MarketPrices (ItemID, Price) VALUES (?, ?) ON DUPLICATE KEY UPDATE Price = VALUES(Price), LastUpdated = CURRENT_TIMESTAMP"
             )
         );
 
@@ -2804,10 +2989,11 @@ void AuthManager::saveMarketPrice(int itemID, float price)
 
 std::map<int, float> AuthManager::loadAllMarketPrices()
 {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         return SQLiteManager::getInstance().loadAllMarketPrices();
     }
+    if (!ensureConnection()) return {};
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     std::map<int, float> prices;
     if (!con)
         return prices;
@@ -2835,19 +3021,21 @@ std::map<int, float> AuthManager::loadAllMarketPrices()
 
 void AuthManager::saveAllMarketPrices(const std::vector<std::pair<int, float>>& prices)
 {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         SQLiteManager::getInstance().saveAllMarketPrices(prices);
         return;
     }
-    if (!con || prices.empty())
+    if (prices.empty()) return;
+    if (!ensureConnection()) return;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
+    if (!con)
         return;
 
     try
     {
         std::unique_ptr<sql::PreparedStatement> pstmt(
             con->prepareStatement(
-                "REPLACE INTO MarketPrices (ItemID, Price) VALUES (?, ?)"
+                "INSERT INTO MarketPrices (ItemID, Price) VALUES (?, ?) ON DUPLICATE KEY UPDATE Price = VALUES(Price), LastUpdated = CURRENT_TIMESTAMP"
             )
         );
         if (!pstmt)
@@ -3030,32 +3218,63 @@ void AuthManager::completeP2PTrade(int tradeID) {
 }
 
 void AuthManager::saveChestContents(const sql::SQLString& username, const std::vector<StoredChestItem>& items) {
-    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (isOfflineMode()) {
         SQLiteManager::getInstance().saveChestContents(std::string(username.c_str()), items);
         return;
     }
+    if (!ensureConnection()) return;
+    std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return;
+
+    int accountID = getAccountID(username.c_str());
+    if (accountID <= 0) {
+        std::cerr << "[saveChestContents ERROR] Could not find AccountID for user: " << username.c_str() << "\n";
+        return;
+    }
+
+    bool prevAutoCommit = true;
     try {
-        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM chest_contents WHERE Username = ?"));
-        if (!delStmt) return;
-        delStmt->setString(1, username);
+        prevAutoCommit = con->getAutoCommit();
+        con->setAutoCommit(false);
+
+        std::unique_ptr<sql::PreparedStatement> delStmt(con->prepareStatement("DELETE FROM chest_contents WHERE AccountID = ? OR Username = ?"));
+        if (!delStmt) {
+            con->setAutoCommit(prevAutoCommit);
+            return;
+        }
+        delStmt->setInt(1, accountID);
+        delStmt->setString(2, username);
         delStmt->executeUpdate();
 
-        std::unique_ptr<sql::PreparedStatement> insStmt(con->prepareStatement("INSERT INTO chest_contents (Username, ChestX, ChestY, SlotIndex, ItemID, Quantity) VALUES (?, ?, ?, ?, ?, ?)"));
-        if (!insStmt) return;
-        for (auto& item : items) {
-            insStmt->setString(1, username);
-            insStmt->setDouble(2, (double)item.chestX);
-            insStmt->setDouble(3, (double)item.chestY);
-            insStmt->setInt(4, item.slotIndex);
-            insStmt->setInt(5, item.itemID);
-            insStmt->setInt(6, item.quantity);
-            insStmt->executeUpdate();
+        if (!items.empty()) {
+            std::unique_ptr<sql::PreparedStatement> insStmt(
+                con->prepareStatement("INSERT INTO chest_contents (AccountID, Username, ChestX, ChestY, SlotIndex, ItemID, Quantity) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            );
+            if (insStmt) {
+                for (auto& item : items) {
+                    insStmt->setInt(1, accountID);
+                    insStmt->setString(2, username);
+                    insStmt->setDouble(3, (double)item.chestX);
+                    insStmt->setDouble(4, (double)item.chestY);
+                    insStmt->setInt(5, item.slotIndex);
+                    insStmt->setInt(6, item.itemID);
+                    insStmt->setInt(7, item.quantity);
+                    insStmt->executeUpdate();
+                }
+            }
         }
+        con->commit();
+        con->setAutoCommit(prevAutoCommit);
     }
     catch (sql::SQLException& e) {
         std::cerr << "saveChestContents error: " << e.what() << "\n";
+        try { con->rollback(); } catch (...) {}
+        try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
+    }
+    catch (...) {
+        std::cerr << "saveChestContents unknown error\n";
+        try { con->rollback(); } catch (...) {}
+        try { con->setAutoCommit(prevAutoCommit); } catch (...) {}
     }
 }
 
@@ -3302,21 +3521,32 @@ void AuthManager::clearPlayerData(const sql::SQLString& username) {
     SQLiteManager::getInstance().clearPlayerData(std::string(username.c_str()));
 
     // Also clear from MySQL if online
+    if (isOfflineMode()) return;
+    if (!ensureConnection()) return;
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
-    if (isOfflineMode() || !con) return;
+    if (!con) return;
     try {
+        int accountID = getAccountID(username.c_str());
         // Delete player-owned rows from each table
-        const char* tables[] = { "Inventory", "Structures", "campfires", "chest_contents" };
+        const char* tables[] = { "Inventory", "structures", "campfires", "chest_contents" };
         for (const char* tbl : tables) {
-            std::string delSql = std::string("DELETE FROM ") + tbl + " WHERE Username = ?";
+            std::string delSql = std::string("DELETE FROM ") + tbl + " WHERE (AccountID = ? AND AccountID > 0) OR Username = ?";
             std::unique_ptr<sql::PreparedStatement> ps(con->prepareStatement(delSql));
-            if (ps) { ps->setString(1, username); ps->executeUpdate(); }
+            if (ps) {
+                ps->setInt(1, accountID);
+                ps->setString(2, username);
+                ps->executeUpdate();
+            }
         }
         // Reset player stats to fresh-start defaults
         std::unique_ptr<sql::PreparedStatement> ps(con->prepareStatement(
             "UPDATE Accounts SET hunger=0, thirst=0, Gold=50, Level=1, Exp=0, elapsedTime=0, "
-            "hungerMultiplier=1, thirstMultiplier=1 WHERE Username=?"));
-        if (ps) { ps->setString(1, username); ps->executeUpdate(); }
+            "hungerMultiplier=1, thirstMultiplier=1 WHERE AccountID=? OR Username=?"));
+        if (ps) {
+            ps->setInt(1, accountID);
+            ps->setString(2, username);
+            ps->executeUpdate();
+        }
 
         std::cout << "[DEATH] Cleared MySQL data for player: " << username.c_str() << "\n";
     }

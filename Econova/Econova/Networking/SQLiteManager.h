@@ -66,6 +66,10 @@ public:
     void saveAllMarketPrices(const std::vector<std::pair<int, float>>& prices);
     std::map<int, float> loadAllMarketPrices();
 
+    // Trade History
+    void addTradeRecord(const std::string& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold, int tradeID = 0, int itemID = 0);
+    std::vector<TradeRecord> getRecentTrades(int limit = 5);
+
     // World Seed
     int getOrCreateWorldSeed();
 

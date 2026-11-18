@@ -9,6 +9,7 @@
 #include <mutex>
 #include <atomic>
 #include <map>
+#include <unordered_map>
 
 struct PlayerStats {
     float hunger;
@@ -193,8 +194,12 @@ public:
     bool saveInventory(const sql::SQLString& username, const std::vector<std::pair<int, int>>& inventoryData);
     std::vector<std::pair<int, int>> loadInventory(const sql::SQLString& username);
 
-    void addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold);
+    void addTradeRecord(const sql::SQLString& username, const std::string& actionType, const std::string& itemName, int quantity, int pricePerUnit, int totalGold, int tradeID = 0, int itemID = 0);
     std::vector<TradeRecord> getRecentTrades(int limit = 5);
+
+    bool ensureConnection();
+    bool reconnectDB();
+    int getAccountID(const std::string& username);
 
     // --- P2P Trading ---
     int  createP2PTrade(const std::string& from, const std::string& to);
@@ -255,4 +260,6 @@ private:
     std::mutex chatNotifMutex;
     std::string pendingChatNotification = "";
     BanInfo cachedBanInfo;
+    std::unordered_map<std::string, int> accountIDCache;
+    std::mutex accountIDMutex;
 };
