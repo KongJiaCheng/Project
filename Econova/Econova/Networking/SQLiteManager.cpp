@@ -1014,8 +1014,11 @@ std::vector<TradeRecord> SQLiteManager::getRecentTrades(int limit) {
     if (!db) return records;
 
     sqlite3_stmt* rawStmt = nullptr;
-    const char* sql = "SELECT Username, actionType, itemName, quantity, pricePerUnit, totalGold, tradeTime "
-                      "FROM TradeHistory ORDER BY id DESC LIMIT ?";
+    const char* sql = "SELECT COALESCE(a.Username, th.Username) AS Username, "
+                      "th.actionType, th.itemName, th.quantity, th.pricePerUnit, th.totalGold, th.tradeTime "
+                      "FROM TradeHistory th "
+                      "LEFT JOIN Accounts a ON th.AccountID = a.AccountID "
+                      "ORDER BY th.id DESC LIMIT ?";
     if (sqlite3_prepare_v2(db, sql, -1, &rawStmt, nullptr) != SQLITE_OK) return records;
     StmtGuard stmt(rawStmt);
 

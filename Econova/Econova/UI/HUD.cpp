@@ -881,7 +881,7 @@ void renderAllGameUIs(
         if (dbStartupEnabled) {
             if (!recentTradesFetchInFlight && (cachedRecentTrades.empty() || recentTradesClock.getElapsedTime().asSeconds() > 2.0f)) {
                 recentTradesFuture = std::async(std::launch::async, []() {
-                    return AuthManager::getInstance().getRecentTrades(3);
+                    return AuthManager::getInstance().getRecentTrades(8);
                 });
                 recentTradesFetchInFlight = true;
                 recentTradesClock.restart();

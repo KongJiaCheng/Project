@@ -1784,13 +1784,34 @@ void pollAndSyncP2PTrade(
 
                 std::string name = getItemName ? getItemName(d.id) : "";
                 int uPrice = getItemPrice ? getItemPrice(d.id) : 0;
-                int actualUnitPrice = (partnerItemsVal > 0.f && totalMyOffer > 0.f) ? (std::max)(1, (int)std::round(uPrice * (totalMyOffer / partnerItemsVal))) : uPrice;
-                authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, actualUnitPrice, actualUnitPrice * d.count, p2pTradeID, d.id);
+                int totalGold = 0;
+                int actualUnitPrice = 0;
+                if (myP2PGold > 0) {
+                    if (partnerItems.size() == 1) {
+                        totalGold = myP2PGold;
+                        actualUnitPrice = (std::max)(1, (int)std::round((float)totalGold / d.count));
+                        totalGold = actualUnitPrice * d.count;
+                    } else {
+                        float weight = (partnerItemsVal > 0.f) ? (static_cast<float>(uPrice * d.count) / partnerItemsVal) : (1.f / partnerItems.size());
+                        totalGold = (int)std::round(myP2PGold * weight);
+                        actualUnitPrice = (std::max)(1, (int)std::round((float)totalGold / d.count));
+                        totalGold = actualUnitPrice * d.count;
+                    }
+                } else {
+                    actualUnitPrice = (uPrice > 0) ? uPrice : 10;
+                    totalGold = actualUnitPrice * d.count;
+                }
+                authManager.addTradeRecord(username.c_str(), "BUY", name, d.count, actualUnitPrice, totalGold, p2pTradeID, d.id);
             }
             currency += partnerGold;
 
+            int myItemsTypes = 0;
             for (int i = 0; i < 4; i++) {
-                if (myP2PSlots[i].tex) {
+                if (myP2PSlots[i].tex && myP2PSlots[i].count > 0) myItemsTypes++;
+            }
+
+            for (int i = 0; i < 4; i++) {
+                if (myP2PSlots[i].tex && myP2PSlots[i].count > 0) {
                     int item_id = myP2PSlots[i].id;
                     int item_qty = myP2PSlots[i].count;
                     std::string name = getItemName ? getItemName(item_id) : "";
@@ -1799,8 +1820,24 @@ void pollAndSyncP2PTrade(
                         float delta = isUnreasonable ? myItemsDelta : (-0.004f * item_qty);
                         adjustMarketItem(item_id, delta);
                     }
-                    int actualUnitPrice = (myItemsVal > 0.f && totalPartnerOffer > 0.f) ? (std::max)(1, (int)std::round(uPrice * (totalPartnerOffer / myItemsVal))) : uPrice;
-                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, actualUnitPrice * item_qty, p2pTradeID, item_id);
+                    int totalGold = 0;
+                    int actualUnitPrice = 0;
+                    if (partnerGold > 0) {
+                        if (myItemsTypes == 1) {
+                            totalGold = partnerGold;
+                            actualUnitPrice = (std::max)(1, (int)std::round((float)totalGold / item_qty));
+                            totalGold = actualUnitPrice * item_qty;
+                        } else {
+                            float weight = (myItemsVal > 0.f) ? (static_cast<float>(uPrice * item_qty) / myItemsVal) : (1.f / myItemsTypes);
+                            totalGold = (int)std::round(partnerGold * weight);
+                            actualUnitPrice = (std::max)(1, (int)std::round((float)totalGold / item_qty));
+                            totalGold = actualUnitPrice * item_qty;
+                        }
+                    } else {
+                        actualUnitPrice = (uPrice > 0) ? uPrice : 10;
+                        totalGold = actualUnitPrice * item_qty;
+                    }
+                    authManager.addTradeRecord(username.c_str(), "SELL", name, item_qty, actualUnitPrice, totalGold, p2pTradeID, item_id);
                 }
             }
 

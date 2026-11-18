@@ -2314,7 +2314,16 @@ std::vector<TradeRecord> AuthManager::getRecentTrades(int limit) {
     if (!con) return records;
     try {
         std::unique_ptr<sql::PreparedStatement> pstmt(
-            con->prepareStatement("SELECT Username, ActionType, ItemName, Quantity, PricePerUnit, TotalGold FROM TradeHistory ORDER BY TradeTime DESC LIMIT ?")
+            con->prepareStatement(
+                "SELECT COALESCE(a.Username, th.Username) AS Username, "
+                "th.ActionType, "
+                "COALESCE(mp.ItemName, th.ItemName) AS ItemName, "
+                "th.Quantity, th.PricePerUnit, th.TotalGold, th.TradeTime "
+                "FROM TradeHistory th "
+                "LEFT JOIN Accounts a ON th.AccountID = a.AccountID "
+                "LEFT JOIN MarketPrices mp ON th.ItemID = mp.ITEMID "
+                "ORDER BY th.ID DESC LIMIT ?"
+            )
         );
         if (!pstmt) return records;
         pstmt->setInt(1, limit);
@@ -2327,7 +2336,7 @@ std::vector<TradeRecord> AuthManager::getRecentTrades(int limit) {
             r.quantity = res->isNull("Quantity") ? 0 : res->getInt("Quantity");
             r.pricePerUnit = res->isNull("PricePerUnit") ? 0 : res->getInt("PricePerUnit");
             r.totalGold = res->isNull("TotalGold") ? 0 : res->getInt("TotalGold");
-            r.tradeTime = "";
+            r.tradeTime = res->isNull("TradeTime") ? "" : std::string(res->getString("TradeTime"));
             records.push_back(r);
         }
     }
@@ -3085,11 +3094,20 @@ int AuthManager::createP2PTrade(const std::string& from, const std::string& to) 
     std::lock_guard<std::recursive_mutex> lock(dbMutex);
     if (!con) return -1;
     try {
+        int initAccID = getAccountID(from.c_str());
+        int targetAccID = getAccountID(to.c_str());
+
         std::unique_ptr<sql::PreparedStatement> pstmt(con->prepareStatement(
-            "INSERT INTO PlayerTrades (InitiatorUser, TargetUser, Status) VALUES (?, ?, 'pending')"
+            "INSERT INTO PlayerTrades (InitiatorAccountID, TargetAccountID, InitiatorUser, TargetUser, Status) VALUES (?, ?, ?, ?, 'pending')"
         ));
-        pstmt->setString(1, from);
-        pstmt->setString(2, to);
+        if (initAccID > 0) pstmt->setInt(1, initAccID);
+        else pstmt->setNull(1, sql::DataType::INTEGER);
+
+        if (targetAccID > 0) pstmt->setInt(2, targetAccID);
+        else pstmt->setNull(2, sql::DataType::INTEGER);
+
+        pstmt->setString(3, from);
+        pstmt->setString(4, to);
         pstmt->executeUpdate();
         std::unique_ptr<sql::Statement> stmt(con->createStatement());
         std::unique_ptr<sql::ResultSet> res(stmt->executeQuery("SELECT LAST_INSERT_ID() AS id"));
