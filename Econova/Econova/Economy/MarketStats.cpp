@@ -1116,9 +1116,15 @@ void drawStockMarketPage(
     tickerBg.setOutlineColor(sf::Color(60, 60, 90));
     window.draw(tickerBg);
 
-    std::string tickerText = "  LIVE:  ";
+    sf::Text liveBadge(uiFont, "LIVE:", 13);
+    liveBadge.setStyle(sf::Text::Bold);
+    liveBadge.setFillColor(sf::Color(255, 215, 0));
+    liveBadge.setPosition({ tickerBg.getPosition().x + 10.f, tickerBg.getPosition().y + 5.f });
+    window.draw(liveBadge);
+
+    std::string tradeFeed;
     if (recentTrades.empty()) {
-        tickerText += "No transactions recorded yet.";
+        tradeFeed = "No transactions recorded yet.";
     }
     else {
         bool firstEntry = true;
@@ -1126,18 +1132,61 @@ void drawStockMarketPage(
             auto& r = recentTrades[ri];
             if (r.itemName.empty() || r.itemName == "Unknown Item" || r.itemName == "Unknown") continue;
             std::string uName = r.username.length() > 10 ? r.username.substr(0, 8) + ".." : r.username;
-            if (!firstEntry) tickerText += "   |   ";
-            tickerText += "[" + uName + "] " + (r.actionType == "SELL" ? "Sold" : "Bought")
+            if (!firstEntry) tradeFeed += "   |   ";
+            tradeFeed += "[" + uName + "] " + (r.actionType == "SELL" ? "Sold" : "Bought")
                 + " " + std::to_string(r.quantity) + "x " + r.itemName
                 + " (" + std::to_string(r.totalGold) + "G)";
             firstEntry = false;
         }
-        if (firstEntry) tickerText += "No transactions recorded yet.";
+        if (firstEntry) tradeFeed = "No transactions recorded yet.";
     }
-    sf::Text tickerTxt(uiFont, tickerText, 13);
+
+    // Clip rendering strictly to the ticker container bounds so text never leaves the menu
+    float clipX = tickerBg.getPosition().x + 55.f;
+    float clipY = tickerBg.getPosition().y;
+    float clipW = tickerBg.getSize().x - 65.f;
+    float clipH = tickerBg.getSize().y;
+
+    sf::View prevView = window.getView();
+    sf::View uiView = GetUIView(&window);
+    sf::FloatRect baseVp = uiView.getViewport();
+
+    float vpX = baseVp.position.x + (clipX / 1920.f) * baseVp.size.x;
+    float vpY = baseVp.position.y + (clipY / 1080.f) * baseVp.size.y;
+    float vpW = (clipW / 1920.f) * baseVp.size.x;
+    float vpH = (clipH / 1080.f) * baseVp.size.y;
+
+    sf::View tickerView;
+    tickerView.setSize({ clipW, clipH });
+    tickerView.setCenter({ clipW / 2.f, clipH / 2.f });
+    tickerView.setViewport(sf::FloatRect({ vpX, vpY }, { vpW, vpH }));
+    window.setView(tickerView);
+
+    sf::Text tickerTxt(uiFont, tradeFeed, 13);
     tickerTxt.setFillColor(sf::Color(255, 215, 0));
-    tickerTxt.setPosition({ tickerBg.getPosition().x + 10.f, tickerBg.getPosition().y + 5.f });
-    window.draw(tickerTxt);
+    float textW = tickerTxt.getLocalBounds().size.x;
+
+    if (textW <= clipW) {
+        tickerTxt.setPosition({ 5.f, 5.f });
+        window.draw(tickerTxt);
+    }
+    else {
+        static sf::Clock tickerClock;
+        float scrollSpeed = 45.f;
+        float gap = 60.f;
+        float cycleLen = textW + gap;
+        float offset = std::fmod(tickerClock.getElapsedTime().asSeconds() * scrollSpeed, cycleLen);
+
+        tickerTxt.setPosition({ -offset, 5.f });
+        window.draw(tickerTxt);
+
+        if (cycleLen - offset < clipW) {
+            tickerTxt.setPosition({ -offset + cycleLen, 5.f });
+            window.draw(tickerTxt);
+        }
+    }
+
+    window.setView(prevView);
 }
 
 void drawAdminQuantitySimulator(
